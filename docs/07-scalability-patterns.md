@@ -30,6 +30,10 @@ flowchart LR
 
 #### RLS 全量配置
 
+> **⚠️ v2.1 补充**：RLS 对查询性能的影响需量化评估。
+> 根据社区基准测试，简单查询增加约 5-10% 延迟，复杂 JOIN 可能导致执行计划变化。
+> 分区表上的 RLS 策略可能与分区裁剪冲突。建议 Phase 2 进行性能基准测试。
+
 ```sql
 -- ====== Step 1: 为所有业务表启用 RLS ======
 DO $$
@@ -89,6 +93,57 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql;
+```
+
+### 1.2a RLS 性能基准测试方案（v2.1 新增）
+
+> Phase 2 需建立 RLS 性能基线，确保在多租户场景下查询延迟可接受。
+
+#### 基准测试维度
+
+|| 测试场景 | 表规模 | 预期延迟增加 | 告警阈值 |
+||---|---|---|---|
+|| 单表简单查询（WHERE tenant_id = ?） | 10万/100万/1000万行 | < 5% | > 15% |
+|| 单表范围查询（WHERE tenant_id = ? AND created_at > ?） | 100万行 | < 8% | > 20% |
+|| 多表 JOIN 查询 | 各表 100万行 | < 15% | > 30% |
+|| 分区表查询（月度分区 + RLS） | 每分区 50万行 | < 10% | > 25% |
+|| 向量检索（pgvector + RLS） | 100万 chunk | < 12% | > 30% |
+
+#### 测试工具
+
+```bash
+# 使用 pgbench 进行基准测试
+# 1. 无 RLS 的基线
+pgbench -c 50 -T 120 -f queries/simple_query.sql agent_platform
+
+# 2. 启用 RLS 后
+# SET app.current_tenant = 'tenant_001'; 写入测试脚本
+pgbench -c 50 -T 120 -f queries/simple_query_with_rls.sql agent_platform
+
+# 3. 对比 P50/P95/P99 延迟
+```
+
+#### 高频查询表优化策略
+
+| 优化级别 | 适用表 | 策略 | 说明 |
+|---|---|---|---|
+| **L1 默认** | 所有业务表 | RLS + tenant_id 索引 | MVP 阶段采用 |
+| **L2 索引优化** | agent_session, agent_run | 复合索引 (tenant_id, created_at) | 覆盖最频繁的查询模式 |
+| **L3 应用层过滤** | 审计、步骤等高频写入表 | 应用层 WHERE tenant_id = ? 替代 RLS | 减少每条查询的 RLS 评估开销 |
+| **L4 Schema 隔离** | 大客户（租户数据 > 500 万行） | 独立 Schema + 无 RLS | 消除 RLS 开销 |
+
+#### 性能巡检 SQL
+
+```sql
+-- 检查 RLS 策略是否影响查询计划
+EXPLAIN ANALYZE SELECT * FROM agent_session 
+WHERE tenant_id = 'tenant_001' AND status = 'active';
+
+-- 监控 RLS 评估耗时（需开启 pg_stat_statements）
+SELECT query, mean_exec_time, calls 
+FROM pg_stat_statements 
+WHERE query LIKE '%agent_session%' 
+ORDER BY mean_exec_time DESC LIMIT 10;
 ```
 
 ### 1.3 Python 侧租户上下文注入
@@ -570,6 +625,7 @@ class RedisSaver(BaseCheckpointSaver):
     - 多实例共享 state
     - 进程重启后恢复
     - 状态持久化（Redis AOF/RDB）
+    - 审批等待期间自动续期 TTL（v2.1 新增）
     """
     
     def __init__(
@@ -577,11 +633,14 @@ class RedisSaver(BaseCheckpointSaver):
         redis: aioredis.Redis,
         prefix: str = "agent:checkpoint:",
         ttl: int = 7200,          # checkpoint TTL（秒），默认 2 小时，覆盖审批等待场景
+        heartbeat_interval: int = 1800,  # ★ v2.1 新增：心跳续期间隔（秒），默认 30 分钟
     ):
         self.redis = redis
         self.prefix = prefix
         self.ttl = ttl
+        self.heartbeat_interval = heartbeat_interval
         self.serializer = JsonPlusSerializer()
+        self._heartbeat_tasks: dict[str, asyncio.Task] = {}  # thread_id → heartbeat task
     
     def key_for(self, thread_id: str) -> str:
         """生成 Redis Key"""
@@ -614,6 +673,59 @@ class RedisSaver(BaseCheckpointSaver):
         await self.redis.expire(key, self.ttl)
         
         return {"configurable": {"thread_id": thread_id}, "checkpoint_id": checkpoint["id"]}
+    
+    async def start_heartbeat(self, thread_id: str) -> None:
+        """
+        ★ v2.1 新增：启动 Checkpoint TTL 心跳续期。
+        
+        在审批等待期间调用，防止 Redis Checkpoint 因 TTL 到期被自动清除。
+        审批回调消费端也应实现基于 approval_id 的幂等处理，防止重复消费。
+        
+        Args:
+            thread_id: 会话线程 ID
+        """
+        if thread_id in self._heartbeat_tasks:
+            return  # 已存在心跳任务
+        
+        async def _heartbeat_loop():
+            """后台心跳循环：每隔 heartbeat_interval 秒续期一次 TTL"""
+            key = self.key_for(thread_id)
+            while True:
+                try:
+                    await asyncio.sleep(self.heartbeat_interval)
+                    # 仅在 key 存在时续期（已删除则退出循环）
+                    exists = await self.redis.exists(key)
+                    if not exists:
+                        log.info("Checkpoint already removed, stopping heartbeat", thread_id=thread_id)
+                        break
+                    await self.redis.expire(key, self.ttl)
+                    log.debug("Checkpoint TTL renewed", thread_id=thread_id, new_ttl=self.ttl)
+                except asyncio.CancelledError:
+                    log.info("Heartbeat cancelled", thread_id=thread_id)
+                    break
+                except Exception as e:
+                    log.error("Heartbeat failed", thread_id=thread_id, error=str(e))
+                    break
+            self._heartbeat_tasks.pop(thread_id, None)
+        
+        self._heartbeat_tasks[thread_id] = asyncio.create_task(_heartbeat_loop())
+        log.info("Checkpoint heartbeat started", thread_id=thread_id, 
+                 interval=self.heartbeat_interval, ttl=self.ttl)
+    
+    async def stop_heartbeat(self, thread_id: str) -> None:
+        """
+        ★ v2.1 新增：停止 Checkpoint TTL 心跳续期。
+        
+        在审批完成、恢复执行后调用。
+        """
+        task = self._heartbeat_tasks.pop(thread_id, None)
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            log.info("Checkpoint heartbeat stopped", thread_id=thread_id)
     
     async def get(self, config: RunnableConfig) -> tuple[Optional[Checkpoint], dict]:
         thread_id = config["configurable"]["thread_id"]
@@ -663,8 +775,8 @@ def build_graph():
     # 方案 A: 使用 LangGraph 内置 RedisSaver（如果可用）
     checkpointer = LanggraphRedisSaver(conn=redis_client)
     
-    # 方案 B: 使用自定义 RedisSaver（上面定义的）
-    # checkpointer = RedisSaver(redis=redis_client, ttl=7200)  # 2小时过期
+    # 方案 B: 使用自定义 RedisSaver（上面定义的，含心跳续期）
+    # checkpointer = RedisSaver(redis=redis_client, ttl=7200, heartbeat_interval=1800)  # 2小时TTL，30分钟续期
     
     graph = builder.compile(
         checkpointer=checkpointer,
@@ -672,6 +784,20 @@ def build_graph():
     )
     
     return graph
+
+
+# ★ v2.1 新增：审批等待场景的心跳续期使用方式
+async def handle_approval_wait(graph, thread_id: str):
+    """在审批等待期间启动心跳续期"""
+    checkpointer = graph.checkpointer
+    if isinstance(checkpointer, RedisSaver):
+        await checkpointer.start_heartbeat(thread_id)
+
+async def handle_approval_resume(graph, thread_id: str):
+    """审批完成后停止心跳续期"""
+    checkpointer = graph.checkpointer
+    if isinstance(checkpointer, RedisSaver):
+        await checkpointer.stop_heartbeat(thread_id)
 ```
 
 ### HPA 配置（Orchestrator 特殊考虑）
@@ -738,6 +864,73 @@ spec:
 - MVP 阶段：不强制 sticky session，依赖 Redis state 即可
 - Phase 2+：如 P95 延迟有要求，可在 Istio 层配置 `consistentHash` 负载均衡（基于 session_id）
 - 或者用 Redis 缓存完全替代本地内存缓存
+
+#### Istio ConsistentHash 配置（Phase 2 推荐）
+
+```yaml
+# infra/kubernetes/istio/orchestrator-destination.yaml
+# ★ v2.1 新增：基于 session_id 的一致性哈希，命中率目标 > 90%
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: orchestrator
+  namespace: agent-platform
+spec:
+  host: orchestrator
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: x-session-id       # 基于 session_id header 做一致性哈希
+          path: /
+          ttl: 3600s               # Cookie/哈希有效期 1 小时
+    # 备选：基于 HTTP Header（如果不想用 Cookie）
+    # consistentHash:
+    #   httpHeaderName: x-session-id
+```
+
+> **注意**：一致性哈希在实例缩容时会导致部分 session 迁移，但由于 Redis Checkpoint 兜底，
+> 迁移仅带来短暂缓存未命中（1-5ms），不会导致功能异常。缩容等待窗口 5 分钟足够完成迁移。
+
+#### Checkpoint 冷热数据分离（Phase 2 优化）
+
+```python
+# ★ v2.1 新增：区分热数据和冷数据，减少 Redis I/O
+# 热数据：最近 N 轮对话（缓存在 Orchestrator 本地或 Redis Hash）
+# 冷数据：历史摘要（仅在需要时从 PostgreSQL 加载）
+
+CHECKPOINT_HOT_WINDOW = 5  # 最近 5 轮对话作为热数据
+
+class TieredCheckpointStore:
+    """分层 Checkpoint 存储：热数据 Redis + 冷数据 PostgreSQL"""
+    
+    async def get(self, config: RunnableConfig) -> tuple[Checkpoint | None, dict]:
+        thread_id = config["configurable"]["thread_id"]
+        
+        # 1. 优先从 Redis 加载热数据（最新 checkpoint）
+        key = f"agent:checkpoint:hot:{thread_id}"
+        hot_data = await self.redis.hgetall(key)
+        if hot_data:
+            checkpoint = self.serializer.loads(hot_data[b"checkpoint"])
+            return (checkpoint, json.loads(hot_data.get(b"metadata", b"{}")))
+        
+        # 2. Redis 未命中，从 PostgreSQL 加载并回填 Redis
+        cold_data = await self.pg_load_checkpoint(thread_id)
+        if cold_data:
+            await self._backfill_redis(thread_id, cold_data)
+        
+        return (cold_data, {})
+    
+    async def _backfill_redis(self, thread_id: str, checkpoint):
+        """PostgreSQL → Redis 回填"""
+        key = f"agent:checkpoint:hot:{thread_id}"
+        await self.redis.hset(key, mapping={
+            "checkpoint": self.serializer.dumps(checkpoint).decode(),
+            "metadata": json.dumps({}),
+            "updated_at": str(time.time()),
+        })
+        await self.redis.expire(key, 7200)  # 2 小时 TTL
+```
 
 ---
 

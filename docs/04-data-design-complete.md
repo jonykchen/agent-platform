@@ -388,9 +388,11 @@ CREATE TABLE knowledge_chunk (
 
 CREATE INDEX idx_chunk_doc ON knowledge_chunk(document_id, chunk_index);
 CREATE INDEX idx_chunk_tenant ON knowledge_chunk(tenant_id);
--- 向量相似度索引（IVFFlat，适合百万级以下）
+-- 向量相似度索引（v2.1 修正：使用 HNSW 替代 IVFFlat）
+-- HNSW 精度更好，查询更快；构建更慢但适合增量更新场景
+-- 当单租户数据 > 150 万条时需评估迁移至 Qdrant
 CREATE INDEX idx_chunk_embedding ON knowledge_chunk
-    USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 ```
 
 ### 1.10 辅助表（补充建议）

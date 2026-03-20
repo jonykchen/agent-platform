@@ -52,7 +52,7 @@
 │                    Gateway Service (Java)                            │
 │         统一API入口 │ 鉴权 │ 限流 │ 租户隔离 │ 请求追踪              │
 └──────┬──────────────────────┬────────────────────────────────┘
-       │ 同步HTTP/gRPC         │ 审计事件/异步通知
+       │ 同步gRPC               │ 审计事件/异步通知
        ▼                      ▼
 ┌──────────────────┐      ┌───────────────────────────┐
 │ Orchestrator(Python)│   │           Kafka             │
@@ -101,7 +101,7 @@
 | **事件总线** | Kafka 3.6+ | — | 异步/解耦/回放（初期可 Redis Stream 过渡）|
 | **主数据库** | PostgreSQL 16+ | — | 运行态/审计/配置/任务数据 |
 | **缓存** | Redis 7+ | — | 会话态/缓存/幂等/分布式锁 |
-| **向量检索** | pgvector 0.7+ | — | 起步用，>500万块迁移 Qdrant |
+| **向量检索** | pgvector 0.7+ | — | 起步用，>150万块迁移 Qdrant（v2.1修正） |
 | **文件存储** | MinIO/COS/OSS | — | 文档/附件/工具产物 |
 | **配置中心** | Nacos/Apollo | — | 统一配置管理 |
 | **Service Mesh** | Istio 1.20+ on K8s | — | mTLS/金丝雀/熔断/镜像 |
@@ -130,18 +130,28 @@
 - 与 PostgreSQL 共享事务，简化数据一致性
 - 团队对 PostgreSQL 更熟悉
 
-**迁移条件**：单租户向量数据 > 500 万条 或 检索延迟 P95 > 500ms 时，评估迁移至 Qdrant/Milvus。
+**迁移条件**：单租户向量数据 > 150 万条 或 检索延迟 P95 > 500ms 时，评估迁移至 Qdrant/Milvus。
+> **⚠️ v2.1 修正**：原阈值 500 万条过高，pgvector 的 IVFFlat 索引在百万级以上时检索精度会显著下降（probes 参数需调大，延迟随之增加）。
+> 新阈值 150 万条更保守，同时建议使用 HNSW 索引替代 IVFFlat（精度更好，构建更慢但查询更快）。
+> 迁移方案需设计双写 + 双查的过渡期（而非一次性切换）。
 
 #### ADR-003: 为什么跨语言调用用 gRPC 而非 REST？
 
-**决策**：Orchestrator ↔ ToolBus 使用 gRPC + Protobuf
+**决策**：所有内部服务间调用统一使用 gRPC + Protobuf（包括 Gateway → Orchestrator）
 
 **理由**：
 - 工具调用是高频路径，gRPC 性能优势明显（HTTP/2 + Protobuf 二进制）
 - Protobuf 强类型约束减少跨语言序列化问题
 - Streaming 支持更好（双向流）
+- **统一协议栈**：减少 REST + gRPC 双协议并存的调试复杂度和契约同步成本
 
-**例外**：Gateway ↔ Orchestrator 可先用 REST（调试方便），对外 OpenAPI 保持 REST。
+**迁移计划（v2.1 修正）**：
+- ~~MVP 阶段 Gateway ↔ Orchestrator 可先用 REST（调试方便）~~ → 已修正，MVP 阶段即使用 gRPC
+- 对外 OpenAPI 保持 REST
+- Gateway ↔ Orchestrator 的 gRPC Protobuf 定义已在 `02-communication-contracts.md` §3.1 中完成
+- Phase 2 移除 Gateway 的 REST fallback 端点（仅保留 gRPC）
+
+**例外**：仅对外 OpenAPI 保持 REST。
 
 #### ADR-004: 为什么不使用 Temporal 而用 LangGraph Checkpoint + Kafka Callback？
 
@@ -269,8 +279,7 @@ agent-platform/
 │   ├── orchestrator-python/           # Agent 编排引擎 (Python)
 │   ├── model-gateway-python/          # 模型网关 (Python)
 │   ├── tool-bus-java/                 # 工具总线 (Java)
-│   ├── risk-java/                     # 风控服务 (Java)
-│   ├── approval-java/                 # 审批服务 (Java)
+│   ├── governance-java/              # 风控+审批（MVP合并）
 │   └── knowledge-python/              # 知识库服务 (Python)
 ├── shared/                            # 共享资产（非代码）
 │   ├── prompts/                       # Prompt 模板版本化管理
@@ -324,8 +333,8 @@ agent-platform/
 | **orchestrator-python** | Python | Agent 状态机编排、RAG、记忆、工具决策、审批中断 |
 | **model-gateway-python** | Python | 厂商适配、路由、弹性、格式标准化、流式 |
 | **tool-bus-java** | Java | 注册、校验、执行代理、结果规范化 |
-| **risk-java** | Python | 规则引擎、行为检测、动态策略、拦截记录 |
-| **approval-java** | Java | 审批流、通知推送、结果持久化、恢复触发 |
+| **governance-java** | Java | 风控规则引擎+审批流+通知推送+恢复触发（MVP合并） |
+<!-- v2.1 修正：原 risk-java + approval-java 合并为 governance-java，MVP 阶段减少服务数量至5个。内部按 risk/approval 两个 package 组织代码，Phase 4 按需拆分 -->
 | **knowledge-python** | Python | 文档处理、向量化、检索、重排、权限 |
 
 ### Orchestrator 核心状态机

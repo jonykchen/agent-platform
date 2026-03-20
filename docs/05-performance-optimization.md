@@ -36,21 +36,28 @@ flowchart TD
 
 ### Gateway 意图预判实现
 
+> **⚠️ 安全增强（v2.1 修正）**：Fast Path **必须**经过基本的风控安全检查。
+> 短文本可能包含高风险意图（如"帮我删掉所有订单"仅9个字），直接跳过风控是严重安全漏洞。
+> 修正方案：Fast Path 仅跳过 Orchestrator 编排层，但 Gateway 层仍需执行轻量风控扫描。
+
 ```java
 // gateway-java/src/main/java/com/platform/gateway/service/FastPathService.java
 @Service
 public class FastPathService {
 
     @Autowired private ModelGatewayClient modelGatewayClient;
+    @Autowired private FastPathRiskScanner riskScanner;  // ← 新增：轻量风控扫描器
     
     /**
      * 判断请求是否可以走快速路径（跳过 Orchestrator）
      * 
      * 规则优先级：
      * 1. 用户显式指定 model_override → 走 Normal Path（可能有特殊需求）
-     * 2. 关键词匹配（简单问候/确认类） → Fast Path
-     * 3. 输入长度 < 20 字且不含工具关键词 → Fast Path
-     * 4. 其他 → Normal Path
+     * 2. 启用了特定工具 → 走 Normal Path
+     * 3. 风控扫描发现高风险关键词 → 走 Normal Path（必须走完整编排+风控）
+     * 4. 关键词匹配（简单问候/确认类） → Fast Path（仍经轻量风控）
+     * 5. 输入长度 < 10 字且不含风险/工具关键词 → Fast Path（仍经轻量风控）
+     * 6. 其他 → Normal Path
      */
     public IntentType classifyIntent(ChatRequest request) {
         String message = request.getMessage().trim().toLowerCase();
@@ -63,7 +70,17 @@ public class FastPathService {
             return IntentType.NORMAL_PATH;
         }
         
-        // 快速路径匹配规则
+        // ★ 安全增强：风控扫描（即使走 Fast Path 也必须执行）
+        RiskScanResult riskResult = riskScanner.scan(message);
+        if (riskResult.isHighRisk()) {
+            log.warn("Fast path blocked by risk scanner", 
+                riskLevel=riskResult.getRiskLevel(), 
+                matchedKeywords=riskResult.getMatchedKeywords(),
+                requestId=request.getRequestId());
+            return IntentType.NORMAL_PATH;  // 高风险必须走完整编排链路
+        }
+        
+        // 快速路径匹配规则（仅限明确安全的简单问答）
         Set<String> simplePatterns = Set.of(
             "你好", "您好", "hi", "hello", "嗨",
             "谢谢", "感谢", "好的", "ok", "是的",
@@ -77,8 +94,9 @@ public class FastPathService {
             }
         }
         
-        // 长度判断：短文本大概率是简单问答
-        if (message.length() <= 20 && !containsToolKeywords(message)) {
+        // 长度判断：短文本 + 无风险关键词 → Fast Path
+        // ★ 安全增强：阈值从 20 字降低到 10 字，减少误判
+        if (message.length() <= 10 && !containsToolKeywords(message) && !riskResult.hasWarnings()) {
             return IntentType.FAST_PATH;
         }
         
@@ -92,6 +110,122 @@ public class FastPathService {
         );
         return toolKeywords.stream().anyMatch(text::contains);
     }
+}
+```
+
+### Fast Path 轻量风控扫描器（v2.1 新增）
+
+```java
+// gateway-java/src/main/java/com/platform/gateway/service/FastPathRiskScanner.java
+/**
+ * Fast Path 专用轻量风控扫描器。
+ * 
+ * 不替代完整 Risk Service，仅做关键词级快速拦截。
+ * 目的：防止短文本高风险操作绕过编排层的完整风控检查。
+ */
+@Service
+public class FastPathRiskScanner {
+    
+    // 高风险操作关键词（中英双语）—— 从配置中心加载，支持动态更新
+    private volatile Set<String> highRiskKeywords;
+    
+    // 可疑模式（警告但不阻断，建议走 Normal Path）
+    private volatile Set<String> suspiciousPatterns;
+    
+    @PostConstruct
+    public void init() {
+        // 默认硬编码关键词（兜底，配置中心不可用时使用）
+        reloadKeywords();
+    }
+    
+    /**
+     * 从配置中心刷新关键词（由 @Scheduled 或 Nacos 监听触发）
+     * 支持 Nacos/Apollo 动态更新，无需重启服务
+     */
+    @Scheduled(fixedRate = 60000)  // 每 60 秒检查一次配置更新
+    public void reloadKeywords() {
+        // 生产环境从 Nacos/Apollo 读取，此处为默认值
+        highRiskKeywords = Set.of(
+            // 中文高风险操作
+            "删除", "删掉", "清空", "撤销", "取消订单", "退款", "转账", "支付",
+            "修改密码", "重置", "停用", "禁用", "封禁",
+            // 英文高风险操作
+            "delete", "remove", "drop", "clear", "cancel", "refund", 
+            "transfer", "pay", "reset", "disable", "ban",
+            // Prompt 注入高风险模式
+            "忽略", "忽略以上", "忽略之前的", "你现在是",
+            // 系统操作
+            "shutdown", "restart", "truncate", "drop table"
+        );
+        
+        suspiciousPatterns = Set.of(
+            "所有", "全部", "批量", "永久",
+            "all", "every", "batch", "permanent"
+        );
+    }
+    
+    /**
+     * 执行轻量风控扫描。
+     * 
+     * @return RiskScanResult 包含风险等级和匹配的关键词
+     */
+    public RiskScanResult scan(String message) {
+        String lowerMessage = message.toLowerCase();
+        List<String> matchedHighRisk = new ArrayList<>();
+        List<String> matchedSuspicious = new ArrayList<>();
+        
+        // 扫描高风险关键词
+        for (String keyword : highRiskKeywords) {
+            if (lowerMessage.contains(keyword)) {
+                matchedHighRisk.add(keyword);
+            }
+        }
+        
+        // 扫描可疑模式
+        for (String pattern : suspiciousPatterns) {
+            if (lowerMessage.contains(pattern)) {
+                matchedSuspicious.add(pattern);
+            }
+        }
+        
+        if (!matchedHighRisk.isEmpty()) {
+            return RiskScanResult.highRisk(matchedHighRisk);
+        }
+        
+        if (!matchedSuspicious.isEmpty()) {
+            return RiskScanResult.warning(matchedSuspicious);
+        }
+        
+        return RiskScanResult.safe();
+    }
+}
+
+@Value
+public class RiskScanResult {
+    RiskLevel riskLevel;       // SAFE / WARNING / HIGH_RISK
+    List<String> matchedKeywords;
+    
+    public boolean isHighRisk() {
+        return riskLevel == RiskLevel.HIGH_RISK;
+    }
+    
+    public boolean hasWarnings() {
+        return riskLevel == RiskLevel.WARNING;
+    }
+    
+    public static RiskScanResult safe() {
+        return new RiskScanResult(RiskLevel.SAFE, List.of());
+    }
+    
+    public static RiskScanResult highRisk(List<String> keywords) {
+        return new RiskScanResult(RiskLevel.HIGH_RISK, keywords);
+    }
+    
+    public static RiskScanResult warning(List<String> keywords) {
+        return new RiskScanResult(RiskLevel.WARNING, keywords);
+    }
+    
+    public enum RiskLevel { SAFE, WARNING, HIGH_RISK }
 }
 ```
 
@@ -896,18 +1030,90 @@ class TokenQuotaManager:
         output_tokens: int,
         model: str,
     ) -> None:
-        """记录 Token 使用量到 Redis + 异步发送 Kafka"""
+        """记录 Token 使用量到 Redis + 异步发送 Kafka
+        
+        ⚠️ v2.1 修正：使用 Lua 脚本将 check + record 合并为原子操作，
+        消除 check_quota 和 record_usage 之间的竞态条件。
+        原方案使用 Pipeline 批量 INCRBY，Pipeline 不是事务，
+        高并发下多个请求可能同时通过配额检查导致实际用量超出配额。
+        """
 
         total_tokens = input_tokens + output_tokens
-
-        # 更新各层级计数（Redis INCRBY）
-        pipe = self.redis.pipeline()
         now = date.today().isoformat()
-        pipe.incrby(f"usage:global:{now}", total_tokens)
-        pipe.incrby(f"usage:tenant:{tenant_id}:{now}", total_tokens)
-        pipe.incrby(f"usage:user:{tenant_id}:{user_id}:{now}", total_tokens)
-        pipe.incrby(f"usage:session:{session_id}", total_tokens)
-        await pipe.execute()
+
+        # ====== 原子操作：使用 Lua 脚本一次性完成 check + record ======
+        # Lua 脚本在 Redis 中原子执行，不存在竞态条件
+        lua_script = """
+        local now = ARGV[1]
+        local total_tokens = tonumber(ARGV[2])
+        local tenant_id = ARGV[3]
+        local user_id = ARGV[4]
+        local session_id = ARGV[5]
+        local global_quota = tonumber(ARGV[6])
+        local tenant_quota = tonumber(ARGV[7])
+        local user_quota = tonumber(ARGV[8])
+        local session_quota = tonumber(ARGV[9])
+
+        -- 1. 检查全局配额
+        local global_usage = tonumber(redis.call('GET', 'usage:global:' .. now) or '0')
+        if global_usage + total_tokens > global_quota then
+            return {0, 'GLOBAL_QUOTA_EXCEEDED', tostring(global_usage)}
+        end
+
+        -- 2. 检查租户配额
+        local tenant_usage = tonumber(redis.call('GET', 'usage:tenant:' .. tenant_id .. ':' .. now) or '0')
+        if tenant_usage + total_tokens > tenant_quota then
+            return {0, 'TENANT_QUOTA_EXCEEDED', tostring(tenant_usage)}
+        end
+
+        -- 3. 检查用户配额
+        local user_usage = tonumber(redis.call('GET', 'usage:user:' .. tenant_id .. ':' .. user_id .. ':' .. now) or '0')
+        if user_usage + total_tokens > user_quota then
+            return {0, 'USER_QUOTA_EXCEEDED', tostring(user_usage)}
+        end
+
+        -- 4. 检查会话配额
+        local session_usage = tonumber(redis.call('GET', 'usage:session:' .. session_id) or '0')
+        if session_usage + total_tokens > session_quota then
+            return {0, 'SESSION_QUOTA_EXCEEDED', tostring(session_usage)}
+        end
+
+        -- 5. 所有检查通过，原子递增各层级计数
+        redis.call('INCRBY', 'usage:global:' .. now, total_tokens)
+        redis.call('INCRBY', 'usage:tenant:' .. tenant_id .. ':' .. now, total_tokens)
+        redis.call('INCRBY', 'usage:user:' .. tenant_id .. ':' .. user_id .. ':' .. now, total_tokens)
+        redis.call('INCRBY', 'usage:session:' .. session_id, total_tokens)
+
+        -- 6. 设置日级别 key 的过期时间（48小时，防止无限堆积）
+        redis.call('EXPIRE', 'usage:global:' .. now, 172800)
+        redis.call('EXPIRE', 'usage:tenant:' .. tenant_id .. ':' .. now, 172800)
+        redis.call('EXPIRE', 'usage:user:' .. tenant_id .. ':' .. user_id .. ':' .. now, 172800)
+
+        return {1, 'OK', tostring(total_tokens)}
+        """
+
+        # 获取各层级配额值
+        global_quota = 1_000_000_000
+        tenant_quota = await self._get_tenant_quota(tenant_id)
+        user_quota = await self._get_user_quota(tenant_id, user_id)
+        session_quota = 50000
+
+        result = await self.redis.eval(
+            lua_script, 0,
+            now, str(total_tokens), tenant_id, user_id, session_id,
+            str(global_quota), str(tenant_quota), str(user_quota), str(session_quota),
+        )
+
+        success = result[0]
+        if not success:
+            reason = result[1]
+            current_usage = result[2]
+            log.warning("Token quota check-record atomic failed",
+                reason=reason, current_usage=current_usage,
+                tenant_id=tenant_id, user_id=user_id, session_id=session_id,
+                requested_tokens=total_tokens)
+            # 如果原子操作中配额检查失败，直接返回（调用方应处理）
+            return
 
         # Kafka 异步记录（审计+成本核算）
         if self.kafka:

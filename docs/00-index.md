@@ -2,7 +2,12 @@
 
 > 本文档为技术方案的总览索引，详细设计请参考各专题文档。
 
-**版本**：v2.0 | **状态**：✅ 完成 | **最后更新**：2026-05-08
+**版本**：v2.1 | **状态**：✅ 完成 | **最后更新**：2026-05-09
+
+> **v2.1 修正说明**：基于架构评估报告，本版本实施 10 项关键改进：
+> - **P0（编码前必解）**：Fast Path 增加安全检查、Prompt 注入防护补充中文模式、Token 配额原子化（Lua 脚本）
+> - **P1（Phase 1 结束前）**：统一 Gateway→Orchestrator 为 gRPC、Redis Checkpoint TTL 心跳续期、pgvector 迁移阈值 500万→150万、Risk+Approval 合并为 governance-java
+> - **P2（Phase 2 完善）**：Orchestrator Sticky Session 一致性哈希、ABAC 条件引擎沙箱化、RLS 性能基准测试
 
 ---
 
@@ -79,7 +84,7 @@
 | **事件总线** | Kafka 3.6+ | — | 异步/解耦/回放（初期可 Redis Stream）|
 | **主数据库** | PostgreSQL 16+ | — | 运行态/审计/配置/任务 |
 | **缓存** | Redis 7+ | — | 会话态/缓存/幂等/分布式锁 |
-| **向量检索** | pgvector 0.7+ | — | 起步用，>500万块迁移 Qdrant |
+| **向量检索** | pgvector 0.7+ | — | 起步用，>150万块迁移 Qdrant（v2.1修正） |
 | **文件存储** | MinIO/COS/OSS | — | 文档/附件/工具产物 |
 | **配置中心** | Nacos/Apollo | — | 统一配置管理 |
 | **Service Mesh** | Istio 1.20+ on K8s | — | mTLS/金丝雀/熔断/镜像 |
@@ -93,8 +98,7 @@
 | **orchestrator-python** | Python | Agent 编排引擎 | 状态机/RAG/记忆/工具决策/审批中断 |
 | **model-gateway-python** | Python | 模型统一网关 | 厂商适配/路由/弹性/格式标准化/流式 |
 | **tool-bus-java** | Java | 工具总线 | 注册/校验/执行代理/结果规范化 |
-| **risk-java** | Java | 风控服务 | 规则引擎/行为检测/动态策略/拦截记录 |
-| **approval-java** | Java | 审批服务 | 审批流/通知推送/结果持久化/恢复触发 |
+| **governance-java** | Java | 风控+审批（MVP合并） | 规则引擎/行为检测/审批流/通知推送/恢复触发 |
 | **knowledge-python** | Python | 知识库服务 | 文档处理/向量化/检索/重排/权限 |
 
 ## 6. 模型分工矩阵

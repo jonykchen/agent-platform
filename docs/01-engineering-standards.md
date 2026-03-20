@@ -49,8 +49,7 @@ build: build-java build-python
 build-java:
 	cd services/gateway-java && ./mvnw package -DskipTests -q
 	cd services/tool-bus-java && ./mvnw package -DskipTests -q
-	cd services/risk-java && ./mvnw package -DskipTests -q
-	cd services/approval-java && ./mvnw package -DskipTests -q
+	cd services/governance-java && ./mvnw package -DskipTests -q
 
 build-python:
 	cd services/orchestrator-python && uv sync --quiet && uv build

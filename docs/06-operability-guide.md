@@ -883,8 +883,7 @@ class KubernetesServiceDiscovery:
             "orchestrator": 8000,
             "model-gateway": 8001,
             "tool-bus": 50051,
-            "risk": 50052,
-            "approval": 50053,
+            "governance": 50052,
             "knowledge": 8081,
         }
         
