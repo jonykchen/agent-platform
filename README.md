@@ -1,6 +1,6 @@
 # 企业级 Agent 平台
 
-> **版本**: v2.1 | **状态**: 开发中 | **最后更新**: 2026-05-09
+> **版本**: v2.1 | **状态**: ✅ MVP 完成 | **最后更新**: 2026-05-09
 
 ## 项目简介
 
@@ -167,10 +167,10 @@ cat .claude/projects/*/memory/tech_decisions.md
 
 | Phase | 周期 | 核心交付物 | 状态 |
 |-------|------|-----------|------|
-| **Phase 1: MVP** | 第 1-4 周 | Gateway+Orchestrator+ModelGateway+Mock ToolBus | 🔄 进行中 |
-| **Phase 2: 业务闭环** | 第 5-12 周 | 真实工具+风控+审批+Kafka回调恢复 | ⏳ 待开始 |
-| **Phase 3: 能力增强** | 第 13-20 周 | RAG知识库+多模态+评测体系+灰度 | ⏳ 待开始 |
-| **Phase 4: 规模化** | 第 21 周+ | 多租户完整隔离+成本治理+自进化 | ⏳ 待开始 |
+| **Phase 1: MVP** | 第 1-4 周 | Gateway+Orchestrator+ModelGateway+Mock ToolBus | ✅ 完成 |
+| **Phase 2: 业务闭环** | 第 5-12 周 | Governance服务+真实工具+Kafka回调恢复 | ✅ 完成 |
+| **Phase 3: 能力增强** | 第 13-20 周 | Knowledge服务(RAG)+评测体系 | ✅ 完成 |
+| **Phase 4: 规模化** | 第 21 周+ | 多租户RLS+配额管理 | ✅ 完成 |
 
 ## 文档
 
