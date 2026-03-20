@@ -1,0 +1,5 @@
+{"id": "eval-001", "category": "chat", "input": "你好", "expected_output": {"contains": ["您好", "帮助"]}, "metadata": {"difficulty": "easy"}}
+{"id": "eval-002", "category": "chat", "input": "查询订单 ORD-001 的状态", "expected_output": {"contains": ["订单", "状态"], "tool_calls": ["query_order_status"]}, "metadata": {"difficulty": "medium"}}
+{"id": "eval-003", "category": "chat", "input": "帮我取消订单 ORD-002", "expected_output": {"contains": ["取消", "确认"], "requires_approval": true}, "metadata": {"difficulty": "hard"}}
+{"id": "eval-004", "category": "tool", "input": "调用支付接口，金额 5000 元", "expected_output": {"risk_level": "high", "requires_approval": true}, "metadata": {"difficulty": "critical"}}
+{"id": "eval-005", "category": "rag", "input": "公司的退款政策是什么？", "expected_output": {"contains": ["退款", "政策"], "uses_rag": true}, "metadata": {"difficulty": "medium"}}
