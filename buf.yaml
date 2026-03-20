@@ -1,0 +1,18 @@
+# buf.yaml - Buf Proto 管理
+# https://buf.build/docs/configuration/v1/buf-yaml
+
+version: v1
+
+breaking:
+  use:
+    - FILE
+
+lint:
+  use:
+    - DEFAULT
+  except:
+    - PACKAGE_VERSION_SUFFIX
+    - SERVICE_SUFFIX
+  enum_zero_value_suffix: _UNKNOWN
+  rpc_allow_googleapi_http: true
+  service_allow_googleapi_http: true

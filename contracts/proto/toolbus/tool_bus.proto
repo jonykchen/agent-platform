@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+package toolbus;
+
+option java_package = "com.platform.toolbus";
+option java_multiple_files = true;
+
+import "common/error_code.proto";
+
+// ============================================================
+//  Orchestrator → ToolBus gRPC 接口定义
+//  对应文档: 02-communication-contracts.md §3.2
+// ============================================================
+
+// ToolBusService - 工具总线服务
+service ToolBusService {
+  // 调用工具
+  rpc ExecuteTool(ToolExecuteRequest) returns (ToolExecuteResponse);
+
+  // 批量调用工具（并行）
+  rpc ExecuteToolsBatch(ToolsBatchRequest) returns (ToolsBatchResponse);
+
+  // 查询工具列表
+  rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
+
+  // 查询工具详情
+  rpc GetToolInfo(GetToolInfoRequest) returns (GetToolInfoResponse);
+
+  // 验证工具参数
+  rpc ValidateToolInput(ValidateToolInputRequest) returns (ValidateToolInputResponse);
+}
+
+// ====== 请求上下文 ======
+
+// RequestContext - 请求上下文
+message RequestContext {
+  string request_id = 1;
+  string tenant_id = 2;
+  string user_id = 3;
+  string trace_id = 4;
+  string run_id = 5;               // Agent 运行 ID
+  string session_id = 6;
+}
+
+// ====== 工具执行 ======
+
+// ToolExecuteRequest - 工具执行请求
+message ToolExecuteRequest {
+  RequestContext context = 1;
+
+  string tool_name = 2;            // 工具名称
+  string tool_version = 3;         // 工具版本（默认 latest）
+  string arguments_json = 4;       // 工具参数（JSON 字串）
+
+  // 执行控制
+  int32 timeout_ms = 5;            // 超时时间（毫秒）
+  bool skip_risk_check = 6;        // 跳过风控检查（仅测试环境）
+  bool skip_approval = 7;          // 跳过审批（仅测试环境）
+
+  // 缓存控制
+  bool use_cache = 8;              // 是否使用缓存（只读工具）
+  string cache_key = 9;            // 自定义缓存键
+}
+
+// ToolExecuteResponse - 工具执行响应
+message ToolExecuteResponse {
+  RequestContext context = 1;
+
+  string call_id = 2;              // 调用 ID
+
+  // 执行状态
+  string status = 3;               // pending / success / failed / rejected / pending_approval / timeout
+
+  // 执行结果
+  string result_json = 4;          // 结果（JSON 字串）
+
+  // 审批信息（如需要）
+  string approval_id = 5;          // 审批任务 ID
+  string approval_status = 6;      // 审批状态
+  string approval_reason = 7;      // 需要审批的原因
+
+  // 风控信息
+  string risk_level = 8;           // 风险等级：low / medium / high / critical
+  string risk_reason = 9;          // 风控原因（如有）
+
+  // 缓存信息
+  bool was_cached = 10;            // 是否命中缓存
+
+  // 性能统计
+  int32 duration_ms = 11;          // 执行耗时
+  int32 provider_latency_ms = 12;  // 实际调用耗时
+
+  common.ErrorDetail error = 13;   // 错误信息
+}
+
+// ====== 批量执行 ======
+
+// ToolsBatchRequest - 批量工具执行请求
+message ToolsBatchRequest {
+  RequestContext context = 1;
+  repeated ToolExecuteRequest tools = 2;  // 工具列表
+  bool parallel = 3;               // 是否并行执行
+}
+
+// ToolsBatchResponse - 批量工具执行响应
+message ToolsBatchResponse {
+  RequestContext context = 1;
+  repeated ToolExecuteResponse results = 2;  // 结果列表
+  int32 total_duration_ms = 3;     // 总耗时
+}
+
+// ====== 工具列表 ======
+
+// ListToolsRequest - 查询工具列表请求
+message ListToolsRequest {
+  RequestContext context = 1;
+
+  string category = 2;             // 分类筛选：query / write / external
+  string status = 3;               // 状态筛选：active / deprecated
+  bool include_deprecated = 4;     // 包含已废弃工具
+
+  int32 page_size = 5;             // 分页大小
+  string page_token = 6;           // 分页令牌
+}
+
+// ToolInfo - 工具信息
+message ToolInfo {
+  string name = 1;
+  string version = 2;
+  string category = 3;             // query / write / external
+  string description = 4;
+  string input_schema_json = 5;    // 输入 Schema（JSON）
+  string output_schema_json = 6;   // 输出 Schema（JSON）
+  string risk_level = 7;           // 风险等级
+  bool requires_approval = 8;      // 是否需要审批
+  string approval_condition = 9;   // 审批触发条件（JSON）
+  bool is_deprecated = 10;         // 是否已废弃
+  string deprecated_message = 11;  // 废弃提示
+  int64 created_at = 12;
+  int64 updated_at = 13;
+}
+
+// ListToolsResponse - 查询工具列表响应
+message ListToolsResponse {
+  RequestContext context = 1;
+
+  repeated ToolInfo tools = 2;
+  string next_page_token = 3;
+  int32 total_count = 4;
+}
+
+// ====== 工具详情 ======
+
+// GetToolInfoRequest - 查询工具详情请求
+message GetToolInfoRequest {
+  RequestContext context = 1;
+  string tool_name = 2;
+  string tool_version = 3;         // 可选，默认 latest
+}
+
+// GetToolInfoResponse - 查询工具详情响应
+message GetToolInfoResponse {
+  RequestContext context = 1;
+  ToolInfo tool = 2;
+  common.ErrorDetail error = 3;    // 错误信息
+}
+
+// ====== 参数校验 ======
+
+// ValidateToolInputRequest - 参数校验请求
+message ValidateToolInputRequest {
+  RequestContext context = 1;
+  string tool_name = 2;
+  string tool_version = 3;
+  string arguments_json = 4;       // 待校验参数
+}
+
+// ValidateToolInputResponse - 参数校验响应
+message ValidateToolInputResponse {
+  RequestContext context = 1;
+
+  bool valid = 2;                  // 是否有效
+  repeated ValidationError errors = 3;  // 校验错误列表
+  common.ErrorDetail error = 4;    // 其他错误
+}
+
+// ValidationError - 校验错误
+message ValidationError {
+  string field = 1;                // 错误字段
+  string message = 2;              // 错误消息
+  string code = 3;                 // 错误码
+}

@@ -1,0 +1,10 @@
+# Tool versions for asdf/mise
+# Install tools: mise install or asdf install
+
+python 3.12.0
+java temurin-21.0.2+13.0.0
+node 20.11.0
+buf 1.33.0
+golangci-lint 1.56.0
+docker 24.0.7
+docker-compose 2.23.0

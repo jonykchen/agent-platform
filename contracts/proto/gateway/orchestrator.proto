@@ -1,0 +1,256 @@
+syntax = "proto3";
+
+package gateway;
+
+option java_package = "com.platform.gateway";
+option java_multiple_files = true;
+
+import "common/error_code.proto";
+
+// ============================================================
+//  Gateway → Orchestrator gRPC 接口定义
+//  对应文档: 02-communication-contracts.md §3.1
+//  ADR-003: 统一用 gRPC（MVP 阶段即使用）
+// ============================================================
+
+// OrchestratorService - Agent 编排服务
+service OrchestratorService {
+  // 对话补全 - 支持流式和非流式
+  rpc ChatCompletion(ChatRequest) returns (ChatResponse);
+
+  // 流式对话补全 - SSE 格式
+  rpc StreamChatCompletion(ChatRequest) returns (stream ChatStreamChunk);
+
+  // Agent 任务执行
+  rpc ExecuteAgent(AgentRunRequest) returns (AgentRunResponse);
+
+  // 查询会话信息
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+
+  // 查询运行状态
+  rpc GetRunStatus(GetRunStatusRequest) returns (GetRunStatusResponse);
+
+  // 取消运行
+  rpc CancelRun(CancelRunRequest) returns (CancelRunResponse);
+}
+
+// ====== 请求上下文 ======
+
+// RequestContext - 请求上下文信息
+message RequestContext {
+  string request_id = 1;       // UUID v7，全链路唯一
+  string tenant_id = 2;        // 租户 ID
+  string user_id = 3;          // 用户 ID
+  string trace_id = 4;         // OpenTelemetry Trace ID
+  string session_id = 5;       // 会话 ID（可选）
+  string channel = 6;          // 来源渠道
+  map<string, string> extra = 7;  // 扩展字段
+}
+
+// ====== 对话请求 ======
+
+// ChatRequest - 对话请求
+message ChatRequest {
+  RequestContext context = 1;
+
+  // 消息内容
+  string message = 2;              // 用户输入消息
+  repeated Message history = 3;    // 对话历史
+
+  // 配置
+  string model = 4;                // 指定模型（可选）
+  float temperature = 5;           // 温度参数
+  int32 max_tokens = 6;            // 最大 token 数
+  repeated string stop = 7;        // 停止词
+
+  // 功能开关
+  bool enable_rag = 8;             // 是否启用 RAG
+  bool enable_tools = 9;           // 是否启用工具
+  repeated string tool_whitelist = 10;  // 工具白名单
+
+  // 流式控制
+  bool stream = 11;                // 是否流式输出
+}
+
+// Message - 对话消息
+message Message {
+  string role = 1;    // user / assistant / system
+  string content = 2; // 消息内容
+  string name = 3;    // 名称（可选）
+}
+
+// ====== 对话响应 ======
+
+// ChatResponse - 对话响应
+message ChatResponse {
+  RequestContext context = 1;
+
+  string response = 2;             // AI 响应内容
+  string model_used = 3;           // 实际使用的模型
+  int32 prompt_tokens = 4;         // 输入 token 数
+  int32 completion_tokens = 5;     // 输出 token 数
+  int32 total_tokens = 6;          // 总 token 数
+  float cost_usd = 7;              // 成本（美元）
+
+  // 工具调用信息
+  repeated ToolCall tool_calls = 8;
+
+  // 元信息
+  int64 created_at = 9;            // 创建时间戳
+  int32 latency_ms = 10;           // 耗时（毫秒）
+
+  // 状态
+  string finish_reason = 11;       // stop / tool_call / length / error
+  common.ErrorDetail error = 12;   // 错误信息（如有）
+}
+
+// ChatStreamChunk - 流式响应块
+message ChatStreamChunk {
+  RequestContext context = 1;
+
+  string chunk_id = 2;             // 响应块 ID
+  int32 chunk_index = 3;           // 响应块序号
+  string delta = 4;                // 响应增量内容
+  string finish_reason = 5;        // 完成原因（最后一个块）
+  common.ErrorDetail error = 6;    // 错误信息
+}
+
+// ====== Agent 任务 ======
+
+// AgentRunRequest - Agent 任务执行请求
+message AgentRunRequest {
+  RequestContext context = 1;
+
+  string session_id = 2;           // 会话 ID
+  string agent_id = 3;             // Agent 配置 ID（可选）
+  string task = 4;                 // 任务描述
+  map<string, string> parameters = 5;  // 任务参数
+
+  // 配置
+  string execution_mode = 6;       // react / plan_execute / multi_agent
+  int32 max_steps = 7;             // 最大步骤数
+  int32 timeout_seconds = 8;       // 超时时间
+}
+
+// AgentRunResponse - Agent 任务执行响应
+message AgentRunResponse {
+  RequestContext context = 1;
+
+  string run_id = 2;               // 运行实例 ID
+  string session_id = 3;           // 会话 ID
+  string status = 4;               // running / completed / failed / cancelled / pending_approval
+
+  string result = 5;               // 最终结果
+  repeated AgentStep steps = 6;    // 执行步骤
+
+  // 统计
+  int32 total_steps = 7;           // 总步骤数
+  int32 total_tokens = 8;          // 总 token 数
+  float cost_usd = 9;              // 总成本
+  int32 duration_ms = 10;          // 总耗时
+
+  common.ErrorDetail error = 11;   // 错误信息
+}
+
+// AgentStep - Agent 执行步骤
+message AgentStep {
+  string step_id = 1;
+  int32 step_order = 2;
+  string step_type = 3;            // thinking / tool_call / observation / final_answer
+
+  string content = 4;              // 步骤内容
+  string thinking = 5;             // CoT 思考过程
+
+  // 工具调用详情
+  ToolCall tool_call = 6;
+  ToolResult tool_result = 7;
+
+  int64 created_at = 8;
+  int32 duration_ms = 9;
+}
+
+// ====== 工具调用 ======
+
+// ToolCall - 工具调用请求
+message ToolCall {
+  string call_id = 1;              // 调用 ID
+  string tool_name = 2;            // 工具名称
+  string tool_version = 3;         // 工具版本
+  string arguments_json = 4;       // 工具参数（JSON 字串）
+}
+
+// ToolResult - 工具调用结果
+message ToolResult {
+  string call_id = 1;
+  string status = 2;               // success / failed / rejected / pending_approval
+  string result_json = 3;          // 结果（JSON 字串）
+  string approval_id = 4;          // 审批 ID（如需要审批）
+  common.ErrorDetail error = 5;    // 错误信息
+}
+
+// ====== 会话查询 ======
+
+// GetSessionRequest
+message GetSessionRequest {
+  RequestContext context = 1;
+  string session_id = 2;
+}
+
+// GetSessionResponse
+message GetSessionResponse {
+  RequestContext context = 1;
+
+  string session_id = 2;
+  string user_id = 3;
+  string title = 4;
+  string status = 5;               // active / archived / closed
+  int32 run_count = 6;             // 运行次数
+  int64 created_at = 7;
+  int64 updated_at = 8;
+  int64 closed_at = 9;
+}
+
+// ====== 运行状态查询 ======
+
+// GetRunStatusRequest
+message GetRunStatusRequest {
+  RequestContext context = 1;
+  string run_id = 2;
+}
+
+// GetRunStatusResponse
+message GetRunStatusResponse {
+  RequestContext context = 1;
+
+  string run_id = 2;
+  string session_id = 3;
+  string status = 4;
+  string current_step = 5;         // 当前步骤描述
+  int32 completed_steps = 6;       // 已完成步骤数
+  int32 total_steps = 7;           // 预计总步骤数
+  int64 started_at = 8;
+  int64 updated_at = 9;
+
+  // 如在等待审批
+  string approval_id = 10;         // 审批 ID
+  string approval_status = 11;     // 审批状态
+}
+
+// ====== 取消运行 ======
+
+// CancelRunRequest
+message CancelRunRequest {
+  RequestContext context = 1;
+  string run_id = 2;
+  string reason = 3;               // 取消原因
+}
+
+// CancelRunResponse
+message CancelRunResponse {
+  RequestContext context = 1;
+
+  string run_id = 2;
+  bool cancelled = 3;
+  string status = 4;               // 当前状态
+  common.ErrorDetail error = 5;    // 错误信息
+}

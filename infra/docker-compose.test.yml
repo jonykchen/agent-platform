@@ -1,0 +1,61 @@
+# ============================================================
+#  Agent Platform - Docker Compose 测试环境
+#  用法: docker compose -f infra/docker-compose.test.yml up -d
+# ============================================================
+
+services:
+  # ====== PostgreSQL 16 + pgvector (测试) ======
+  postgres-test:
+    image: pgvector/pgvector:pg16
+    container_name: agent-postgres-test
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: agent_platform_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d agent_platform_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - agent-test-network
+
+  # ====== Redis 7 (测试) ======
+  redis-test:
+    image: redis:7-alpine
+    container_name: agent-redis-test
+    command: redis-server --appendonly no
+    ports:
+      - "6380:6379"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - agent-test-network
+
+  # ====== MinIO (测试) ======
+  minio-test:
+    image: minio/minio:latest
+    container_name: agent-minio-test
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: test_minioadmin
+      MINIO_ROOT_PASSWORD: test_minioadmin123
+    ports:
+      - "9002:9000"
+    tmpfs:
+      - /data
+    networks:
+      - agent-test-network
+
+networks:
+  agent-test-network:
+    driver: bridge

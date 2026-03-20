@@ -1,0 +1,248 @@
+syntax = "proto3";
+
+package model;
+
+option java_package = "com.platform.model";
+option java_multiple_files = true;
+
+import "common/error_code.proto";
+
+// ============================================================
+//  Orchestrator → Model Gateway gRPC 接口定义
+//  对应文档: 02-communication-contracts.md §3.3
+// ============================================================
+
+// ModelGatewayService - 模型网关服务
+service ModelGatewayService {
+  // 对话补全
+  rpc ChatCompletion(ChatRequest) returns (ChatResponse);
+
+  // 流式对话补全
+  rpc StreamChatCompletion(ChatRequest) returns (stream ChatStreamChunk);
+
+  // 模型列表查询
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+
+  // Token 配额查询
+  rpc GetTokenQuota(GetTokenQuotaRequest) returns (GetTokenQuotaResponse);
+}
+
+// ====== 请求上下文 ======
+
+message RequestContext {
+  string request_id = 1;
+  string tenant_id = 2;
+  string user_id = 3;
+  string trace_id = 4;
+  string session_id = 5;
+  string run_id = 6;
+}
+
+// ====== 对话请求 ======
+
+// ChatRequest - 对话请求
+message ChatRequest {
+  RequestContext context = 1;
+
+  // 消息
+  repeated Message messages = 2;   // 对话消息列表
+
+  // 模型选择
+  string model = 3;                // 指定模型（可选）
+  string scene = 4;                // 场景：chat / tool_call / reasoning / multimodal
+  string routing_policy = 5;       // 路由策略（可选）
+
+  // 生成参数
+  float temperature = 6;
+  int32 max_tokens = 7;
+  float top_p = 8;
+  repeated string stop = 9;
+  int32 seed = 10;
+
+  // 结构化输出
+  string response_format = 11;     // text / json_object / json_schema
+  string json_schema = 12;         // JSON Schema（如需结构化输出）
+
+  // 工具调用
+  repeated ToolDefinition tools = 13;
+  string tool_choice = 14;         // auto / none / required / 具体工具名
+
+  // 流式控制
+  bool stream = 15;
+
+  // 功能标记
+  bool enable_caching = 16;        // 启用 Prompt Caching
+}
+
+// Message - 对话消息
+message Message {
+  string role = 1;                 // system / user / assistant / tool
+  string content = 2;
+  repeated ContentPart parts = 3;  // 多模态内容（可选）
+
+  // 工具调用信息
+  repeated ToolCallResult tool_calls = 4;  // assistant 调用工具
+  string tool_call_id = 5;         // tool 角色时，对应的调用 ID
+}
+
+// ContentPart - 多模态内容部分
+message ContentPart {
+  string type = 1;                 // text / image_url / image_base64
+  string text = 2;                 // 文本内容
+  string image_url = 3;            // 图片 URL
+  string image_base64 = 4;         // 图片 Base64
+  string media_type = 5;           // image/jpeg / image/png
+}
+
+// ToolDefinition - 工具定义
+message ToolDefinition {
+  string type = 1;                 // function
+  string name = 2;
+  string description = 3;
+  string parameters_schema = 4;    // JSON Schema 格式
+}
+
+// ToolCallResult - 工具调用结果
+message ToolCallResult {
+  string call_id = 1;
+  string type = 2;                 // function
+  string name = 3;
+  string arguments = 4;            // JSON 字串
+}
+
+// ====== 对话响应 ======
+
+// ChatResponse - 对话响应
+message ChatResponse {
+  RequestContext context = 1;
+
+  string response_id = 2;          // 响应 ID
+
+  // 响应内容
+  string content = 3;
+  repeated ContentPart parts = 4;  // 多模态响应
+
+  // 工具调用
+  repeated ToolCallResult tool_calls = 5;
+
+  // 模型信息
+  string model_used = 6;           // 实际使用的模型
+  string provider = 7;             // 提供商：qwen / glm / kimi / deepseek
+
+  // Token 统计
+  int32 prompt_tokens = 8;
+  int32 completion_tokens = 9;
+  int32 total_tokens = 10;
+  int32 cached_tokens = 11;        // 缓存的 Prompt Tokens
+
+  // 成本
+  float cost_usd = 12;
+
+  // 元信息
+  string finish_reason = 13;       // stop / tool_call / length / content_filter / error
+  int32 latency_ms = 14;
+  int64 created_at = 15;
+
+  common.ErrorDetail error = 16;
+}
+
+// ChatStreamChunk - 流式响应块
+message ChatStreamChunk {
+  RequestContext context = 1;
+
+  string response_id = 2;
+  int32 chunk_index = 3;
+
+  // 增量内容
+  string delta = 4;
+  repeated ToolCallResult tool_call_deltas = 5;
+
+  // 状态
+  string finish_reason = 6;
+
+  // Token 统计（最后一个块）
+  int32 prompt_tokens = 7;
+  int32 completion_tokens = 8;
+  int32 total_tokens = 9;
+
+  common.ErrorDetail error = 10;
+}
+
+// ====== 模型列表 ======
+
+// ListModelsRequest
+message ListModelsRequest {
+  RequestContext context = 1;
+  string provider = 2;             // 筛选提供商（可选）
+  bool include_inactive = 3;       // 包含不可用模型
+}
+
+// ModelInfo - 模型信息
+message ModelInfo {
+  string model_id = 1;             // 模型 ID（如 qwen-max）
+  string provider = 2;             // 提供商
+  string display_name = 3;         // 显示名称
+  string description = 4;
+
+  // 能力标记
+  bool supports_tool_call = 5;
+  bool supports_vision = 6;
+  bool supports_streaming = 7;
+  bool supports_json_output = 8;
+
+  // 限制
+  int32 max_context_tokens = 9;
+  int32 max_output_tokens = 10;
+
+  // 状态
+  string status = 11;              // active / inactive / deprecated
+  bool is_available = 12;          // 当前是否可用
+
+  // 定价（每 1000 tokens）
+  float input_price_per_1k = 13;
+  float output_price_per_1k = 14;
+  float cached_price_per_1k = 15;  // 缓存价格
+
+  int64 updated_at = 16;
+}
+
+// ListModelsResponse
+message ListModelsResponse {
+  RequestContext context = 1;
+  repeated ModelInfo models = 2;
+  int32 total_count = 3;
+}
+
+// ====== Token 配额 ======
+
+// GetTokenQuotaRequest
+message GetTokenQuotaRequest {
+  RequestContext context = 1;
+  QuotaLevel level = 2;            // 配额层级
+  string target_id = 3;            // 目标 ID（用户/租户）
+}
+
+// QuotaLevel - 配额层级
+enum QuotaLevel {
+  QUOTA_LEVEL_UNSPECIFIED = 0;
+  QUOTA_LEVEL_SESSION = 1;         // 单会话
+  QUOTA_LEVEL_USER = 2;            // 用户日预算
+  QUOTA_LEVEL_TENANT = 3;          // 租户日预算
+  QUOTA_LEVEL_GLOBAL = 4;          // 全局日预算
+}
+
+// GetTokenQuotaResponse
+message GetTokenQuotaResponse {
+  RequestContext context = 1;
+
+  int64 budget = 2;                // 预算总量
+  int64 used = 3;                  // 已使用量
+  int64 remaining = 4;             // 剩余额度
+  float usage_percentage = 5;      // 使用百分比
+
+  bool exceeded = 6;               // 是否超出
+  string exceeded_action = 7;      // 超出策略：reject / degrade / warn
+
+  int64 reset_at = 8;              // 重置时间
+  int64 updated_at = 9;
+}
