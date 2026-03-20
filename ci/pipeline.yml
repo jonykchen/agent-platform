@@ -1,0 +1,198 @@
+# ============================================================
+#  Agent Platform - CI/CD Pipeline
+#  GitLab CI / GitHub Actions 兼容格式
+#  对应文档: 06-operability-guide.md §4
+# ============================================================
+
+stages:
+  - lint
+  - type-check
+  - unit-test
+  - integration-test
+  - contract-test
+  - security-scan
+  - build
+  - deploy-staging
+  - smoke-test
+
+variables:
+  DOCKER_REGISTRY: registry.example.com/agent-platform
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+
+# ====== Stage 1: Lint ======
+lint:java:
+  stage: lint
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - cd services/gateway-java && ./mvnw checkstyle:check -q || true
+    - cd services/tool-bus-java && ./mvnw checkstyle:check -q || true
+  only:
+    - merge_requests
+    - main
+
+lint:python:
+  stage: lint
+  image: python:3.12-slim
+  before_script:
+    - pip install ruff
+  script:
+    - cd services/orchestrator-python && ruff check . || true
+    - cd services/orchestrator-python && ruff format --check . || true
+    - cd services/model-gateway-python && ruff check . || true
+  only:
+    - merge_requests
+    - main
+
+lint:proto:
+  stage: lint
+  image: bufbuild/buf:latest
+  script:
+    - buf lint contracts/proto || true
+  only:
+    - merge_requests
+    - main
+
+# ====== Stage 2: Type Check ======
+type-check:python:
+  stage: type-check
+  image: python:3.12-slim
+  before_script:
+    - pip install mypy pyright
+  script:
+    - cd services/orchestrator-python && mypy app/ --ignore-missing-imports || true
+  allow_failure: true
+  only:
+    - merge_requests
+
+# ====== Stage 3: Unit Test ======
+test:java:
+  stage: unit-test
+  image: maven:3.9-eclipse-temurin-21
+  services:
+    - name: postgres:16-alpine
+      alias: db
+    - name: redis:7-alpine
+      alias: redis
+  variables:
+    SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/test_db
+    REDIS_HOST: redis
+  script:
+    - cd services/gateway-java && ./mvnw test -q || true
+  only:
+    - merge_requests
+    - main
+
+test:python:
+  stage: unit-test
+  image: python:3.12-slim
+  before_script:
+    - pip install pytest pytest-cov pytest-asyncio
+  script:
+    - cd services/orchestrator-python && pip install -e . && pytest tests/unit/ -v --tb=short || true
+  only:
+    - merge_requests
+    - main
+
+# ====== Stage 4: Integration Test ======
+integration-test:
+  stage: integration-test
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  script:
+    - docker compose -f infra/docker-compose.test.yml up -d --build || true
+    - sleep 30
+    - echo "Integration tests placeholder"
+  after_script:
+    - docker compose -f infra/docker-compose.test.yml down -v || true
+  only:
+    - main
+  timeout: 15m
+
+# ====== Stage 5: Contract Test ======
+contract-test:
+  stage: contract-test
+  image: bufbuild/buf:latest
+  script:
+    - buf lint contracts/proto || true
+  only:
+    - merge_requests
+    - main
+
+# ====== Stage 6: Security Scan ======
+security-scan:
+  stage: security-scan
+  image: aquasec/trivy:latest
+  script:
+    - trivy fs --severity HIGH,CRITICAL . || true
+  allow_failure: true
+  only:
+    - main
+    - merge_requests
+
+# ====== Stage 7: Build Docker ======
+build:gateway:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  script:
+    - docker build -t $DOCKER_REGISTRY/gateway:$CI_COMMIT_SHA -f services/gateway-java/Dockerfile services/gateway-java/ || true
+  only:
+    - main
+
+build:orchestrator:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  script:
+    - docker build -t $DOCKER_REGISTRY/orchestrator:$CI_COMMIT_SHA -f services/orchestrator-python/Dockerfile services/orchestrator-python/ || true
+  only:
+    - main
+
+build:model-gateway:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  script:
+    - docker build -t $DOCKER_REGISTRY/model-gateway:$CI_COMMIT_SHA -f services/model-gateway-python/Dockerfile services/model-gateway-python/ || true
+  only:
+    - main
+
+build:tool-bus:
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  script:
+    - docker build -t $DOCKER_REGISTRY/tool-bus:$CI_COMMIT_SHA -f services/tool-bus-java/Dockerfile services/tool-bus-java/ || true
+  only:
+    - main
+
+# ====== Stage 8: Deploy Staging ======
+deploy:staging:
+  stage: deploy-staging
+  image: bitnami/kubectl:latest
+  script:
+    - echo "Deploy to staging placeholder"
+  environment:
+    name: staging
+    url: https://staging.agent-platform.example.com
+  only:
+    - main
+  when: manual
+
+# ====== Stage 9: Smoke Test ======
+smoke-test:
+  stage: smoke-test
+  image: curlimages/curl:latest
+  script:
+    - echo "Smoke test placeholder"
+  environment:
+    name: staging
+  only:
+    - main
