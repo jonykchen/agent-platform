@@ -1,0 +1,21 @@
+server:
+  port: 50051
+
+spring:
+  application:
+    name: tool-bus-java
+
+grpc:
+  server:
+    port: 50051
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    root: INFO
+    com.platform: DEBUG
