@@ -13,40 +13,104 @@
 - **模型治理**: 多模型接入、替换、灰度发布、成本控制
 - **企业集成**: 与现有 Java 核心业务系统平滑集成
 
-## 架构概览
+## 快速开始
+
+### 环境要求
+
+| 工具 | 版本 | 说明 |
+|------|------|------|
+| Python | 3.12+ | Agent 编排 |
+| Java | 21+ | 核心服务 |
+| Docker | 最新 | 基础设施 |
+| Git | 最新 | 版本控制 |
+
+### 一键设置
+
+**macOS / Linux / WSL:**
+```bash
+git clone <repository-url>
+cd agent-platform
+./scripts/setup.sh
+```
+
+**Windows (CMD):**
+```cmd
+git clone <repository-url>
+cd agent-platform
+scripts\setup.bat
+```
+
+### 启动开发环境
+
+**macOS / Linux:**
+```bash
+make dev
+# 或
+docker compose -f infra/docker-compose.yml up -d
+```
+
+**Windows:**
+```cmd
+scripts\dev.bat
+```
+
+### 验证服务
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| PostgreSQL | localhost:5432 | user: app_user, db: agent_platform |
+| Redis | localhost:6379 | 无密码 |
+| MinIO | http://localhost:9000 | user: minioadmin |
+| Grafana | http://localhost:3000 | user: admin |
+
+### 构建与测试
+
+**所有平台:**
+```bash
+# 使用 Make (需要安装)
+make ci
+
+# 或直接运行
+# Python 测试
+cd services/orchestrator-python && uv run pytest tests/ -v
+
+# Lint 检查
+ruff check .
+```
+
+## 项目结构
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        客户端层                                      │
-│              Web / App / OpenAPI / 第三方集成                        │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │ HTTP / WebSocket
-                           ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Gateway Service (Java)                            │
-│         统一API入口 │ 鉴权 │ 限流 │ 租户 │ 请求追踪                   │
-└──────┬──────────────────────┬────────────────────────────────┘
-       │ 同步gRPC             │ 审计事件/异步通知
-       ▼                      ▼
-┌──────────────────┐    ┌───────────────────────────┐
-│ Orchestrator(Python)│   │           Kafka             │
-│ Agent状态机编排     │   │  异步/通知/回放             │
-│ 会话记忆/RAG      │   └───────────────────────────┘
-│ 任务分解/决策     │                │
-└────────┬─────────┘                │
-         │                          │
-    同步HTTP  同步gRPC               │
-         │       │                  │
-         ▼       ▼                  │
-┌─────────────────┐ ┌────────────┐  │
-│ Model Gateway   │ │Tool Bus(J) │◄─┘
-│ (Python)        │ │            │
-│ 模型路由/超时    │ │Risk Svc    │
-│ 重试/Fallback    │ │Approval Svc│
-└─────────────────┘ └────────────┘
-
-数据层: PostgreSQL │ Redis │ pgvector │ MinIO
-观测层: OpenTelemetry │ Prometheus │ Grafana
+agent-platform/
+├── CLAUDE.md               # Claude 项目配置
+├── .claude/                # Claude 配置目录
+│   ├── settings.json       # 权限与自动化配置
+│   ├── workflows.md        # 开发流程指南
+│   └── projects/           # Memory 系统
+├── docs/                   # 技术方案文档
+├── contracts/              # 契约定义
+│   ├── openapi/           # REST API
+│   ├── proto/             # gRPC 接口
+│   └── tool-schema/       # 工具定义
+├── services/              # 微服务实现
+│   ├── gateway-java/      # API 网关
+│   ├── orchestrator-python/  # Agent 编排
+│   ├── model-gateway-python/ # 模型网关
+│   ├── tool-bus-java/     # 工具总线
+│   ├── governance-java/   # 风控+审批
+│   └── knowledge-python/  # 知识库
+├── shared/                # 共享资产
+│   ├── prompts/           # Prompt 模板
+│   ├── evals/             # 评测集
+│   └── sql/               # 数据库迁移
+├── infra/                 # 基础设施配置
+├── scripts/               # 跨平台脚本
+│   ├── setup.sh           # macOS/Linux 设置
+│   ├── setup.bat          # Windows 设置
+│   ├── dev.bat            # Windows 启动脚本
+│   └── test.bat           # Windows 测试脚本
+├── Makefile               # 统一构建入口
+└── README.md
 ```
 
 ## 技术栈
@@ -63,87 +127,40 @@
 | 对象存储 | MinIO |
 | 观测 | OpenTelemetry + Prometheus + Grafana |
 
-## 快速开始
+## Claude Code 配置
 
-### 环境要求
+本项目已配置 Claude Code 自动化开发环境：
 
-- Python 3.12+
-- Java 21+
-- Docker & Docker Compose
-- Make (可选)
+### 功能清单
 
-### 启动开发环境
+| 功能 | 说明 |
+|------|------|
+| **自动 Lint** | Python 文件保存后自动 ruff fix |
+| **语法检查** | 写入前自动 Python 语法验证 |
+| **安全防护** | 阻止敏感文件读写 |
+| **Memory 系统** | 持久化项目上下文 |
+| **跨平台支持** | macOS/Linux/Windows |
 
-```bash
-# 克隆项目
-git clone <repository-url>
-cd agent-platform
+### 配置文件
 
-# 启动基础设施服务
-make dev
-# 或
-docker compose -f infra/docker-compose.yml up -d
+| 文件 | 用途 |
+|------|------|
+| `CLAUDE.md` | 项目主配置文档 |
+| `.claude/settings.json` | 权限与 Hooks |
+| `.claude/workflows.md` | 开发流程指南 |
+| `.claude/projects/*/memory/` | Memory 文件 |
 
-# 等待服务就绪
-docker compose -f infra/docker-compose.yml ps
-```
-
-### 验证服务
+### 快速命令
 
 ```bash
-# PostgreSQL
-psql -h localhost -U app_user -d agent_platform -c "SELECT version();"
+# 检查配置是否正确
+python -m json.tool .claude/settings.json
 
-# Redis
-redis-cli -a dev_password ping
+# 查看项目阶段
+cat .claude/projects/*/memory/project_phase.md
 
-# MinIO Console
-open http://localhost:9001
-# 用户名: minioadmin, 密码: minioadmin123
-
-# Grafana
-open http://localhost:3000
-# 用户名: admin, 密码: admin
-```
-
-### 构建与测试
-
-```bash
-# 运行所有检查
-make ci
-
-# 或分步执行
-make lint      # 代码风格检查
-make test      # 运行测试
-make build     # 构建所有服务
-```
-
-## 项目结构
-
-```
-agent-platform/
-├── docs/                    # 技术方案文档
-├── contracts/               # 契约定义
-│   ├── openapi/            # REST API 定义
-│   ├── proto/              # gRPC 接口定义
-│   ├── events/             # 事件契约
-│   └── tool-schema/        # 工具定义 Schema
-├── services/               # 微服务实现
-│   ├── gateway-java/       # API 网关
-│   ├── orchestrator-python/# Agent 编排引擎
-│   ├── model-gateway-python/# 模型网关
-│   ├── tool-bus-java/      # 工具总线
-│   ├── governance-java/    # 风控+审批
-│   └── knowledge-python/   # 知识库服务
-├── shared/                 # 共享资产
-│   ├── prompts/           # Prompt 模板
-│   ├── evals/             # 评测集
-│   └── sql/               # 数据库迁移
-├── infra/                  # 基础设施配置
-├── scripts/                # 运维脚本
-├── ci/                     # CI/CD 配置
-├── Makefile               # 统一构建入口
-└── docker-compose.yml     # 开发环境
+# 查看技术决策
+cat .claude/projects/*/memory/tech_decisions.md
 ```
 
 ## 实施路线图
@@ -172,7 +189,8 @@ agent-platform/
 
 ```bash
 # 安装 buf
-brew install bufbuild/buf/buf
+# macOS: brew install bufbuild/buf/buf
+# Windows: scoop install buf
 
 # Lint 检查
 buf lint contracts/proto
@@ -189,9 +207,22 @@ psql -h localhost -U app_user -d agent_platform
 
 # 查看表结构
 \dt
+```
 
-# 查看审计表触发器
-\df+ block_audit_modification
+### Python 服务开发
+
+```bash
+cd services/orchestrator-python
+
+# 安装依赖
+uv sync
+
+# 运行测试
+uv run pytest tests/ -v
+
+# Lint
+uv run ruff check .
+uv run ruff format .
 ```
 
 ## 许可证

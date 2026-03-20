@@ -116,5 +116,14 @@ temp/
 *.temp
 *.bak
 
-# Claude Code
-.claude/
+# Claude Code - 保留项目配置，忽略会话数据
+.claude/transcripts/
+.claude/statsig/
+.claude/statsig-*.json
+.claude/metrics/
+.claude/sessions/
+.claude/tasks/
+# 保留以下文件：
+# .claude/settings.json
+# .claude/settings.local.json
+# .claude/commands.md

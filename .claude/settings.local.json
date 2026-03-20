@@ -1,0 +1,22 @@
+{
+  "$schema": "https://claude.ai/schema/settings.json",
+  "extends": "./settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(jq:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(which:*)",
+      "Bash(python -m json.tool .claude/settings.json)"
+    ]
+  },
+  "env": {
+    "LOG_LEVEL": "DEBUG",
+    "ENVIRONMENT": "development"
+  }
+}
