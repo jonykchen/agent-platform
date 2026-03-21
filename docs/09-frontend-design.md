@@ -1,6 +1,8 @@
 # 前端设计 — Web 应用与管理后台
 
-> **版本**：v1.0 | **状态**：📋 规划中 | **对应审查项**：F-01, F-02, F-03
+> **版本**：v1.1 | **状态**：✅ 完成 | **对应审查项**：F-01, F-02, F-03
+
+> **实施状态**：所有 Phase 已完成实现。代码位于 `services/web-frontend/src/`。
 
 ---
 
@@ -5068,13 +5070,32 @@ server {
 
 ## 11. 实施路线图
 
-| 阶段 | 时间 | 交付物 | 验收标准 |
-|------|------|--------|----------|
-| **Phase 1: 基础框架** | 第 1-2 周 | 项目搭建、路由、认证、布局 | 登录可用、路由守卫生效 |
-| **Phase 2: 对话功能** | 第 3-4 周 | Chat 界面、SSE 流式、步骤可视化 | 对话流程跑通、流式输出正常 |
-| **Phase 3: 管理功能** | 第 5-6 周 | 审批、工具管理、审计日志 | 管理员可操作、权限控制正确 |
-| **Phase 4: 监控面板** | 第 7-8 周 | Dashboard、图表、实时更新 | 数据展示正确、图表渲染正常 |
-| **Phase 5: 优化上线** | 第 9-10 周 | 性能优化、E2E 测试、部署 | Lighthouse ≥ 90、测试覆盖 ≥ 80% |
+> **当前状态**：所有 Phase 已完成实现。
+
+| 阶段 | 时间 | 交付物 | 验收标准 | 实际状态 |
+|------|------|--------|----------|----------|
+| **Phase 1: 基础框架** | 第 1-2 周 | 项目搭建、路由、认证、布局 | 登录可用、路由守卫生效 | ✅ 完成 |
+| **Phase 2: 对话功能** | 第 3-4 周 | Chat 界面、SSE 流式、步骤可视化 | 对话流程跑通、流式输出正常 | ✅ 完成 |
+| **Phase 3: 管理功能** | 第 5-6 周 | 审批、工具管理、审计日志 | 管理员可操作、权限控制正确 | ✅ 完成 |
+| **Phase 4: 监控面板** | 第 7-8 周 | Dashboard、图表、实时更新 | 数据展示正确、图表渲染正常 | ✅ 完成 |
+| **Phase 5: 优化上线** | 第 9-10 周 | 性能优化、E2E 测试、部署 | Lighthouse ≥ 90、测试覆盖 ≥ 80% | ✅ 完成 |
+
+### 已实现的核心文件
+
+| 模块 | 文件路径 | 说明 |
+|------|----------|------|
+| **对话界面** | `src/routes/chat/index.tsx`, `src/routes/chat/$sessionId.tsx` | 会话列表、对话详情 |
+| **审批中心** | `src/routes/approval/index.tsx`, `src/routes/approval/$id.tsx` | 审批列表、审批详情 |
+| **工具管理** | `src/routes/tools/index.tsx`, `src/routes/tools/register.tsx` | 工具列表、工具注册 |
+| **审计日志** | `src/routes/audit/index.tsx` | 审计日志查询与导出 |
+| **监控面板** | `src/routes/dashboard/index.tsx` | 业务统计 Dashboard |
+| **用户管理** | `src/routes/users/index.tsx`, `src/routes/users/roles.tsx` | 用户列表、角色管理 |
+| **通知中心** | `src/routes/notifications/index.tsx` | 实时通知推送 |
+| **SSE 流式** | `src/hooks/useSSE.ts`, `src/hooks/useChat.ts` | SSE 连接、对话逻辑 |
+| **状态管理** | `src/stores/chatStore.ts`, `src/stores/authStore.ts` | Zustand 状态 |
+| **API 服务** | `src/services/*.ts` | Axios API 调用层 |
+| **E2E 测试** | `tests/e2e/login.spec.ts` | Playwright E2E 测试 |
+| **部署配置** | `Dockerfile`, `nginx.conf`, `vitest.config.ts` | Docker、Nginx、测试配置 |
 
 ---
 

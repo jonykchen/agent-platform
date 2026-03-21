@@ -1,13 +1,46 @@
 # 企业级 Agent 平台技术方案文档
 
 > **架构定版**：Python 编排 + Java 核心服务 + 国内 LLM  
-> **版本**：v2.0  
-> **日期**：2026-05-08  
-> **状态**：待评审
+> **版本**：v2.1  
+> **日期**：2026-05-09  
+> **状态**：✅ 已实施
+
+---
+
+## 实施状态摘要
+
+| 服务 | 实现程度 | 核心功能 | 测试状态 |
+|------|----------|----------|----------|
+| **orchestrator-python** | ✅ 完成 | LangGraph 状态机、工具客户端、会话存储、Checkpoint | ✅ 单元+集成 |
+| **model-gateway-python** | ✅ 完成 | 智能路由、Fallback、熔断器、Token 计量、成本计算 | ✅ 单元+集成 |
+| **tool-bus-java** | ✅ 完成 | gRPC 服务端、工具注册、权限校验、Mock 执行 | ✅ 单元测试 |
+| **governance-java** | ✅ 完成 | 风控规则引擎、审批服务、通知服务 | ✅ 单元测试 |
+| **gateway-java** | ✅ 完成 | API 入口、JWT 鉴权、租户隔离、Fast Path | ✅ 单元测试 |
+| **knowledge-python** | ✅ 完成 | 文档处理、混合检索、重排序 | ✅ 单元+集成 |
+| **web-frontend** | ✅ 完成 | 对话界面、审批中心、工具管理、Dashboard | ✅ E2E (Playwright) |
+
+**契约文件**: ✅ OpenAPI、Proto、Events 已定义  
+**Kubernetes**: ✅ 部署配置已创建  
+**Docker**: ✅ 所有服务 Dockerfile 已创建  
+**基础设施**: ✅ docker-compose、prometheus、otel-collector 配置已创建
 
 ---
 
 ## 文档导航
+
+### 快速启动
+
+| 文档 | 内容概要 |
+|---|---|
+| [quick-start.md](./quick-start.md) | **快速启动指南** — 前置要求、一键启动基础设施、各服务启动命令、常见问题 |
+
+### Agent 开发
+
+| 文档 | 内容概要 |
+|---|---|
+| [agent-dev-guide.md](./agent-dev-guide.md) | **Agent 开发指南** — 新人上手，包含核心概念、代码结构、节点开发、工具开发、测试指南 |
+
+### 技术方案
 
 | 序号 | 文档 | 内容概要 | 状态 |
 |---|---|---|---|
@@ -20,6 +53,7 @@
 | 6 | [06-operability-guide.md](./06-operability-guide.md) | 运维指南：配置管理/FeatureFlag/CI-CD/GracefulShutdown/服务发现 | ✅ 完成 |
 | 7 | [07-scalability-patterns.md](./07-scalability-patterns.md) | 扩展性：多租户架构/Provider抽象/工具动态注册/水平扩展/契约测试 | ✅ 完成 |
 | 8 | [08-main-technical-design.md](./08-main-technical-design.md) | **主技术方案**（原 v1.0 完整内容，含所有章节） | ✅ 完成 |
+| 9 | [09-frontend-design.md](./09-frontend-design.md) | **前端设计**：对话界面、审批中心、工具管理、Dashboard | ✅ 完成 |
 
 ---
 
@@ -61,3 +95,4 @@
 |---|---|---|
 | v1.0 | 2026-05-08 | 初版，基于技术讨论输出完整单文件方案（3517行） |
 | v2.0 | 2026-05-08 | 拆分为 9 个专题文件，补充 26 项生产级工程细节 |
+| v2.1 | 2026-05-09 | 新增前端设计文档（09-frontend-design.md），所有服务实现完成，状态更新为已实施 |
