@@ -13,6 +13,9 @@ export interface User {
 /** 角色 */
 export type Role = 'admin' | 'operator' | 'viewer';
 
+/** 权限字符串 */
+export type Permission = string;
+
 /** 租户信息 */
 export interface Tenant {
   id: string;
