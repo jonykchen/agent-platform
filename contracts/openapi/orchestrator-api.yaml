@@ -1,0 +1,161 @@
+openapi: 3.0.3
+info:
+  title: Agent Orchestrator Internal API
+  description: |
+    Orchestrator 内部 API（供 Gateway 调用）。
+    注意：此 API 不对外暴露。
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000
+    description: Development
+
+tags:
+  - name: internal
+    description: 内部接口
+
+paths:
+  /internal/execute:
+    post:
+      tags: [internal]
+      summary: 执行 Agent 任务
+      operationId: executeAgentInternal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InternalRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalResponse'
+
+  /internal/resume:
+    post:
+      tags: [internal]
+      summary: 恢复暂停的任务
+      operationId: resumeTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResumeRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalResponse'
+
+components:
+  schemas:
+    InternalRequest:
+      type: object
+      required:
+        - request_id
+        - tenant_id
+        - user_id
+        - message
+      properties:
+        request_id:
+          type: string
+        tenant_id:
+          type: string
+        user_id:
+          type: string
+        session_id:
+          type: string
+        message:
+          type: string
+        model:
+          type: string
+        temperature:
+          type: number
+        max_tokens:
+          type: integer
+        enable_rag:
+          type: boolean
+        enable_tools:
+          type: boolean
+        tool_whitelist:
+          type: array
+          items:
+            type: string
+
+    InternalResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+        session_id:
+          type: string
+        response:
+          type: string
+        model_used:
+          type: string
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        cost_usd:
+          type: number
+        latency_ms:
+          type: integer
+        finish_reason:
+          type: string
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCallInfo'
+        approval_id:
+          type: string
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+
+    ResumeRequest:
+      type: object
+      required:
+        - run_id
+        - approval_status
+      properties:
+        run_id:
+          type: string
+        approval_status:
+          type: string
+          enum: [approved, rejected]
+        reviewer_id:
+          type: string
+        comment:
+          type: string
+
+    ToolCallInfo:
+      type: object
+      properties:
+        call_id:
+          type: string
+        tool_name:
+          type: string
+        arguments:
+          type: object
+        status:
+          type: string
+        result:
+          type: object
+
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        user_message:
+          type: string

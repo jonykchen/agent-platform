@@ -1,0 +1,183 @@
+# 审批事件契约
+
+asyncapi: 2.6.0
+info:
+  title: Agent Platform Approval Events
+  version: 1.0.0
+  description: |
+    审批流程事件，用于：
+    - 通知审批人有新待办
+    - 回调 Orchestrator 恢复执行
+
+defaultContentType: application/json
+
+channels:
+  agent-platform.approval:
+    description: 审批事件主题
+    publish:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/ApprovalCreated'
+          - $ref: '#/components/messages/ApprovalApproved'
+          - $ref: '#/components/messages/ApprovalRejected'
+          - $ref: '#/components/messages/ApprovalExpired'
+
+  agent-platform.notification:
+    description: 通知事件主题
+    publish:
+      message:
+        $ref: '#/components/messages/ApprovalNotification'
+
+components:
+  messages:
+    ApprovalCreated:
+      name: approval.created
+      title: 审批任务创建
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ApprovalCreatedPayload'
+
+    ApprovalApproved:
+      name: approval.approved
+      title: 审批通过
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ApprovalResultPayload'
+
+    ApprovalRejected:
+      name: approval.rejected
+      title: 审批拒绝
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ApprovalResultPayload'
+
+    ApprovalExpired:
+      name: approval.expired
+      title: 审批过期
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ApprovalResultPayload'
+
+    ApprovalNotification:
+      name: notification.approval
+      title: 审批通知
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/NotificationPayload'
+
+  schemas:
+    ApprovalCreatedPayload:
+      type: object
+      required:
+        - event_id
+        - event_type
+        - approval_id
+        - run_id
+        - tenant_id
+        - requester_id
+        - reason
+        - expires_at
+      properties:
+        event_id:
+          type: string
+        event_type:
+          type: string
+          enum: [approval.created]
+        approval_id:
+          type: string
+          description: 审批任务 ID
+        run_id:
+          type: string
+          description: 关联的运行实例 ID
+        tool_invocation_id:
+          type: string
+          description: 工具调用 ID
+        tenant_id:
+          type: string
+        requester_id:
+          type: string
+          description: 申请人 ID
+        assignee_id:
+          type: string
+          description: 指定审批人 ID
+        reason:
+          type: string
+          description: 审批原因
+        request_context:
+          type: object
+          description: 待审批内容快照
+        expires_at:
+          type: string
+          format: date-time
+          description: 过期时间
+        created_at:
+          type: string
+          format: date-time
+
+    ApprovalResultPayload:
+      type: object
+      required:
+        - event_id
+        - event_type
+        - approval_id
+        - run_id
+        - decision
+      properties:
+        event_id:
+          type: string
+        event_type:
+          type: string
+          enum: [approval.approved, approval.rejected, approval.expired]
+        approval_id:
+          type: string
+        run_id:
+          type: string
+        tool_invocation_id:
+          type: string
+        tenant_id:
+          type: string
+        requester_id:
+          type: string
+        reviewer_id:
+          type: string
+          description: 审批人 ID
+        decision:
+          type: string
+          enum: [approved, rejected, expired]
+        comment:
+          type: string
+          description: 审批备注
+        reviewed_at:
+          type: string
+          format: date-time
+
+    NotificationPayload:
+      type: object
+      required:
+        - notification_id
+        - type
+        - recipient_id
+        - title
+        - content
+      properties:
+        notification_id:
+          type: string
+        type:
+          type: string
+          enum: [approval_request, approval_result]
+        recipient_id:
+          type: string
+        recipient_email:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        approval_id:
+          type: string
+        action_url:
+          type: string
+          description: 操作链接
+        created_at:
+          type: string
+          format: date-time

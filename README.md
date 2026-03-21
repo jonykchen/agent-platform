@@ -1,10 +1,10 @@
 # 企业级 Agent 平台
 
-> **版本**: v2.1 | **状态**: ✅ MVP 完成 | **最后更新**: 2026-05-09
+> **版本**: v2.1 | **状态**: ✅ 全功能完成 | **最后更新**: 2026-05-09
 
 ## 项目简介
 
-本项目是一套可在生产环境稳定运行的企业级 Agent 平台，采用 `Python 编排 + Java 核心服务 + 国内 LLM` 的混合架构。
+本项目是一套可在生产环境稳定运行的完整企业级 Agent 平台，采用 `Python 编排 + Java 核心服务 + 国内 LLM` 的混合架构。
 
 ### 核心能力
 
@@ -12,6 +12,9 @@
 - **风险控制**: 高风险动作风控拦截、人工审批、审计追踪
 - **模型治理**: 多模型接入、替换、灰度发布、成本控制
 - **企业集成**: 与现有 Java 核心业务系统平滑集成
+- **工具权限**: 五层权限检查（RBAC → 租户开关 → ABAC → 配额 → 风险）
+- **Feature Flag**: 动态功能开关、灰度发布、A/B 测试
+- **性能优化**: Step 批量写入、熔断器、快速路径
 
 ## 快速开始
 
@@ -182,6 +185,7 @@ cat .claude/projects/*/memory/tech_decisions.md
 - [性能优化](docs/05-performance-optimization.md)
 - [运维指南](docs/06-operability-guide.md)
 - [扩展性设计](docs/07-scalability-patterns.md)
+- [前端设计](docs/09-frontend-design.md)
 
 ## 开发指南
 

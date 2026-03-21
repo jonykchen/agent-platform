@@ -1,13 +1,38 @@
 server:
-  port: 50051
+  port: 8083
 
 spring:
   application:
     name: tool-bus-java
 
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/agent_platform
+    username: ${DB_USER:app_user}
+    password: ${DB_PASSWORD:dev_password}
+    hikari:
+      maximum-pool-size: 10
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      password: ${REDIS_PASSWORD:}
+
 grpc:
   server:
     port: 50051
+
+  auth:
+    # 合法的调用方服务列表
+    valid-services: orchestrator,gateway
+    # Service Token 签名密钥（生产环境必须通过环境变量注入）
+    secret: ${GRPC_AUTH_SECRET:dev-secret-change-in-prod-min-32-chars!!!}
+    issuer: agent-platform
 
 management:
   endpoints:

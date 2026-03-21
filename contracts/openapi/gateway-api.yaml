@@ -1,0 +1,471 @@
+openapi: 3.0.3
+info:
+  title: Agent Platform Gateway API
+  description: |
+    企业级 Agent 平台 API 网关。
+
+    ## 认证
+    使用 Bearer Token 认证，在请求头中添加：
+    ```
+    Authorization: Bearer <your_jwt_token>
+    ```
+
+    ## 多租户
+    所有请求必须包含 X-Tenant-ID 请求头。
+  version: 1.0.0
+  contact:
+    name: Platform Team
+
+servers:
+  - url: https://api.example.com
+    description: Production
+  - url: http://localhost:8080
+    description: Development
+
+tags:
+  - name: chat
+    description: 对话补全
+  - name: agents
+    description: Agent 任务
+  - name: sessions
+    description: 会话管理
+  - name: approvals
+    description: 审批流程
+  - name: health
+    description: 健康检查
+
+paths:
+  /api/v1/chat/completions:
+    post:
+      tags: [chat]
+      summary: 对话补全
+      description: |
+        发送用户消息，获取 AI 响应。
+        支持流式输出和工具调用。
+      operationId: chatCompletion
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/XTenantId'
+        - $ref: '#/components/parameters/XUserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/agents/{agent_id}/runs:
+    post:
+      tags: [agents]
+      summary: 启动 Agent 任务
+      operationId: executeAgent
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRunRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRunResponse'
+
+  /api/v1/agents/{agent_id}/runs/{run_id}:
+    get:
+      tags: [agents]
+      summary: 查询任务状态
+      operationId: getRunStatus
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRunStatus'
+
+  /api/v1/sessions/{session_id}:
+    get:
+      tags: [sessions]
+      summary: 获取会话详情
+      operationId: getSession
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetail'
+
+  /api/v1/approvals/{approval_id}/review:
+    post:
+      tags: [approvals]
+      summary: 处理审批
+      operationId: reviewApproval
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalReview'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalTask'
+
+  /health:
+    get:
+      tags: [health]
+      summary: 健康检查
+      operationId: healthCheck
+      responses:
+        '200':
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    XRequestId:
+      name: X-Request-ID
+      in: header
+      description: 请求唯一标识
+      schema:
+        type: string
+        format: uuid
+
+    XTenantId:
+      name: X-Tenant-ID
+      in: header
+      required: true
+      description: 租户 ID
+      schema:
+        type: string
+
+    XUserId:
+      name: X-User-ID
+      in: header
+      required: true
+      description: 用户 ID
+      schema:
+        type: string
+
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 8000
+          description: 用户输入消息
+        session_id:
+          type: string
+          description: 会话 ID（可选，新会话自动生成）
+        model:
+          type: string
+          description: 指定模型
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+          default: 0.7
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 8000
+          default: 2000
+        stream:
+          type: boolean
+          default: false
+        enable_rag:
+          type: boolean
+          default: true
+        enable_tools:
+          type: boolean
+          default: true
+
+    ChatResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+        session_id:
+          type: string
+        response:
+          type: string
+        model_used:
+          type: string
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        cost_usd:
+          type: number
+          format: float
+        latency_ms:
+          type: integer
+        finish_reason:
+          type: string
+          enum: [stop, tool_call, pending_approval, error, length]
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCall'
+        approval_id:
+          type: string
+
+    ToolCall:
+      type: object
+      properties:
+        call_id:
+          type: string
+        tool_name:
+          type: string
+        arguments:
+          type: object
+
+    AgentRunRequest:
+      type: object
+      required:
+        - task
+      properties:
+        task:
+          type: string
+          description: 任务描述
+        session_id:
+          type: string
+        parameters:
+          type: object
+        execution_mode:
+          type: string
+          enum: [react, plan_execute, multi_agent]
+          default: react
+        max_steps:
+          type: integer
+          default: 10
+
+    AgentRunResponse:
+      type: object
+      properties:
+        run_id:
+          type: string
+        session_id:
+          type: string
+        status:
+          type: string
+        result:
+          type: string
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentStep'
+        total_tokens:
+          type: integer
+        cost_usd:
+          type: number
+        duration_ms:
+          type: integer
+
+    AgentStep:
+      type: object
+      properties:
+        step_id:
+          type: string
+        step_order:
+          type: integer
+        step_type:
+          type: string
+        content:
+          type: string
+        thinking:
+          type: string
+        tool_call:
+          $ref: '#/components/schemas/ToolCall'
+        duration_ms:
+          type: integer
+
+    AgentRunStatus:
+      type: object
+      properties:
+        run_id:
+          type: string
+        status:
+          type: string
+        current_step:
+          type: string
+        completed_steps:
+          type: integer
+        approval_id:
+          type: string
+
+    SessionDetail:
+      type: object
+      properties:
+        session_id:
+          type: string
+        user_id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        run_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ApprovalReview:
+      type: object
+      required:
+        - decision
+      properties:
+        decision:
+          type: string
+          enum: [approved, rejected]
+        comment:
+          type: string
+
+    ApprovalTask:
+      type: object
+      properties:
+        id:
+          type: string
+        run_id:
+          type: string
+        status:
+          type: string
+        requester_id:
+          type: string
+        assignee_id:
+          type: string
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN]
+        service:
+          type: string
+        version:
+          type: string
+        checks:
+          type: object
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        user_message:
+          type: string
+        request_id:
+          type: string
+        details:
+          type: object
+
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: 未授权
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    RateLimited:
+      description: 请求过于频繁
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

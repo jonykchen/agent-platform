@@ -1,0 +1,208 @@
+# 审计事件契约 (AsyncAPI 风格)
+
+asyncapi: 2.6.0
+info:
+  title: Agent Platform Audit Events
+  version: 1.0.0
+  description: |
+    审计事件定义，用于记录所有关键操作。
+
+defaultContentType: application/json
+
+channels:
+  agent-platform.audit:
+    description: 审计事件主题
+    publish:
+      message:
+        oneOf:
+          - $ref: '#/components/messages/SessionCreated'
+          - $ref: '#/components/messages/RunStarted'
+          - $ref: '#/components/messages/RunCompleted'
+          - $ref: '#/components/messages/ToolCalled'
+          - $ref: '#/components/messages/ApprovalCreated'
+          - $ref: '#/components/messages/ApprovalCompleted'
+
+components:
+  messages:
+    SessionCreated:
+      name: session.created
+      title: 会话创建
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SessionCreatedPayload'
+
+    RunStarted:
+      name: run.started
+      title: 运行开始
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RunPayload'
+
+    RunCompleted:
+      name: run.completed
+      title: 运行完成
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RunCompletedPayload'
+
+    ToolCalled:
+      name: tool.called
+      title: 工具调用
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ToolCalledPayload'
+
+    ApprovalCreated:
+      name: approval.created
+      title: 审批创建
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ApprovalPayload'
+
+    ApprovalCompleted:
+      name: approval.completed
+      title: 审批完成
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ApprovalCompletedPayload'
+
+  schemas:
+    BasePayload:
+      type: object
+      required:
+        - event_id
+        - event_type
+        - timestamp
+        - tenant_id
+        - user_id
+        - request_id
+      properties:
+        event_id:
+          type: string
+          description: 事件唯一 ID
+        event_type:
+          type: string
+          description: 事件类型
+        timestamp:
+          type: string
+          format: date-time
+          description: 事件时间
+        tenant_id:
+          type: string
+          description: 租户 ID
+        user_id:
+          type: string
+          description: 用户 ID
+        request_id:
+          type: string
+          description: 请求 ID
+        trace_id:
+          type: string
+          description: 链路追踪 ID
+
+    SessionCreatedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BasePayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                session_id:
+                  type: string
+                session_type:
+                  type: string
+
+    RunPayload:
+      allOf:
+        - $ref: '#/components/schemas/BasePayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                run_id:
+                  type: string
+                session_id:
+                  type: string
+                input_message:
+                  type: string
+
+    RunCompletedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BasePayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                run_id:
+                  type: string
+                session_id:
+                  type: string
+                status:
+                  type: string
+                total_tokens:
+                  type: integer
+                cost_usd:
+                  type: number
+                duration_ms:
+                  type: integer
+
+    ToolCalledPayload:
+      allOf:
+        - $ref: '#/components/schemas/BasePayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                run_id:
+                  type: string
+                step_id:
+                  type: string
+                tool_name:
+                  type: string
+                arguments:
+                  type: object
+                status:
+                  type: string
+                risk_level:
+                  type: string
+
+    ApprovalPayload:
+      allOf:
+        - $ref: '#/components/schemas/BasePayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                approval_id:
+                  type: string
+                run_id:
+                  type: string
+                reason:
+                  type: string
+                expires_at:
+                  type: string
+                  format: date-time
+
+    ApprovalCompletedPayload:
+      allOf:
+        - $ref: '#/components/schemas/BasePayload'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                approval_id:
+                  type: string
+                run_id:
+                  type: string
+                decision:
+                  type: string
+                reviewer_id:
+                  type: string
+                comment:
+                  type: string

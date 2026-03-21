@@ -1,0 +1,35 @@
+# Kustomization - Prod Overlay
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: agent-platform
+
+resources:
+  - ../../base
+
+# 生产环境配置覆盖
+patchesStrategicMerge:
+  - deployment-patch.yaml
+
+# 配置注入
+configMapGenerator:
+  - name: app-config
+    literals:
+      - ENVIRONMENT=prod
+      - LOG_LEVEL=INFO
+
+# 生产环境镜像标签
+images:
+  - name: agent-platform/gateway
+    newTag: v1.0.0
+  - name: agent-platform/orchestrator
+    newTag: v1.0.0
+  - name: agent-platform/model-gateway
+    newTag: v1.0.0
+  - name: agent-platform/tool-bus
+    newTag: v1.0.0
+  - name: agent-platform/governance
+    newTag: v1.0.0
+  - name: agent-platform/knowledge
+    newTag: v1.0.0

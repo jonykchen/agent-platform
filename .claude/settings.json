@@ -1,5 +1,5 @@
 {
-  "$schema": "https://claude.ai/schema/settings.json",
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "project": {
     "name": "agent-platform",
     "description": "企业级 Agent 平台 - Python 编排 + Java 核心服务"
@@ -32,6 +32,7 @@
       "Bash(git branch:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
+      "Bash(git push:*)",
       "Bash(git stash:*)",
       "Bash(git restore:*)",
       "Bash(gh:*)",
@@ -87,83 +88,60 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": { "toolName": "Write", "pathGlob": "**/*.py" },
+        "matcher": "Write",
         "hooks": [
           {
             "type": "command",
-            "command": "python -m py_compile \"${CLAUDE_FILE_PATH}\" 2>&1 || python3 -m py_compile \"${CLAUDE_FILE_PATH}\" 2>&1 || echo 'SYNTAX_ERROR'"
-          }
-        ]
-      },
-      {
-        "matcher": { "toolName": "Write", "pathGlob": "**/*.sql" },
-        "hooks": [
+            "command": "case \"$CLAUDE_FILE_PATH\" in *.py) python -m py_compile \"$CLAUDE_FILE_PATH\" 2>&1 || python3 -m py_compile \"$CLAUDE_FILE_PATH\" 2>&1 || echo 'SYNTAX_ERROR' ;; esac"
+          },
           {
             "type": "command",
-            "command": "grep -E '(DROP|TRUNCATE|DELETE FROM audit)' \"${CLAUDE_FILE_PATH}\" 2>/dev/null && echo '⚠️ DANGEROUS_SQL' || findstr /R \"DROP TRUNCATE DELETE\" \"${CLAUDE_FILE_PATH}\" 2>nul && echo '⚠️ DANGEROUS_SQL' || echo 'SQL_OK'"
+            "command": "case \"$CLAUDE_FILE_PATH\" in *.sql) grep -E '(DROP|TRUNCATE|DELETE FROM audit)' \"$CLAUDE_FILE_PATH\" 2>/dev/null && echo '⚠️ DANGEROUS_SQL' || echo 'SQL_OK' ;; esac"
+          },
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in *.java) echo 'Java file - ensure Spring Boot conventions' ;; esac"
           }
-        ]
-      },
-      {
-        "matcher": { "toolName": "Write", "pathGlob": "**/*.java" },
-        "hooks": [
-          { "type": "command", "command": "echo 'Java file - ensure Spring Boot conventions'" }
         ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": { "toolName": "Write", "pathGlob": "services/orchestrator-python/**/*.py" },
+        "matcher": "Write",
         "hooks": [
           {
             "type": "command",
-            "command": "cd services/orchestrator-python && (uv run ruff check \"${CLAUDE_FILE_PATH}\" --fix 2>/dev/null || true) && (uv run ruff format \"${CLAUDE_FILE_PATH}\" 2>/dev/null || true) && echo '✅ Formatted'"
+            "command": "case \"$CLAUDE_FILE_PATH\" in services/orchestrator-python/*.py|services/orchestrator-python/*/*.py|services/orchestrator-python/*/*/*.py) cd services/orchestrator-python && (uv run ruff check \"$CLAUDE_FILE_PATH\" --fix 2>/dev/null || true) && (uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null || true) && echo '✅ Formatted' ;; esac"
+          },
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in services/model-gateway-python/*.py|services/model-gateway-python/*/*.py|services/model-gateway-python/*/*/*.py) cd services/model-gateway-python && (uv run ruff check \"$CLAUDE_FILE_PATH\" --fix 2>/dev/null || true) && (uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null || true) && echo '✅ Formatted' ;; esac"
+          },
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in services/knowledge-python/*.py|services/knowledge-python/*/*.py|services/knowledge-python/*/*/*.py) cd services/knowledge-python && (uv run ruff check \"$CLAUDE_FILE_PATH\" --fix 2>/dev/null || true) && (uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null || true) && echo '✅ Formatted' ;; esac"
+          },
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in */test_*.py|test_*.py) echo '🧪 Test file created - run: make test' ;; esac"
+          },
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in services/*/graph/nodes/*.py) echo '🤖 LangGraph node - update graph/builder.py' ;; esac"
+          },
+          {
+            "type": "command",
+            "command": "case \"$CLAUDE_FILE_PATH\" in services/*/tools/*.py) echo '🔧 Tool created - register in tools/__init__.py' ;; esac"
           }
         ]
       },
       {
-        "matcher": { "toolName": "Write", "pathGlob": "services/model-gateway-python/**/*.py" },
+        "matcher": "Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "cd services/model-gateway-python && (uv run ruff check \"${CLAUDE_FILE_PATH}\" --fix 2>/dev/null || true) && (uv run ruff format \"${CLAUDE_FILE_PATH}\" 2>/dev/null || true) && echo '✅ Formatted'"
+            "command": "case \"$CLAUDE_FILE_PATH\" in contracts/proto/*.proto|contracts/proto/*/*.proto) buf lint \"$CLAUDE_FILE_PATH\" 2>/dev/null || echo '⚠️ Proto lint issues' ;; esac"
           }
-        ]
-      },
-      {
-        "matcher": { "toolName": "Write", "pathGlob": "services/knowledge-python/**/*.py" },
-        "hooks": [
-          {
-            "type": "command",
-            "command": "cd services/knowledge-python && (uv run ruff check \"${CLAUDE_FILE_PATH}\" --fix 2>/dev/null || true) && (uv run ruff format \"${CLAUDE_FILE_PATH}\" 2>/dev/null || true) && echo '✅ Formatted'"
-          }
-        ]
-      },
-      {
-        "matcher": { "toolName": "Edit", "pathGlob": "contracts/proto/**/*.proto" },
-        "hooks": [
-          {
-            "type": "command",
-            "command": "buf lint \"${CLAUDE_FILE_PATH}\" 2>/dev/null || echo '⚠️ Proto lint issues'"
-          }
-        ]
-      },
-      {
-        "matcher": { "toolName": "Write", "pathGlob": "**/test_*.py" },
-        "hooks": [
-          { "type": "command", "command": "echo '🧪 Test file created - run: make test'" }
-        ]
-      },
-      {
-        "matcher": { "toolName": "Write", "pathGlob": "services/**/graph/nodes/*.py" },
-        "hooks": [
-          { "type": "command", "command": "echo '🤖 LangGraph node - update graph/builder.py'" }
-        ]
-      },
-      {
-        "matcher": { "toolName": "Write", "pathGlob": "services/**/tools/*.py" },
-        "hooks": [
-          { "type": "command", "command": "echo '🔧 Tool created - register in tools/__init__.py'" }
         ]
       }
     ]

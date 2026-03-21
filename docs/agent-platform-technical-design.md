@@ -2,8 +2,24 @@
 
 > **架构定版**：Python 编排 + Java 核心服务 + 国内 LLM  
 > **版本**：v1.0  
-> **日期**：2026-05-08  
-> **状态**：待评审
+> **日期**：2026-05-09  
+> **状态**：✅ 已实施
+
+---
+
+## 实施状态摘要
+
+| 服务 | 实现程度 | 核心功能 |
+|------|----------|----------|
+| **orchestrator-python** | ✅ 90% | LangGraph 状态机、工具客户端、会话存储、Checkpoint |
+| **model-gateway-python** | ✅ 85% | 智能路由、Fallback、熔断器、Token 计量、成本计算 |
+| **tool-bus-java** | ✅ 80% | gRPC 服务端、工具注册、权限校验、Mock 执行 |
+| **governance-java** | ✅ 75% | 风控规则引擎、审批服务、Repository |
+| **gateway-java** | ✅ 70% | API 入口、鉴权、租户隔离 |
+| **knowledge-python** | ✅ 70% | 混合检索、重排序 |
+
+**契约文件**: ✅ OpenAPI、Proto、Events 已定义  
+**Kubernetes**: ✅ 部署配置已创建
 
 ---
 

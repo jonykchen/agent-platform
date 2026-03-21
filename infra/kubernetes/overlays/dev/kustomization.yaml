@@ -1,0 +1,35 @@
+# Kustomization - Dev Overlay
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: agent-platform-dev
+
+resources:
+  - ../../base
+
+# 开发环境配置覆盖
+patchesStrategicMerge:
+  - deployment-patch.yaml
+
+# 配置注入
+configMapGenerator:
+  - name: app-config
+    literals:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=DEBUG
+
+# 开发环境镜像标签
+images:
+  - name: agent-platform/gateway
+    newTag: dev
+  - name: agent-platform/orchestrator
+    newTag: dev
+  - name: agent-platform/model-gateway
+    newTag: dev
+  - name: agent-platform/tool-bus
+    newTag: dev
+  - name: agent-platform/governance
+    newTag: dev
+  - name: agent-platform/knowledge
+    newTag: dev
