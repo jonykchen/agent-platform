@@ -530,6 +530,79 @@ A: `tool_call_node` 会：
 | [02-communication-contracts.md](./02-communication-contracts.md) | 工具注册 API |
 | [03-security-specification.md](./03-security-specification.md) | 风控规则 |
 | [05-performance-optimization.md](./05-performance-optimization.md) | 性能优化 |
+| [09-frontend-design.md](./09-frontend-design.md) | 前端设计（✅ 已完成实现） |
+
+---
+
+## 11. 前端模块
+
+> 前端代码位于 `services/web-frontend/`，实现状态：**100% 完成**
+
+### 11.1 前端功能一览
+
+| 模块 | 功能 | 状态 |
+|------|------|------|
+| 对话界面 | SSE 流式、虚拟滚动、离线队列 | ✅ |
+| 审批中心 | 列表、详情、WebSocket 通知 | ✅ |
+| 工具管理 | 注册、启用/禁用、详情 | ✅ |
+| 知识库管理 | 文档上传、索引状态、分块查看 | ✅ |
+| 审计日志 | 筛选、导出 CSV/JSON | ✅ |
+| 监控面板 | ECharts 图表、实时告警 | ✅ |
+| 用户管理 | CRUD、角色分配 | ✅ |
+| 租户配置 | 配额查看、设置修改 | ✅ |
+| 通知中心 | 实时通知、已读标记 | ✅ |
+
+### 11.2 前端目录结构
+
+```
+services/web-frontend/src/
+├── routes/          # 16 个路由页面
+│   ├── chat/        # 对话界面
+│   ├── approval/    # 审批中心
+│   ├── tools/       # 工具管理
+│   ├── knowledge/   # 知识库管理
+│   ├── audit/       # 审计日志
+│   ├── dashboard/   # 监控面板
+│   ├── users/       # 用户管理
+│   ├── tenant/      # 租户配置
+│   └── notifications/ # 通知中心
+├── components/      # 共享组件
+│   ├── chat/        # MessageList、InputBox、StepVisualizer
+│   ├── approval/    # ApprovalCard、ApprovalTimeline
+│   ├── knowledge/   # DocumentCard、DocumentUploader
+│   ├── ui/          # FileUpload、KeyboardShortcuts
+│   └── layout/      # Header、Sidebar、PageLayout
+├── hooks/           # 7 个自定义 Hooks
+│   ├── useChat.ts   # SSE 流式 + 离线队列
+│   ├── useSSE.ts    # POST + 认证头 + 断线重连
+│   └── useWebSocket.ts # 心跳 + 指数退避
+├── stores/          # Zustand 状态
+│   ├── authStore.ts # JWT 加密存储
+│   └── chatStore.ts # 离线消息持久化
+├── services/        # 12 个 API 服务层
+└── types/           # 10 个类型定义
+```
+
+### 11.3 前端开发命令
+
+```bash
+cd services/web-frontend
+
+# 安装依赖
+npm install
+
+# 启动开发服务器
+npm run dev
+
+# 构建生产版本
+npm run build
+
+# 运行单元测试
+npm run test
+
+# 运行 E2E 测试
+npm run test:e2e
+```
 
 ---
 
