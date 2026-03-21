@@ -1,4 +1,52 @@
-"""风控检查节点 - 评估操作风险"""
+"""风控检查节点 - 评估操作风险
+
+核心职责：
+1. 分析工具调用的风险等级
+2. 判断是否需要人工审批
+3. 评估敏感操作的安全性
+
+风险评估规则：
+┌─────────────────────────────────────────┐
+│           工具调用输入                   │
+│               │                         │
+│               ▼                         │
+│        ┌─────────────┐                  │
+│        │ 工具类型判断 │                   │
+│        └─────────────┘                  │
+│               │                         │
+│    ┌──────────┼──────────┐              │
+│    │          │          │              │
+│ [查询类]   [写操作]   [高风险]           │
+│    │          │          │              │
+│    ▼          ▼          ▼              │
+│   low      medium    critical           │
+│    │          │          │              │
+│    │    ┌─────┴─────┐    │              │
+│    │    │           │    │              │
+│    │ [金额<阈值] [金额>阈值]              │
+│    │    │           │    │              │
+│    │  medium   high + 审批              │
+│    │          │          │              │
+│    └──────────┴──────────┘              │
+│               │                         │
+│               ▼                         │
+│        输出风险等级                      │
+└─────────────────────────────────────────┘
+
+风险等级定义：
+- low: 只读查询，无副作用
+- medium: 写操作，金额较小或无敏感字段
+- high: 写操作 + 大金额或敏感字段，需审批
+- critical: 高风险关键词（delete/payment/transfer），必须审批
+
+敏感字段：
+- password: 密码
+- credit_card: 信用卡号
+- ssn: 社会安全号
+- id_card: 身份证号
+
+金额阈值：10000 元
+"""
 
 import structlog
 
@@ -15,59 +63,108 @@ async def risk_check_node(state: AgentState) -> dict:
     2. 评估风险等级
     3. 决定是否需要审批
 
+    输入状态：
+    - tool_calls: 待执行的工具调用列表
+
+    输出状态：
+    - risk_level: 最高风险等级
+    - risk_reason: 风险原因描述
+    - current_step: 下一步类型 (tool_call/approval_wait)
+
     Returns:
-        更新状态字典，包含：
-        - risk_level: 风险等级 (low/medium/high/critical)
-        - risk_reason: 风险原因
-        - requires_approval: 是否需要审批
+        更新状态字典
     """
+    import time
+
+    start_time = time.time()
+    request_id = state["request_id"]
+    tool_calls = state.get("tool_calls", [])
+
     logger.info(
-        "risk_check_node started",
-        request_id=state["request_id"],
+        "node_started",
+        node="risk_check",
+        tool_count=len(tool_calls),
+        tools=[t.get("tool_name") for t in tool_calls],
+        request_id=request_id,
     )
 
-    tool_calls = state.get("tool_calls", [])
+    # 空检查 - 无工具调用直接放行
     if not tool_calls:
+        logger.info(
+            "node_completed",
+            node="risk_check",
+            decision="tool_call",
+            reason="no_tools",
+            risk_level="low",
+            duration_ms=int((time.time() - start_time) * 1000),
+            request_id=request_id,
+        )
         return {
             "current_step": "tool_call",
             "risk_level": "low",
         }
 
-    # 评估最高风险
+    # 遍历所有工具调用，评估风险
     max_risk_level = "low"
     risk_reasons = []
     requires_approval = False
 
-    for tool_call in tool_calls:
+    for i, tool_call in enumerate(tool_calls):
         tool_name = tool_call.get("tool_name")
         arguments = tool_call.get("arguments", {})
 
+        # 单个工具风险评估
         assessment = _assess_risk(tool_name, arguments)
 
+        logger.debug(
+            "tool_risk_assessed",
+            tool_index=i,
+            tool_name=tool_name,
+            risk_level=assessment["risk_level"],
+            requires_approval=assessment.get("requires_approval", False),
+            request_id=request_id,
+        )
+
+        # 更新最高风险等级
         if _is_higher_risk(assessment["risk_level"], max_risk_level):
             max_risk_level = assessment["risk_level"]
 
+        # 收集风险原因
         if assessment.get("reason"):
             risk_reasons.append(assessment["reason"])
 
+        # 标记是否需要审批
         if assessment.get("requires_approval"):
             requires_approval = True
 
-    logger.info(
-        "risk_check completed",
-        risk_level=max_risk_level,
-        requires_approval=requires_approval,
-    )
+    duration_ms = int((time.time() - start_time) * 1000)
 
-    # 根据风险决定下一步
+    # 根据风险等级决定下一步
     if requires_approval:
+        logger.warning(
+            "node_completed",
+            node="risk_check",
+            decision="approval_wait",
+            risk_level=max_risk_level,
+            risk_reasons=risk_reasons,
+            duration_ms=duration_ms,
+            request_id=request_id,
+        )
         return {
             "current_step": "approval_wait",
             "risk_level": max_risk_level,
             "risk_reason": "; ".join(risk_reasons) if risk_reasons else None,
         }
 
-    # 风险可控，继续执行工具
+    # 风险可控，继续执行
+    logger.info(
+        "node_completed",
+        node="risk_check",
+        decision="tool_call",
+        risk_level=max_risk_level,
+        duration_ms=duration_ms,
+        request_id=request_id,
+    )
     return {
         "current_step": "tool_call",
         "risk_level": max_risk_level,

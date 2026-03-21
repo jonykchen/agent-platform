@@ -1,4 +1,44 @@
-"""思考节点 - 模型推理，决定下一步行动"""
+"""思考节点 - 模型推理，决定下一步行动
+
+核心职责：
+1. 分析用户输入，理解意图
+2. 决定执行路径：
+   - 工具调用：需要外部数据或执行操作
+   - RAG 检索：需要知识库支持（暂未实现）
+   - 直接回答：简单问题，无需外部资源
+3. 生成工具调用参数（如需要）
+
+推理流程：
+┌─────────────────────────────────────────┐
+│           用户输入                       │
+│               │                         │
+│               ▼                         │
+│        ┌─────────────┐                  │
+│        │ 意图分类    │                   │
+│        └─────────────┘                  │
+│               │                         │
+│    ┌──────────┼──────────┐              │
+│    │          │          │              │
+│ [查询类]   [知识类]   [简单问答]         │
+│    │          │          │              │
+│    ▼          ▼          ▼              │
+│ tool_call  rag_retrieve  final_answer   │
+│    │          │          │              │
+│    ▼          └──────────┴──► END       │
+│ 工具名+参数                              │
+└─────────────────────────────────────────┘
+
+意图分类规则：
+- 查询类关键词：查询、订单、用户、信息、状态、余额
+- 知识类关键词：什么是、如何、说明、介绍、文档、政策
+- 其他：直接回答
+
+输出字段：
+- current_step: 下一步类型 (tool_call/rag_retrieve/final_answer)
+- tool_calls: 工具调用列表（如需要）
+- thinking: 推理过程描述
+- step_count: 累加步骤计数
+"""
 
 import structlog
 
@@ -16,61 +56,132 @@ async def thinking_node(state: AgentState) -> dict:
     3. 是否可以直接回答
     4. 任务是否完成
 
+    输入状态：
+    - input: 用户原始输入
+    - messages: 对话历史
+    - tool_results: 上一步工具结果（如有）
+
+    输出状态：
+    - current_step: 下一步类型
+    - tool_calls: 工具调用列表
+    - thinking: 推理过程
+    - step_count: 累加后的步骤数
+
     Returns:
-        更新状态字典，包含：
-        - current_step: 当前步骤类型
-        - tool_calls: 需要调用的工具列表
-        - thinking: 推理过程
-        - error: 错误信息（如有）
+        更新状态字典
     """
+    import time
+
+    start_time = time.time()
+    request_id = state["request_id"]
+    step_count = state["step_count"]
+    max_steps = state["max_steps"]
+
     logger.info(
-        "thinking_node started",
-        request_id=state["request_id"],
-        step_count=state["step_count"],
+        "node_started",
+        node="thinking",
+        step=step_count,
+        max_steps=max_steps,
+        input_preview=state["input"][:100] if state.get("input") else "",
+        request_id=request_id,
     )
 
-    # 检查是否超过最大步骤数
-    if state["step_count"] >= state["max_steps"]:
+    # 检查是否超过最大步骤数 - 防止无限循环
+    if step_count >= max_steps:
+        logger.warning(
+            "step_limit_reached",
+            step_count=step_count,
+            max_steps=max_steps,
+            request_id=request_id,
+        )
         return {
             "current_step": "max_steps_exceeded",
-            "error": f"超过最大步骤数 {state['max_steps']}",
+            "error": f"超过最大步骤数 {max_steps}",
             "error_code": "ERR_AGENT_MAX_STEPS_EXCEEDED",
         }
 
     # TODO: 调用模型网关进行推理
     # 当前使用 Mock 实现
-
     user_input = state["input"]
 
-    # 简单意图分类
-    if _is_query_request(user_input):
-        # 需要查询类工具
+    # 意图分类 - 判断用户需要什么类型的服务
+    is_query = _is_query_request(user_input)
+    is_rag = _is_rag_request(user_input)
+
+    logger.debug(
+        "intent_classification",
+        is_query=is_query,
+        is_rag=is_rag,
+        user_input=user_input[:50],
+        request_id=request_id,
+    )
+
+    # 路由决策
+    if is_query:
+        # 需要查询类工具 - 生成工具调用参数
+        tool_name = _detect_tool(user_input)
+        arguments = _extract_arguments(user_input)
         tool_call = {
-            "call_id": f"call_{state['step_count']}",
-            "tool_name": _detect_tool(user_input),
-            "arguments": _extract_arguments(user_input),
+            "call_id": f"call_{step_count}",
+            "tool_name": tool_name,
+            "arguments": arguments,
         }
+
+        duration_ms = int((time.time() - start_time) * 1000)
+        logger.info(
+            "node_completed",
+            node="thinking",
+            step=step_count,
+            duration_ms=duration_ms,
+            decision="tool_call",
+            tool_name=tool_name,
+            arguments_preview=str(arguments)[:100],
+            request_id=request_id,
+        )
+
         return {
             "current_step": "tool_call",
             "tool_calls": [tool_call],
-            "thinking": f"分析用户输入，判断需要调用 {tool_call['tool_name']} 工具",
-            "step_count": state["step_count"] + 1,
+            "thinking": f"分析用户输入，判断需要调用 {tool_name} 工具",
+            "step_count": step_count + 1,
         }
 
-    if _is_rag_request(user_input):
-        # 需要 RAG 检索
+    if is_rag:
+        # 需要 RAG 检索（暂不实现）
+        duration_ms = int((time.time() - start_time) * 1000)
+        logger.info(
+            "node_completed",
+            node="thinking",
+            step=step_count,
+            duration_ms=duration_ms,
+            decision="rag_retrieve",
+            request_id=request_id,
+        )
         return {
             "current_step": "rag_retrieve",
             "thinking": "分析用户输入，判断需要进行知识检索",
-            "step_count": state["step_count"] + 1,
+            "step_count": step_count + 1,
         }
 
-    # 可以直接回答
+    # 可以直接回答 - 简单问题
+    output = _generate_direct_response(user_input)
+    duration_ms = int((time.time() - start_time) * 1000)
+
+    logger.info(
+        "node_completed",
+        node="thinking",
+        step=step_count,
+        duration_ms=duration_ms,
+        decision="final_answer",
+        output_preview=output[:100],
+        request_id=request_id,
+    )
+
     return {
         "current_step": "final_answer",
-        "output": _generate_direct_response(user_input),
+        "output": output,
         "thinking": "简单问题，可以直接回答",
-        "step_count": state["step_count"] + 1,
+        "step_count": step_count + 1,
     }
 
 

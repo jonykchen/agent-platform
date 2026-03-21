@@ -1,4 +1,46 @@
-"""最终回答节点 - 生成并返回最终结果"""
+"""最终回答节点 - 生成并返回最终结果
+
+核心职责：
+1. 汇总执行过程中的所有结果
+2. 处理错误情况，生成用户友好的消息
+3. 格式化工具调用结果
+
+结果生成优先级：
+┌─────────────────────────────────────────┐
+│            输入状态检查                  │
+│               │                         │
+│               ▼                         │
+│        ┌─────────────┐                  │
+│        │ 有错误？    │                   │
+│        └─────────────┘                  │
+│           │       │                     │
+│          Yes      No                    │
+│           │       │                     │
+│           ▼       ▼                     │
+│     错误消息   ┌─────────────┐          │
+│               │ 有工具结果？│            │
+│               └─────────────┘          │
+│                  │       │              │
+│                 Yes      No             │
+│                  │       │              │
+│                  ▼       ▼              │
+│            工具结果摘要  直接输出        │
+│                                     │
+│               ▼                         │
+│          用户友好响应                   │
+└─────────────────────────────────────────┘
+
+错误码映射：
+- ERR_AGENT_MAX_STEPS_EXCEEDED: 任务复杂超时
+- ERR_TOOL_RISK_REJECTED: 安全策略阻止
+- ERR_APPROVAL_REJECTED: 审批拒绝
+- ERR_AGENT_TOOL_NOT_FOUND: 系统错误
+- ERR_TOOL_EXECUTION_FAILED: 执行失败
+
+输出字段：
+- output: 最终用户响应文本
+- current_step: "completed" 标记完成
+"""
 
 import json
 import structlog
@@ -16,51 +58,115 @@ async def final_answer_node(state: AgentState) -> dict:
     2. 处理错误情况
     3. 生成用户友好的回复
 
+    输入状态：
+    - error: 错误信息（如有）
+    - error_code: 错误码（如有）
+    - tool_results: 工具执行结果列表
+    - output: 直接输出（如有）
+
+    输出状态：
+    - output: 最终用户响应
+    - current_step: "completed" 标记完成
+
     Returns:
-        更新状态字典，包含：
-        - output: 最终输出文本
-        - current_step: 标记为完成
+        更新状态字典
     """
+    import time
+
+    start_time = time.time()
+    request_id = state["request_id"]
+    step_count = state.get("step_count", 0)
+
     logger.info(
-        "final_answer_node started",
-        request_id=state["request_id"],
-        step_count=state["step_count"],
+        "node_started",
+        node="final_answer",
+        step_count=step_count,
+        has_error=bool(state.get("error")),
+        has_tool_results=bool(state.get("tool_results")),
+        request_id=request_id,
     )
 
-    # 检查是否有错误
+    # 检查是否有错误 - 错误优先处理
     error = state.get("error")
     error_code = state.get("error_code")
 
     if error:
         output = _generate_error_response(error, error_code)
-        logger.info("Final answer generated with error", error_code=error_code)
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        logger.warning(
+            "node_completed",
+            node="final_answer",
+            status="error",
+            error_code=error_code,
+            error_preview=error[:50],
+            output_preview=output[:100],
+            duration_ms=duration_ms,
+            request_id=request_id,
+        )
+
         return {
             "current_step": "completed",
             "output": output,
         }
 
-    # 检查是否有工具结果
+    # 检查是否有工具结果 - 汇总工具调用结果
     tool_results = state.get("tool_results", [])
     if tool_results:
         output = _generate_tool_summary_response(tool_results)
-        logger.info("Final answer generated from tool results")
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        success_count = sum(1 for r in tool_results if r.get("status") == "success")
+        failed_count = len(tool_results) - success_count
+
+        logger.info(
+            "node_completed",
+            node="final_answer",
+            status="tool_summary",
+            tool_count=len(tool_results),
+            success_count=success_count,
+            failed_count=failed_count,
+            output_preview=output[:100],
+            duration_ms=duration_ms,
+            request_id=request_id,
+        )
+
         return {
             "current_step": "completed",
             "output": output,
         }
 
-    # 检查是否有直接输出
+    # 检查是否有直接输出 - 使用已有输出
     direct_output = state.get("output")
     if direct_output:
-        logger.info("Using existing output")
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        logger.info(
+            "node_completed",
+            node="final_answer",
+            status="direct_output",
+            output_preview=direct_output[:100],
+            duration_ms=duration_ms,
+            request_id=request_id,
+        )
+
         return {
             "current_step": "completed",
             "output": direct_output,
         }
 
-    # 默认响应
+    # 默认响应 - 无法处理的情况
     output = "抱歉，我无法处理您的请求。请稍后重试或联系客服。"
-    logger.warning("No output generated, using default response")
+    duration_ms = int((time.time() - start_time) * 1000)
+
+    logger.warning(
+        "node_completed",
+        node="final_answer",
+        status="default",
+        output=output,
+        duration_ms=duration_ms,
+        request_id=request_id,
+    )
 
     return {
         "current_step": "completed",

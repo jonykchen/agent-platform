@@ -4,6 +4,56 @@
 - 租户级策略
 - Fallback 机制
 - 熔断保护
+
+路由决策流程：
+┌─────────────────────────────────────────────────────────┐
+│                    请求进入                              │
+│                           │                             │
+│                           ▼                             │
+│                  ┌─────────────────┐                    │
+│                  │ 获取租户策略    │                     │
+│                  │ (或使用默认)    │                     │
+│                  └─────────────────┘                    │
+│                           │                             │
+│                           ▼                             │
+│                  ┌─────────────────┐                    │
+│                  │ 检查指定模型    │                     │
+│                  └─────────────────┘                    │
+│                           │                             │
+│           ┌───────────────┼───────────────┐            │
+│           │               │               │            │
+│       [指定可用]       [指定不可用]     [无指定]         │
+│           │               │               │            │
+│           ▼               │               ▼            │
+│      直接使用            │         使用 primary_model  │
+│                         │                              │
+│                         │    ┌─────────────────┐       │
+│                         │    │ 检查熔断器状态  │        │
+│                         │    └─────────────────┘       │
+│                         │          │                   │
+│                         │          ▼                   │
+│                         │    [可用]  [熔断]            │
+│                         │      │       │               │
+│                         │   使用   Fallback            │
+│                         │      │       │               │
+│                         │      ▼       ▼               │
+│                         │   主模型  备用模型           │
+│                         │                              │
+│                         └──► 所有备用不可用             │
+│                              │                         │
+│                              ▼                         │
+│                      AllProvidersDownError              │
+└─────────────────────────────────────────────────────────┘
+
+路由策略：
+- primary_model: 主模型（如 qwen-max）
+- fallback_models: 备用模型列表（如 qwen-plus, qwen-turbo）
+
+熔断器状态：
+- CLOSED: 正常状态，允许调用
+- OPEN: 熔断状态，拒绝调用（等待恢复）
+- HALF_OPEN: 半开状态，试探性恢复
+
 """
 
 import structlog
@@ -56,56 +106,94 @@ class ModelRouter:
     ) -> tuple[BaseLLMProvider, str, CircuitBreaker]:
         """路由到最优模型
 
+        路由决策优先级：
+        1. 用户指定的模型（如果可用且未熔断）
+        2. 租户策略中的主模型
+        3. Fallback 备用模型列表
+
         Args:
-            request: 请求
-            tenant_id: 租户 ID（用于策略查询）
+            request: ChatCompletionRequest 请求对象
+            tenant_id: 租户 ID（用于获取租户级策略）
 
         Returns:
-            (provider, model_name, circuit_breaker)
+            tuple[provider, model_name, circuit_breaker]
 
         Raises:
-            AllProvidersDownError: 所有提供商不可用
+            AllProvidersDownError: 所有提供商都不可用
         """
-        # 获取策略
+        # 获取路由策略
         policy = await self._get_policy(tenant_id)
+        logger.debug(
+            "route_started",
+            requested_model=request.model,
+            tenant_id=tenant_id,
+            primary_model=policy.get("primary_model"),
+        )
 
-        # 指定模型
+        # 尝试使用用户指定的模型
         if request.model:
             provider = self._providers.get(request.model)
             if provider:
                 cb = self._circuit_breakers.get(request.model)
                 if cb and cb.is_available():
+                    logger.info(
+                        "route_decision",
+                        model=request.model,
+                        source="user_specified",
+                        circuit_state=cb.state.value,
+                    )
                     return provider, request.model, cb
+
                 logger.warning(
-                    "Specified model circuit open",
+                    "route_specified_unavailable",
                     model=request.model,
+                    reason="circuit_open",
+                    circuit_state=cb.state.value if cb else "not_found",
                 )
 
-        # 主模型
+        # 尝试使用主模型
         primary_model = policy.get("primary_model", "qwen-max")
         provider = self._providers.get(primary_model)
         cb = self._circuit_breakers.get(primary_model)
 
         if provider and cb and cb.is_available():
-            logger.info("Routing to primary model", model=primary_model)
+            logger.info(
+                "route_decision",
+                model=primary_model,
+                source="primary",
+                circuit_state=cb.state.value,
+            )
             return provider, primary_model, cb
 
-        # Fallback
+        # 尝试 Fallback 备用模型
         fallback_models = policy.get("fallback_models", [])
+        logger.warning(
+            "route_fallback_started",
+            primary_model=primary_model,
+            reason="primary_unavailable",
+            fallback_models=fallback_models,
+        )
+
         for fallback_model in fallback_models:
             provider = self._providers.get(fallback_model)
             cb = self._circuit_breakers.get(fallback_model)
 
             if provider and cb and cb.is_available():
                 logger.warning(
-                    "Fallback to backup model",
-                    primary=primary_model,
-                    fallback=fallback_model,
+                    "route_decision",
+                    model=fallback_model,
+                    source="fallback",
+                    primary_failed=primary_model,
+                    circuit_state=cb.state.value,
                 )
                 return provider, fallback_model, cb
 
-        # 全部不可用
-        logger.error("All providers down")
+        # 所有模型都不可用
+        logger.error(
+            "route_failed",
+            reason="all_providers_down",
+            tried_models=[request.model, primary_model] + fallback_models,
+        )
         raise AllProvidersDownError()
 
     async def _get_policy(self, tenant_id: str | None) -> dict:
