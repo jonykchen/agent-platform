@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export interface Notification {
   id: string;
-  type: 'approval' | 'system' | 'alert' | 'info';
+  type: 'approval' | 'system' | 'alert' | 'info' | 'error' | 'success';
   title: string;
   message: string;
   read: boolean;

@@ -32,7 +32,7 @@ function parseSSEMessages(
   const messages: SSEMessage[] = [];
   const fullText = buffer + chunk;
   const lines = fullText.split('\n');
-  const current: Partial<SSEMessage> = {};
+  let current: Partial<SSEMessage> = {};
   const remainingLines: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
@@ -43,13 +43,13 @@ function parseSSEMessages(
         messages.push(current as SSEMessage);
       }
       current = {};
-    } else if (line.startsWith('event:')) {
+    } else if (line?.startsWith('event:')) {
       current.event = line.slice(6).trim();
-    } else if (line.startsWith('id:')) {
+    } else if (line?.startsWith('id:')) {
       current.id = line.slice(3).trim();
-    } else if (line.startsWith('data:')) {
+    } else if (line?.startsWith('data:')) {
       current.data = (current.data || '') + line.slice(5);
-    } else if (i === lines.length - 1 && !line.endsWith('\n')) {
+    } else if (i === lines.length - 1 && line && !line.endsWith('\n')) {
       remainingLines.push(line);
     }
   }
