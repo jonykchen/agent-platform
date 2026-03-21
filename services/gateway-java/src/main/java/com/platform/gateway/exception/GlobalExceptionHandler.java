@@ -1,5 +1,6 @@
 package com.platform.gateway.exception;
 
+import com.platform.gateway.dto.response.ErrorResponse;
 import com.platform.gateway.util.RequestIdGenerator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

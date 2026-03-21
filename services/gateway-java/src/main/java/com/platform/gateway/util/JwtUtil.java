@@ -2,7 +2,6 @@ package com.platform.gateway.util;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,11 +46,11 @@ public class JwtUtil {
         claims.put("type", "access");
 
         return Jwts.builder()
-            .setClaims(claims)
-            .setSubject(username)
-            .setIssuedAt(new Date())
-            .setExpiration(new Date(System.currentTimeMillis() + accessTokenTtlSeconds * 1000))
-            .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+            .claims(claims)
+            .subject(username)
+            .issuedAt(new Date())
+            .expiration(new Date(System.currentTimeMillis() + accessTokenTtlSeconds * 1000))
+            .signWith(getSigningKey())
             .compact();
     }
 
@@ -64,11 +63,11 @@ public class JwtUtil {
         claims.put("type", "refresh");
 
         return Jwts.builder()
-            .setClaims(claims)
-            .setSubject(username)
-            .setIssuedAt(new Date())
-            .setExpiration(new Date(System.currentTimeMillis() + refreshTokenTtlSeconds * 1000))
-            .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+            .claims(claims)
+            .subject(username)
+            .issuedAt(new Date())
+            .expiration(new Date(System.currentTimeMillis() + refreshTokenTtlSeconds * 1000))
+            .signWith(getSigningKey())
             .compact();
     }
 
@@ -77,10 +76,10 @@ public class JwtUtil {
      */
     public boolean validateToken(String token) {
         try {
-            Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
+            Jwts.parser()
+                .verifyWith(getSigningKey())
                 .build()
-                .parseClaimsJws(token);
+                .parseSignedClaims(token);
             return true;
         } catch (Exception e) {
             log.warn("Token validation failed: {}", e.getMessage());
@@ -92,11 +91,11 @@ public class JwtUtil {
      * 从 Token 中提取用户名
      */
     public String extractUsername(String token) {
-        Claims claims = Jwts.parserBuilder()
-            .setSigningKey(getSigningKey())
+        Claims claims = Jwts.parser()
+            .verifyWith(getSigningKey())
             .build()
-            .parseClaimsJws(token)
-            .getBody();
+            .parseSignedClaims(token)
+            .getPayload();
         return claims.getSubject();
     }
 
@@ -104,11 +103,11 @@ public class JwtUtil {
      * 从 Token 中提取用户 ID
      */
     public String extractUserId(String token) {
-        Claims claims = Jwts.parserBuilder()
-            .setSigningKey(getSigningKey())
+        Claims claims = Jwts.parser()
+            .verifyWith(getSigningKey())
             .build()
-            .parseClaimsJws(token)
-            .getBody();
+            .parseSignedClaims(token)
+            .getPayload();
         return claims.get("userId", String.class);
     }
 
@@ -116,11 +115,11 @@ public class JwtUtil {
      * 从 Token 中提取租户 ID
      */
     public String extractTenantId(String token) {
-        Claims claims = Jwts.parserBuilder()
-            .setSigningKey(getSigningKey())
+        Claims claims = Jwts.parser()
+            .verifyWith(getSigningKey())
             .build()
-            .parseClaimsJws(token)
-            .getBody();
+            .parseSignedClaims(token)
+            .getPayload();
         return claims.get("tenantId", String.class);
     }
 
@@ -128,11 +127,11 @@ public class JwtUtil {
      * 从 Token 中提取角色
      */
     public String[] extractRoles(String token) {
-        Claims claims = Jwts.parserBuilder()
-            .setSigningKey(getSigningKey())
+        Claims claims = Jwts.parser()
+            .verifyWith(getSigningKey())
             .build()
-            .parseClaimsJws(token)
-            .getBody();
+            .parseSignedClaims(token)
+            .getPayload();
         Object roles = claims.get("roles");
         if (roles instanceof String[]) {
             return (String[]) roles;
@@ -145,11 +144,11 @@ public class JwtUtil {
      */
     public boolean isTokenExpired(String token) {
         try {
-            Claims claims = Jwts.parserBuilder()
-                .setSigningKey(getSigningKey())
+            Claims claims = Jwts.parser()
+                .verifyWith(getSigningKey())
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
             return claims.getExpiration().before(new Date());
         } catch (Exception e) {
             return true;

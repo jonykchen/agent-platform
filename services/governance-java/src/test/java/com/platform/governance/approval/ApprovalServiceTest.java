@@ -1,0 +1,327 @@
+package com.platform.governance.approval;
+
+import com.platform.governance.notification.NotificationService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.Instant;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+/**
+ * ApprovalService 单元测试
+ */
+@ExtendWith(MockitoExtension.class)
+class ApprovalServiceTest {
+
+    @Mock
+    private ApprovalRepository approvalRepository;
+
+    @Mock
+    private NotificationService notificationService;
+
+    private ApprovalService approvalService;
+
+    @BeforeEach
+    void setUp() {
+        approvalService = new ApprovalService(approvalRepository, notificationService);
+    }
+
+    @Test
+    @DisplayName("创建审批任务应成功")
+    void createApprovalTask_success() {
+        // Given
+        String runId = "run_123";
+        String toolInvocationId = "tool_inv_456";
+        String tenantId = "tenant_001";
+        String userId = "user_001";
+        String reason = "High risk operation";
+
+        // When
+        ApprovalTask result = approvalService.createApprovalTask(
+                runId, toolInvocationId, tenantId, userId, reason);
+
+        // Then
+        assertNotNull(result);
+        assertEquals(runId, result.getRunId());
+        assertEquals(toolInvocationId, result.getToolInvocationId());
+        assertEquals(tenantId, result.getTenantId());
+        assertEquals(userId, result.getRequesterId());
+        assertEquals("pending", result.getStatus());
+        assertEquals(reason, result.getReason());
+        assertNotNull(result.getId());
+        assertNotNull(result.getExpiresAt());
+
+        verify(approvalRepository).save(any(ApprovalTask.class));
+        verify(notificationService).sendApprovalRequest(any(ApprovalTask.class));
+    }
+
+    @Test
+    @DisplayName("创建审批任务应设置2小时过期时间")
+    void createApprovalTask_setsExpiry2Hours() {
+        // Given
+        Instant beforeCreate = Instant.now();
+
+        // When
+        ApprovalTask result = approvalService.createApprovalTask(
+                "run_123", "tool_inv_456", "tenant_001", "user_001", "reason");
+
+        Instant afterCreate = Instant.now();
+
+        // Then
+        Instant expectedExpiryMin = beforeCreate.plusSeconds(7200);
+        Instant expectedExpiryMax = afterCreate.plusSeconds(7200);
+
+        assertTrue(result.getExpiresAt().isAfter(expectedExpiryMin.minusSeconds(1)));
+        assertTrue(result.getExpiresAt().isBefore(expectedExpiryMax.plusSeconds(1)));
+    }
+
+    @Test
+    @DisplayName("处理审批决策-批准应成功")
+    void processDecision_approved_success() {
+        // Given
+        String approvalId = "approval_123";
+        String reviewerId = "reviewer_001";
+
+        ApprovalTask existingTask = ApprovalTask.builder()
+                .id(approvalId)
+                .runId("run_123")
+                .status("pending")
+                .tenantId("tenant_001")
+                .build();
+
+        when(approvalRepository.findById(approvalId)).thenReturn(Optional.of(existingTask));
+
+        // When
+        ApprovalTask result = approvalService.processDecision(
+                approvalId, reviewerId, "approved", "Looks good");
+
+        // Then
+        assertEquals("approved", result.getStatus());
+        assertEquals(reviewerId, result.getReviewerId());
+        assertEquals("Looks good", result.getReviewComment());
+        assertNotNull(result.getReviewedAt());
+
+        verify(approvalRepository).save(any(ApprovalTask.class));
+        verify(notificationService).publishApprovalResult(any(ApprovalTask.class));
+    }
+
+    @Test
+    @DisplayName("处理审批决策-拒绝应成功")
+    void processDecision_rejected_success() {
+        // Given
+        String approvalId = "approval_123";
+        String reviewerId = "reviewer_001";
+
+        ApprovalTask existingTask = ApprovalTask.builder()
+                .id(approvalId)
+                .runId("run_123")
+                .status("pending")
+                .tenantId("tenant_001")
+                .build();
+
+        when(approvalRepository.findById(approvalId)).thenReturn(Optional.of(existingTask));
+
+        // When
+        ApprovalTask result = approvalService.processDecision(
+                approvalId, reviewerId, "rejected", "Insufficient justification");
+
+        // Then
+        assertEquals("rejected", result.getStatus());
+        assertEquals(reviewerId, result.getReviewerId());
+        assertEquals("Insufficient justification", result.getReviewComment());
+        assertNotNull(result.getReviewedAt());
+    }
+
+    @Test
+    @DisplayName("处理审批决策-审批不存在应抛出异常")
+    void processDecision_approvalNotFound_throwsException() {
+        // Given
+        String approvalId = "non_existent";
+        when(approvalRepository.findById(approvalId)).thenReturn(Optional.empty());
+
+        // When & Then
+        IllegalArgumentException exception = assertThrows(
+                IllegalArgumentException.class,
+                () -> approvalService.processDecision(approvalId, "reviewer_001", "approved", "comment"));
+
+        assertTrue(exception.getMessage().contains("Approval not found"));
+        verify(notificationService, never()).publishApprovalResult(any());
+    }
+
+    @Test
+    @DisplayName("处理审批决策-已处理的审批应抛出异常")
+    void processDecision_alreadyProcessed_throwsException() {
+        // Given
+        String approvalId = "approval_123";
+
+        ApprovalTask alreadyApprovedTask = ApprovalTask.builder()
+                .id(approvalId)
+                .runId("run_123")
+                .status("approved")
+                .tenantId("tenant_001")
+                .build();
+
+        when(approvalRepository.findById(approvalId)).thenReturn(Optional.of(alreadyApprovedTask));
+
+        // When & Then
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> approvalService.processDecision(approvalId, "reviewer_001", "approved", "comment"));
+
+        assertTrue(exception.getMessage().contains("already processed"));
+        verify(notificationService, never()).publishApprovalResult(any());
+    }
+
+    @Test
+    @DisplayName("处理审批决策-已拒绝的审批不能再处理")
+    void processDecision_alreadyRejected_throwsException() {
+        // Given
+        String approvalId = "approval_123";
+
+        ApprovalTask alreadyRejectedTask = ApprovalTask.builder()
+                .id(approvalId)
+                .runId("run_123")
+                .status("rejected")
+                .tenantId("tenant_001")
+                .build();
+
+        when(approvalRepository.findById(approvalId)).thenReturn(Optional.of(alreadyRejectedTask));
+
+        // When & Then
+        assertThrows(IllegalStateException.class,
+                () -> approvalService.processDecision(approvalId, "reviewer_001", "approved", "comment"));
+    }
+
+    @Test
+    @DisplayName("创建审批任务应发送通知")
+    void createApprovalTask_sendsNotification() {
+        // Given
+        ArgumentCaptor<ApprovalTask> taskCaptor = ArgumentCaptor.forClass(ApprovalTask.class);
+
+        // When
+        approvalService.createApprovalTask("run_123", "tool_inv_456", "tenant_001", "user_001", "reason");
+
+        // Then
+        verify(notificationService).sendApprovalRequest(taskCaptor.capture());
+        ApprovalTask capturedTask = taskCaptor.getValue();
+        assertEquals("run_123", capturedTask.getRunId());
+        assertEquals("tenant_001", capturedTask.getTenantId());
+    }
+
+    @Test
+    @DisplayName("批准审批任务应发布结果事件")
+    void processDecision_publishesResultEvent() {
+        // Given
+        ApprovalTask existingTask = ApprovalTask.builder()
+                .id("approval_123")
+                .runId("run_123")
+                .status("pending")
+                .tenantId("tenant_001")
+                .build();
+
+        when(approvalRepository.findById("approval_123")).thenReturn(Optional.of(existingTask));
+
+        ArgumentCaptor<ApprovalTask> taskCaptor = ArgumentCaptor.forClass(ApprovalTask.class);
+
+        // When
+        approvalService.processDecision("approval_123", "reviewer_001", "approved", "comment");
+
+        // Then
+        verify(notificationService).publishApprovalResult(taskCaptor.capture());
+        assertEquals("approved", taskCaptor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("创建审批任务应生成UUID作为ID")
+    void createApprovalTask_generatesUuidId() {
+        // When
+        ApprovalTask result1 = approvalService.createApprovalTask(
+                "run_1", "tool_1", "tenant_001", "user_001", "reason");
+        ApprovalTask result2 = approvalService.createApprovalTask(
+                "run_2", "tool_2", "tenant_001", "user_001", "reason");
+
+        // Then
+        assertNotNull(result1.getId());
+        assertNotNull(result2.getId());
+        assertNotEquals(result1.getId(), result2.getId());
+    }
+
+    @Test
+    @DisplayName("创建审批任务应保留所有参数")
+    void createApprovalTask_preservesAllParameters() {
+        // Given
+        String runId = "run_test";
+        String toolInvocationId = "tool_inv_test";
+        String tenantId = "tenant_test";
+        String userId = "user_test";
+        String reason = "Test reason for approval";
+
+        // When
+        ApprovalTask result = approvalService.createApprovalTask(
+                runId, toolInvocationId, tenantId, userId, reason);
+
+        // Then
+        assertEquals(runId, result.getRunId());
+        assertEquals(toolInvocationId, result.getToolInvocationId());
+        assertEquals(tenantId, result.getTenantId());
+        assertEquals(userId, result.getRequesterId());
+        assertEquals(reason, result.getReason());
+    }
+
+    @Test
+    @DisplayName("处理审批决策应记录审核人ID")
+    void processDecision_recordsReviewerId() {
+        // Given
+        ApprovalTask existingTask = ApprovalTask.builder()
+                .id("approval_123")
+                .runId("run_123")
+                .status("pending")
+                .tenantId("tenant_001")
+                .build();
+
+        when(approvalRepository.findById("approval_123")).thenReturn(Optional.of(existingTask));
+
+        // When
+        ApprovalTask result = approvalService.processDecision(
+                "approval_123", "reviewer_xyz", "approved", "comment");
+
+        // Then
+        assertEquals("reviewer_xyz", result.getReviewerId());
+    }
+
+    @Test
+    @DisplayName("处理审批决策应记录审核时间")
+    void processDecision_recordsReviewedAt() {
+        // Given
+        ApprovalTask existingTask = ApprovalTask.builder()
+                .id("approval_123")
+                .runId("run_123")
+                .status("pending")
+                .tenantId("tenant_001")
+                .build();
+
+        when(approvalRepository.findById("approval_123")).thenReturn(Optional.of(existingTask));
+
+        Instant beforeProcess = Instant.now();
+
+        // When
+        ApprovalTask result = approvalService.processDecision(
+                "approval_123", "reviewer_001", "approved", "comment");
+
+        Instant afterProcess = Instant.now();
+
+        // Then
+        assertNotNull(result.getReviewedAt());
+        assertTrue(result.getReviewedAt().isAfter(beforeProcess.minusSeconds(1)));
+        assertTrue(result.getReviewedAt().isBefore(afterProcess.plusSeconds(1)));
+    }
+}
