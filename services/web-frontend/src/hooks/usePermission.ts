@@ -18,6 +18,11 @@ export const Permissions = {
   TOOL_WRITE: 'tool:write',
   TOOL_DELETE: 'tool:delete',
 
+  // 知识库
+  KNOWLEDGE_READ: 'knowledge:read',
+  KNOWLEDGE_WRITE: 'knowledge:write',
+  KNOWLEDGE_DELETE: 'knowledge:delete',
+
   // 审计
   AUDIT_READ: 'audit:read',
   AUDIT_EXPORT: 'audit:export',
@@ -44,6 +49,8 @@ export const RolePermissions: Record<Role, string[]> = {
     Permissions.APPROVAL_APPROVE,
     Permissions.APPROVAL_REJECT,
     Permissions.TOOL_READ,
+    Permissions.KNOWLEDGE_READ,
+    Permissions.KNOWLEDGE_WRITE,
     Permissions.AUDIT_READ,
     Permissions.DASHBOARD_READ,
     Permissions.USER_READ,
@@ -52,6 +59,7 @@ export const RolePermissions: Record<Role, string[]> = {
     Permissions.CHAT_READ,
     Permissions.APPROVAL_READ,
     Permissions.TOOL_READ,
+    Permissions.KNOWLEDGE_READ,
     Permissions.AUDIT_READ,
     Permissions.DASHBOARD_READ,
     Permissions.USER_READ,

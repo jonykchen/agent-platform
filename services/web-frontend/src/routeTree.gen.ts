@@ -14,7 +14,9 @@ import { Route as ForbiddenRouteImport } from './routes/forbidden'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
 import { Route as ToolsIndexRouteImport } from './routes/tools/index'
+import { Route as TenantIndexRouteImport } from './routes/tenant/index'
 import { Route as NotificationsIndexRouteImport } from './routes/notifications/index'
+import { Route as KnowledgeIndexRouteImport } from './routes/knowledge/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard/index'
 import { Route as ChatIndexRouteImport } from './routes/chat/index'
 import { Route as AuditIndexRouteImport } from './routes/audit/index'
@@ -22,6 +24,7 @@ import { Route as ApprovalIndexRouteImport } from './routes/approval/index'
 import { Route as UsersRolesRouteImport } from './routes/users/roles'
 import { Route as ToolsRegisterRouteImport } from './routes/tools/register'
 import { Route as ToolsNameRouteImport } from './routes/tools/$name'
+import { Route as KnowledgeDocIdRouteImport } from './routes/knowledge/$docId'
 import { Route as ChatSessionIdRouteImport } from './routes/chat/$sessionId'
 import { Route as ApprovalIdRouteImport } from './routes/approval/$id'
 
@@ -50,9 +53,19 @@ const ToolsIndexRoute = ToolsIndexRouteImport.update({
   path: '/tools/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TenantIndexRoute = TenantIndexRouteImport.update({
+  id: '/tenant/',
+  path: '/tenant/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NotificationsIndexRoute = NotificationsIndexRouteImport.update({
   id: '/notifications/',
   path: '/notifications/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KnowledgeIndexRoute = KnowledgeIndexRouteImport.update({
+  id: '/knowledge/',
+  path: '/knowledge/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardIndexRoute = DashboardIndexRouteImport.update({
@@ -90,6 +103,11 @@ const ToolsNameRoute = ToolsNameRouteImport.update({
   path: '/tools/$name',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KnowledgeDocIdRoute = KnowledgeDocIdRouteImport.update({
+  id: '/knowledge/$docId',
+  path: '/knowledge/$docId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChatSessionIdRoute = ChatSessionIdRouteImport.update({
   id: '/chat/$sessionId',
   path: '/chat/$sessionId',
@@ -107,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/approval/$id': typeof ApprovalIdRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
+  '/knowledge/$docId': typeof KnowledgeDocIdRoute
   '/tools/$name': typeof ToolsNameRoute
   '/tools/register': typeof ToolsRegisterRoute
   '/users/roles': typeof UsersRolesRoute
@@ -114,7 +133,9 @@ export interface FileRoutesByFullPath {
   '/audit/': typeof AuditIndexRoute
   '/chat/': typeof ChatIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/knowledge/': typeof KnowledgeIndexRoute
   '/notifications/': typeof NotificationsIndexRoute
+  '/tenant/': typeof TenantIndexRoute
   '/tools/': typeof ToolsIndexRoute
   '/users/': typeof UsersIndexRoute
 }
@@ -124,6 +145,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/approval/$id': typeof ApprovalIdRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
+  '/knowledge/$docId': typeof KnowledgeDocIdRoute
   '/tools/$name': typeof ToolsNameRoute
   '/tools/register': typeof ToolsRegisterRoute
   '/users/roles': typeof UsersRolesRoute
@@ -131,7 +153,9 @@ export interface FileRoutesByTo {
   '/audit': typeof AuditIndexRoute
   '/chat': typeof ChatIndexRoute
   '/dashboard': typeof DashboardIndexRoute
+  '/knowledge': typeof KnowledgeIndexRoute
   '/notifications': typeof NotificationsIndexRoute
+  '/tenant': typeof TenantIndexRoute
   '/tools': typeof ToolsIndexRoute
   '/users': typeof UsersIndexRoute
 }
@@ -142,6 +166,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/approval/$id': typeof ApprovalIdRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
+  '/knowledge/$docId': typeof KnowledgeDocIdRoute
   '/tools/$name': typeof ToolsNameRoute
   '/tools/register': typeof ToolsRegisterRoute
   '/users/roles': typeof UsersRolesRoute
@@ -149,7 +174,9 @@ export interface FileRoutesById {
   '/audit/': typeof AuditIndexRoute
   '/chat/': typeof ChatIndexRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/knowledge/': typeof KnowledgeIndexRoute
   '/notifications/': typeof NotificationsIndexRoute
+  '/tenant/': typeof TenantIndexRoute
   '/tools/': typeof ToolsIndexRoute
   '/users/': typeof UsersIndexRoute
 }
@@ -161,6 +188,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/approval/$id'
     | '/chat/$sessionId'
+    | '/knowledge/$docId'
     | '/tools/$name'
     | '/tools/register'
     | '/users/roles'
@@ -168,7 +196,9 @@ export interface FileRouteTypes {
     | '/audit/'
     | '/chat/'
     | '/dashboard/'
+    | '/knowledge/'
     | '/notifications/'
+    | '/tenant/'
     | '/tools/'
     | '/users/'
   fileRoutesByTo: FileRoutesByTo
@@ -178,6 +208,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/approval/$id'
     | '/chat/$sessionId'
+    | '/knowledge/$docId'
     | '/tools/$name'
     | '/tools/register'
     | '/users/roles'
@@ -185,7 +216,9 @@ export interface FileRouteTypes {
     | '/audit'
     | '/chat'
     | '/dashboard'
+    | '/knowledge'
     | '/notifications'
+    | '/tenant'
     | '/tools'
     | '/users'
   id:
@@ -195,6 +228,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/approval/$id'
     | '/chat/$sessionId'
+    | '/knowledge/$docId'
     | '/tools/$name'
     | '/tools/register'
     | '/users/roles'
@@ -202,7 +236,9 @@ export interface FileRouteTypes {
     | '/audit/'
     | '/chat/'
     | '/dashboard/'
+    | '/knowledge/'
     | '/notifications/'
+    | '/tenant/'
     | '/tools/'
     | '/users/'
   fileRoutesById: FileRoutesById
@@ -213,6 +249,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApprovalIdRoute: typeof ApprovalIdRoute
   ChatSessionIdRoute: typeof ChatSessionIdRoute
+  KnowledgeDocIdRoute: typeof KnowledgeDocIdRoute
   ToolsNameRoute: typeof ToolsNameRoute
   ToolsRegisterRoute: typeof ToolsRegisterRoute
   UsersRolesRoute: typeof UsersRolesRoute
@@ -220,7 +257,9 @@ export interface RootRouteChildren {
   AuditIndexRoute: typeof AuditIndexRoute
   ChatIndexRoute: typeof ChatIndexRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
+  KnowledgeIndexRoute: typeof KnowledgeIndexRoute
   NotificationsIndexRoute: typeof NotificationsIndexRoute
+  TenantIndexRoute: typeof TenantIndexRoute
   ToolsIndexRoute: typeof ToolsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
 }
@@ -262,11 +301,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tenant/': {
+      id: '/tenant/'
+      path: '/tenant'
+      fullPath: '/tenant/'
+      preLoaderRoute: typeof TenantIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/notifications/': {
       id: '/notifications/'
       path: '/notifications'
       fullPath: '/notifications/'
       preLoaderRoute: typeof NotificationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/knowledge/': {
+      id: '/knowledge/'
+      path: '/knowledge'
+      fullPath: '/knowledge/'
+      preLoaderRoute: typeof KnowledgeIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard/': {
@@ -318,6 +371,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolsNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/knowledge/$docId': {
+      id: '/knowledge/$docId'
+      path: '/knowledge/$docId'
+      fullPath: '/knowledge/$docId'
+      preLoaderRoute: typeof KnowledgeDocIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat/$sessionId': {
       id: '/chat/$sessionId'
       path: '/chat/$sessionId'
@@ -341,6 +401,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApprovalIdRoute: ApprovalIdRoute,
   ChatSessionIdRoute: ChatSessionIdRoute,
+  KnowledgeDocIdRoute: KnowledgeDocIdRoute,
   ToolsNameRoute: ToolsNameRoute,
   ToolsRegisterRoute: ToolsRegisterRoute,
   UsersRolesRoute: UsersRolesRoute,
@@ -348,7 +409,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuditIndexRoute: AuditIndexRoute,
   ChatIndexRoute: ChatIndexRoute,
   DashboardIndexRoute: DashboardIndexRoute,
+  KnowledgeIndexRoute: KnowledgeIndexRoute,
   NotificationsIndexRoute: NotificationsIndexRoute,
+  TenantIndexRoute: TenantIndexRoute,
   ToolsIndexRoute: ToolsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
 }
