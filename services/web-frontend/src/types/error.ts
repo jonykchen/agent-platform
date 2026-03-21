@@ -1,0 +1,87 @@
+/** 统一错误码枚举（与后端 Protobuf ErrorCode 一致） */
+export enum ErrorCode {
+  // 通用错误 (10xxx)
+  ERR_INVALID_REQUEST = 10001,
+  ERR_UNAUTHORIZED = 10002,
+  ERR_FORBIDDEN = 10003,
+  ERR_RATE_LIMITED = 10004,
+  ERR_TIMEOUT = 10005,
+  ERR_SERVICE_UNAVAILABLE = 10006,
+  ERR_METHOD_NOT_ALLOWED = 10007,
+  ERR_RESOURCE_NOT_FOUND = 10008,
+  ERR_CONFLICT = 10009,
+
+  // Agent 编排错误 (20xxx)
+  ERR_AGENT_MAX_STEPS_EXCEEDED = 20001,
+  ERR_AGENT_CONTEXT_TOO_LONG = 20002,
+  ERR_AGENT_TOOL_NOT_FOUND = 20003,
+  ERR_AGENT_RUN_CANCELLED = 20004,
+  ERR_AGENT_RUN_PAUSED = 20005,
+
+  // 模型网关错误 (30xxx)
+  ERR_MODEL_ALL_PROVIDERS_DOWN = 30001,
+  ERR_MODEL_TOKEN_LIMIT = 30002,
+  ERR_MODEL_CONTENT_FILTERED = 30003,
+  ERR_MODEL_UNSUPPORTED_OPERATION = 30004,
+  ERR_MODEL_QUOTA_EXCEEDED = 30005,
+
+  // 工具总线错误 (40xxx)
+  ERR_TOOL_VALIDATION_FAILED = 40001,
+  ERR_TOOL_EXECUTION_FAILED = 40002,
+  ERR_TOOL_RISK_REJECTED = 40003,
+  ERR_TOOL_APPROVAL_REQUIRED = 40004,
+  ERR_TOOL_TIMEOUT = 40005,
+  ERR_TOOL_DISABLED = 40006,
+
+  // 风控错误 (50xxx)
+  ERR_RISK_BLOCKED = 50001,
+  ERR_RISK_SUSPICIOUS_BEHAVIOR = 50002,
+
+  // 审批错误 (60xxx)
+  ERR_APPROVAL_EXPIRED = 60001,
+  ERR_APPROVAL_ALREADY_REVIEWED = 60002,
+  ERR_APPROVAL_NOT_ASSIGNEE = 60003,
+
+  // 知识库错误 (70xxx)
+  ERR_KNOWLEDGE_DOCUMENT_NOT_FOUND = 70001,
+  ERR_KNOWLEDGE_INDEX_FAILED = 70002,
+
+  // 认证错误 (80xxx)
+  ERR_AUTH_INVALID_CREDENTIALS = 80001,
+  ERR_AUTH_TOKEN_EXPIRED = 80002,
+  ERR_AUTH_TOKEN_INVALID = 80003,
+  ERR_AUTH_USER_NOT_FOUND = 80004,
+}
+
+/** 错误码分类 */
+export const ErrorCodeCategory = {
+  GENERAL: [10000, 19999],
+  AGENT: [20000, 29999],
+  MODEL: [30000, 39999],
+  TOOL: [40000, 49999],
+  RISK: [50000, 59999],
+  APPROVAL: [60000, 69999],
+  KNOWLEDGE: [70000, 79999],
+  AUTH: [80000, 89999],
+} as const;
+
+/** 判断是否可重试 */
+export function isRetryable(code: ErrorCode): boolean {
+  return [
+    ErrorCode.ERR_TIMEOUT,
+    ErrorCode.ERR_RATE_LIMITED,
+    ErrorCode.ERR_SERVICE_UNAVAILABLE,
+    ErrorCode.ERR_MODEL_ALL_PROVIDERS_DOWN,
+  ].includes(code);
+}
+
+/** 错误详情 */
+export interface ErrorDetail {
+  code: ErrorCode;
+  message: string;
+  user_message: string;
+  details?: Record<string, string>;
+  request_id: string;
+  trace_id?: string;
+  retry_after_seconds?: number;
+}

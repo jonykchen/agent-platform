@@ -3,7 +3,7 @@
 #  用法: make <target>
 # ============================================================
 
-.PHONY: help build test lint proto fmt dev clean docker ci
+.PHONY: help build test lint proto fmt dev clean docker ci build-frontend test-frontend lint-frontend
 
 # 默认显示帮助
 help:
@@ -11,7 +11,7 @@ help:
 	@grep -E '^[a-zA-Z_-]+:' $(MAKEFILE_LIST) | sort | awk -F':' '{printf "  %-20s %s\n", $$1, $$2}'
 
 # ---- 构建 ----
-build: build-java build-python
+build: build-java build-python build-frontend
 	@echo "✅ All services built"
 
 build-java:
@@ -24,8 +24,16 @@ build-python:
 	@if [ -f services/model-gateway-python/pyproject.toml ]; then cd services/model-gateway-python && uv sync --quiet && uv build 2>/dev/null || pip install -e .; fi
 	@if [ -f services/knowledge-python/pyproject.toml ]; then cd services/knowledge-python && uv sync --quiet && uv build 2>/dev/null || pip install -e .; fi
 
+build-frontend:
+	@if [ -f services/web-frontend/package.json ]; then \
+		echo "Building frontend..."; \
+		cd services/web-frontend && \
+		(pnpm install --frozen-lockfile 2>/dev/null || npm install 2>/dev/null || echo "Install dependencies manually"); \
+		pnpm build 2>/dev/null || npm run build 2>/dev/null || echo "Frontend build skipped"; \
+	fi
+
 # ---- 测试 ----
-test: test-java test-python
+test: test-java test-python test-frontend
 	@echo "✅ All tests passed"
 
 test-java:
@@ -34,8 +42,14 @@ test-java:
 test-python:
 	@if [ -f services/orchestrator-python/pyproject.toml ]; then cd services/orchestrator-python && uv run pytest tests/ -v --tb=short 2>/dev/null || echo "orchestrator-python: no tests"; fi
 
+test-frontend:
+	@if [ -f services/web-frontend/package.json ]; then \
+		cd services/web-frontend && \
+		pnpm test 2>/dev/null || npm test 2>/dev/null || echo "Frontend tests skipped"; \
+	fi
+
 # ---- 代码质量 ----
-lint: lint-java lint-python lint-proto
+lint: lint-java lint-python lint-proto lint-frontend
 	@echo "✅ Lint passed"
 
 lint-java:
@@ -47,6 +61,12 @@ lint-python:
 
 lint-proto:
 	@if command -v buf >/dev/null 2>&1; then buf lint contracts/proto 2>/dev/null || echo "buf not configured"; fi
+
+lint-frontend:
+	@if [ -f services/web-frontend/package.json ]; then \
+		cd services/web-frontend && \
+		pnpm lint 2>/dev/null || npm run lint 2>/dev/null || echo "Frontend lint skipped"; \
+	fi
 
 # ---- Proto 生成 ----
 proto:

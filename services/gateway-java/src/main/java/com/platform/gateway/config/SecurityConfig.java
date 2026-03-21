@@ -29,6 +29,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 健康检查端点公开
                         .requestMatchers("/health", "/ready", "/actuator/**").permitAll()
+                        // 认证端点公开
+                        .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
                         // API 端点需要认证
                         .requestMatchers("/api/**").authenticated()
                         // 其他请求

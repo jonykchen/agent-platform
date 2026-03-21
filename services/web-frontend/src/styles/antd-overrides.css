@@ -1,0 +1,43 @@
+/* Ant Design 主题覆盖 */
+
+/* 按钮圆角 */
+.ant-btn {
+  border-radius: 6px;
+}
+
+/* 输入框圆角 */
+.ant-input,
+.ant-select-selector,
+.ant-picker {
+  border-radius: 6px;
+}
+
+/* 卡片阴影 */
+.ant-card {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02),
+    0 2px 4px 0 rgba(0, 0, 0, 0.02);
+}
+
+/* 表格 */
+.ant-table-thead > tr > th {
+  background: #fafafa;
+}
+
+.dark .ant-table-thead > tr > th {
+  background: #1f1f1f;
+}
+
+/* 标签 */
+.ant-tag {
+  border-radius: 4px;
+}
+
+/* Modal */
+.ant-modal-content {
+  border-radius: 8px;
+}
+
+/* Notification */
+.ant-notification {
+  z-index: 9999;
+}
