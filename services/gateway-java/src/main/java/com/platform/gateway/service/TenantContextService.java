@@ -11,6 +11,7 @@ public class TenantContextService {
 
     private static final String TENANT_ID_KEY = "tenant_id";
     private static final String USER_ID_KEY = "user_id";
+    private static final String REQUEST_ID_KEY = "request_id";
 
     /**
      * 设置当前租户和用户上下文
@@ -18,6 +19,13 @@ public class TenantContextService {
     public void setCurrentTenant(String tenantId, String userId) {
         MDC.put(TENANT_ID_KEY, tenantId);
         MDC.put(USER_ID_KEY, userId);
+    }
+
+    /**
+     * 设置当前请求 ID
+     */
+    public void setCurrentRequestId(String requestId) {
+        MDC.put(REQUEST_ID_KEY, requestId);
     }
 
     /**
@@ -35,10 +43,18 @@ public class TenantContextService {
     }
 
     /**
+     * 获取当前请求 ID
+     */
+    public String getCurrentRequestId() {
+        return MDC.get(REQUEST_ID_KEY);
+    }
+
+    /**
      * 清除租户上下文
      */
     public void clear() {
         MDC.remove(TENANT_ID_KEY);
         MDC.remove(USER_ID_KEY);
+        MDC.remove(REQUEST_ID_KEY);
     }
 }

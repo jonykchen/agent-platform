@@ -77,12 +77,13 @@ public class AuthController {
      * 用户登出
      */
     @PostMapping("/logout")
-    public ResponseEntity<?> logout() {
+    public ResponseEntity<?> logout(@RequestBody(required = false) RefreshTokenRequest request) {
         String requestId = RequestIdGenerator.getCurrent();
         log.info("Logout request: requestId={}", requestId);
 
         try {
-            authService.logout();
+            String refreshToken = request != null ? request.getRefreshToken() : null;
+            authService.logout(refreshToken);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
             log.error("Logout error: requestId={}", requestId, e);

@@ -18,7 +18,7 @@ import java.io.IOException;
 
 /**
  * 租户上下文过滤器
- * 从 Header 提取 tenant_id 和 user_id
+ * 从 Header 提取 tenant_id, user_id 和 request_id
  */
 @Slf4j
 @Component
@@ -28,6 +28,7 @@ public class TenantContextFilter implements Filter {
 
     private static final String TENANT_ID_HEADER = "X-Tenant-ID";
     private static final String USER_ID_HEADER = "X-User-ID";
+    private static final String REQUEST_ID_HEADER = "X-Request-ID";
 
     private final TenantContextService tenantContextService;
 
@@ -56,8 +57,14 @@ public class TenantContextFilter implements Filter {
             userId = "anonymous";
         }
 
+        // 提取 request_id（可选）
+        String requestId = httpRequest.getHeader(REQUEST_ID_HEADER);
+
         // 设置租户上下文
         tenantContextService.setCurrentTenant(tenantId, userId);
+        if (requestId != null && !requestId.isBlank()) {
+            tenantContextService.setCurrentRequestId(requestId);
+        }
 
         try {
             chain.doFilter(request, response);
