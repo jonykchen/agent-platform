@@ -33,6 +33,22 @@ public enum ErrorCode {
     ERR_TOOL_EXECUTION_FAILED("ERR_TOOL_EXECUTION_FAILED", "Tool execution failed", "工具执行失败", 500),
     ERR_TOOL_RISK_REJECTED("ERR_TOOL_RISK_REJECTED", "Operation rejected by risk control", "操作被安全策略阻止", 403),
     ERR_TOOL_APPROVAL_REQUIRED("ERR_TOOL_APPROVAL_REQUIRED", "Approval required", "需要人工审批", 202),
+    ERR_TOOL_NOT_FOUND("ERR_TOOL_NOT_FOUND", "Tool not found", "工具不存在", 404),
+    ERR_TOOL_ALREADY_EXISTS("ERR_TOOL_ALREADY_EXISTS", "Tool already exists", "工具已存在", 409),
+
+    // ====== 会话错误 (21xxx) ======
+    ERR_SESSION_NOT_FOUND("ERR_SESSION_NOT_FOUND", "Session not found", "会话不存在", 404),
+    ERR_SESSION_ARCHIVED("ERR_SESSION_ARCHIVED", "Session archived", "会话已归档", 400),
+
+    // ====== 用户错误 (50xxx) ======
+    ERR_USER_NOT_FOUND("ERR_USER_NOT_FOUND", "User not found", "用户不存在", 404),
+    ERR_USER_ALREADY_EXISTS("ERR_USER_ALREADY_EXISTS", "User already exists", "用户已存在", 409),
+    ERR_USER_DISABLED("ERR_USER_DISABLED", "User disabled", "用户已禁用", 403),
+
+    // ====== 审批错误 (60xxx) ======
+    ERR_APPROVAL_NOT_FOUND("ERR_APPROVAL_NOT_FOUND", "Approval not found", "审批不存在", 404),
+    ERR_APPROVAL_EXPIRED("ERR_APPROVAL_EXPIRED", "Approval expired", "审批已过期", 400),
+    ERR_APPROVAL_ALREADY_REVIEWED("ERR_APPROVAL_ALREADY_REVIEWED", "Already reviewed", "审批已处理", 409),
 
     // ====== 租户配额错误 (70xxx) ======
     ERR_TENANT_QUOTA_EXCEEDED("ERR_TENANT_QUOTA_EXCEEDED", "Tenant quota exceeded", "租户配额已用尽", 429);
