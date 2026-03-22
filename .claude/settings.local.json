@@ -1,6 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "extends": "./settings.json",
+  "env": {
+    "LOG_LEVEL": "DEBUG",
+    "ENVIRONMENT": "development"
+  },
   "permissions": {
     "allow": [
       "Bash(curl:*)",
@@ -13,11 +16,27 @@
       "Bash(grep:*)",
       "Bash(which:*)",
       "Bash(python -m json.tool .claude/settings.json)",
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Bash(conda info *)",
+      "Bash(pnpm install *)",
+      "Bash(npx tsc *)",
+      "Bash(make lint)",
+      "Bash(make fmt)",
+      "Bash(make test)",
+      "Bash(make ci)",
+      "Bash(make dev)",
+      "Bash(make dev-down)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)",
+      "Bash(mvn compile)",
+      "Bash(mvn test)",
+      "Bash(buf lint *)"
     ]
   },
-  "env": {
-    "LOG_LEVEL": "DEBUG",
-    "ENVIRONMENT": "development"
-  }
+  "extends": "./settings.json"
 }
