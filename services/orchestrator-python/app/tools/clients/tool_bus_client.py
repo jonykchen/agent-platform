@@ -1,14 +1,24 @@
 """ToolBus gRPC 客户端
 
 通过 gRPC 调用 ToolBus 服务执行工具。
+支持熔断器、重试、超时配置。
 """
 
+from __future__ import annotations
+
 import json
-import structlog
+import time
+from typing import Any
 
 import grpc
+import structlog
 
 from app.core.config import config
+from app.core.resilience import (
+    CircuitBreakerOpenError,
+    tool_bus_circuit,
+    tool_retry_policy,
+)
 
 logger = structlog.get_logger()
 
@@ -22,11 +32,21 @@ async def get_stub():
     global _stub, _channel
 
     if _stub is None:
-        # 动态导入生成的 gRPC 代码
         try:
             from contracts.proto.toolbus import tool_bus_pb2, tool_bus_pb2_grpc
 
-            _channel = grpc.aio.insecure_channel(config.tool_bus_grpc_addr)
+            _channel = grpc.aio.insecure_channel(
+                config.tool_bus_grpc_addr,
+                options=[
+                    ("grpc.max_receive_message_length", 16 * 1024 * 1024),
+                    ("grpc.max_send_message_length", 16 * 1024 * 1024),
+                    ("grpc.keepalive_time_ms", 30000),
+                    ("grpc.keepalive_timeout_ms", 10000),
+                    ("grpc.keepalive_permit_without_calls", True),
+                    ("grpc.http2.max_pings_without_data", 0),
+                    ("grpc.http2.min_time_between_pings_ms", 10000),
+                ],
+            )
             _stub = tool_bus_pb2_grpc.ToolBusServiceStub(_channel)
             logger.info("ToolBus gRPC client initialized", addr=config.tool_bus_grpc_addr)
         except ImportError:
@@ -37,23 +57,53 @@ async def get_stub():
 
 
 class ToolBusClient:
-    """ToolBus gRPC 客户端"""
+    """ToolBus gRPC 客户端
+
+    特性:
+    - gRPC 连接池和 keepalive
+    - 熔断器保护
+    - 重试（针对 TRANSIENT_FAILURE）
+    - 调用统计
+    """
 
     def __init__(self, addr: str | None = None):
         self.addr = addr or config.tool_bus_grpc_addr
         self._stub = None
+        self._call_stats: dict[str, dict[str, Any]] = {}
 
     async def _get_stub(self):
         if self._stub is None:
             self._stub = await get_stub()
         return self._stub
 
+    async def close(self):
+        """关闭连接"""
+        global _channel
+        if _channel:
+            await _channel.close()
+            _channel = None
+            _stub = None
+
+    @tool_bus_circuit
+    @tool_retry_policy
+    async def _do_execute_tool(
+        self,
+        stub,
+        request,
+    ) -> dict:
+        """执行工具调用（带熔断器和重试）"""
+        response = await stub.ExecuteTool(
+            request,
+            timeout=config.tool_call_timeout_s,
+        )
+        return response
+
     async def execute_tool(
         self,
         tool_name: str,
         arguments: dict,
         context: dict,
-        timeout_ms: int = 15000,
+        timeout_ms: int | None = None,
     ) -> dict:
         """执行工具调用
 
@@ -71,10 +121,13 @@ class ToolBusClient:
         if stub == "mock":
             return await self._mock_execute(tool_name, arguments, context)
 
+        start_time = time.monotonic()
+
         try:
             from contracts.proto.toolbus import tool_bus_pb2
 
-            # 构建请求
+            timeout_val = timeout_ms or config.tool_call_timeout_s * 1000
+
             request = tool_bus_pb2.ToolExecuteRequest(
                 context=tool_bus_pb2.RequestContext(
                     request_id=context.get("request_id", ""),
@@ -87,14 +140,15 @@ class ToolBusClient:
                 tool_name=tool_name,
                 tool_version="latest",
                 arguments_json=json.dumps(arguments),
-                timeout_ms=timeout_ms,
+                timeout_ms=timeout_val,
                 use_cache=True,
             )
 
-            # 调用 gRPC
-            response = await stub.ExecuteTool(request)
+            response = await self._do_execute_tool(stub, request)
+            duration = time.monotonic() - start_time
 
-            # 解析响应
+            self._update_stats(tool_name, success=True, duration=duration)
+
             return {
                 "call_id": response.call_id,
                 "status": response.status,
@@ -110,8 +164,46 @@ class ToolBusClient:
                 "error_message": response.error.message if response.error else None,
             }
 
+        except CircuitBreakerOpenError as e:
+            logger.warning(
+                "ToolBus circuit breaker open",
+                tool_name=tool_name,
+                circuit=e.circuit_name,
+            )
+            self._update_stats(tool_name, success=False)
+            return {
+                "call_id": "",
+                "status": "failed",
+                "error_code": "ERR_CIRCUIT_OPEN",
+                "error_message": f"服务暂时不可用，请稍后重试",
+            }
+
         except grpc.AioRpcError as e:
-            logger.error("gRPC call failed", error=str(e), tool_name=tool_name)
+            logger.error(
+                "gRPC call failed",
+                tool_name=tool_name,
+                code=str(e.code()),
+                error=str(e),
+            )
+            self._update_stats(tool_name, success=False)
+
+            # 区分错误类型
+            if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                return {
+                    "call_id": "",
+                    "status": "failed",
+                    "error_code": "ERR_TIMEOUT",
+                    "error_message": f"工具执行超时",
+                }
+
+            if e.code() == grpc.StatusCode.UNAVAILABLE:
+                return {
+                    "call_id": "",
+                    "status": "failed",
+                    "error_code": "ERR_SERVICE_UNAVAILABLE",
+                    "error_message": "工具服务不可用",
+                }
+
             return {
                 "call_id": "",
                 "status": "failed",
@@ -119,6 +211,17 @@ class ToolBusClient:
                 "error_message": f"gRPC 调用失败: {e.code()}",
             }
 
+        except Exception as e:
+            logger.error("Unexpected error in tool execution", error=str(e))
+            self._update_stats(tool_name, success=False)
+            return {
+                "call_id": "",
+                "status": "failed",
+                "error_code": "ERR_UNKNOWN",
+                "error_message": str(e),
+            }
+
+    @tool_bus_circuit
     async def list_tools(
         self,
         context: dict,
@@ -143,7 +246,10 @@ class ToolBusClient:
                 page_size=100,
             )
 
-            response = await stub.ListTools(request)
+            response = await stub.ListTools(
+                request,
+                timeout=10.0,
+            )
 
             return [
                 {
@@ -167,7 +273,6 @@ class ToolBusClient:
 
         call_id = f"call_{uuid.uuid4().hex[:8]}"
 
-        # 模拟不同工具的响应
         if tool_name == "query_order_status":
             return {
                 "call_id": call_id,
@@ -229,6 +334,28 @@ class ToolBusClient:
                 "requires_approval": True,
             },
         ]
+
+    def _update_stats(self, tool_name: str, success: bool, duration: float = 0.0):
+        """更新调用统计"""
+        if tool_name not in self._call_stats:
+            self._call_stats[tool_name] = {
+                "total": 0,
+                "success": 0,
+                "failure": 0,
+                "total_duration": 0.0,
+            }
+
+        stats = self._call_stats[tool_name]
+        stats["total"] += 1
+        if success:
+            stats["success"] += 1
+            stats["total_duration"] += duration
+        else:
+            stats["failure"] += 1
+
+    def get_stats(self) -> dict[str, dict[str, Any]]:
+        """获取调用统计"""
+        return self._call_stats.copy()
 
 
 # 全局客户端实例

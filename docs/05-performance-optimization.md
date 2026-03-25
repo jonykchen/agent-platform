@@ -1,6 +1,8 @@
 # 性能优化 — 快速路径、RAG并行化、熔断器与缓存策略
 
-> **版本**：v2.0 | **状态**：✅ 完成 | **对应审查项**：P-01, P-02, P-03, P-05
+> **版本**：v2.1 | **状态**：✅ 完成 | **对应审查项**：P-01, P-02, P-03, P-05
+>
+> **v2.1 更新**：新增熔断器模块、双层缓存实现、流式超时保护、并发限制
 
 ---
 
@@ -1229,7 +1231,120 @@ async def compress_context(messages: list[dict], max_tokens: int = 4000):
 
 ---
 
-## 7. 缓存三防体系（从原方案 §14.4 整合）
+## 8. 生产级弹性能力（v2.1 新增）
+
+### 8.1 熔断器模块
+
+实现位置：`services/orchestrator-python/app/core/resilience.py`
+
+```python
+# 熔断器配置
+class ModelGatewayCircuitBreaker:
+    """ModelGateway 熔断器
+
+    当连续失败达到阈值时，熔断器打开，快速失败。
+    经过恢复超时后，进入半开状态，尝试恢复。
+    """
+    
+    # 默认配置
+    failure_threshold: int = 5      # 连续失败阈值
+    recovery_timeout: int = 30      # 恢复超时（秒）
+```
+
+**状态机**：
+```
+Closed (正常) → Open (熔断) → Half-Open (探测) → Closed
+     ↑                                        ↓
+     └──────────── 探测失败 ←──────────────────┘
+```
+
+### 8.2 重试策略
+
+使用 `tenacity` 库实现指数退避重试：
+
+```python
+retry_policy = AsyncRetryPolicy(
+    max_attempts=3,
+    min_wait=1.0,    # 最小等待时间
+    max_wait=10.0,   # 最大等待时间
+    retry_exceptions=(httpx.NetworkError, httpx.TimeoutException),
+)
+```
+
+### 8.3 双层缓存
+
+实现位置：`services/orchestrator-python/app/core/cache.py`
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      DualLayerCache                          │
+│                                                              │
+│  ┌──────────────────────┐    ┌────────────────────────────┐│
+│  │   L1: TTLCache        │    │   L2: Redis                 ││
+│  │   (进程内, 毫秒级)     │←──→│   (分布式, 多实例共享)      ││
+│  │   maxsize: 1000       │    │   TTL: 可配置               ││
+│  └──────────────────────┘    └────────────────────────────┘│
+│           ↑                                ↓                 │
+│           │         自动回填 L1            │                 │
+│           └────────────────────────────────┘                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**缓存场景**：
+
+| 场景 | Key 格式 | TTL |
+|------|----------|-----|
+| RAG 结果 | `rag:{query_hash}` | 10min |
+| 工具 Schema | `tool:schema:{tool_name}` | 1h |
+| 模型列表 | `model:list` | 5min |
+
+### 8.4 流式响应超时保护
+
+```python
+async def stream_chat_completion(..., timeout: float = 60.0):
+    async with asyncio.timeout(timeout):
+        async with client.stream(...):
+            async for line in response.aiter_lines():
+                yield parse_line(line)
+```
+
+### 8.5 并发限制
+
+通过信号量控制最大并发：
+
+```python
+# 常量定义 (app/core/constants.py)
+MAX_CONCURRENT_REQUESTS = 50      # 最大并发请求数
+MAX_CONCURRENT_MODEL_CALLS = 20   # 最大并发模型调用数
+MAX_CONCURRENT_TOOL_CALLS = 30    # 最大并发工具调用数
+
+# 使用信号量
+_model_semaphore = asyncio.Semaphore(MAX_CONCURRENT_MODEL_CALLS)
+
+async def thinking_node(state):
+    async with _model_semaphore:
+        return await model_client.chat(...)
+```
+
+### 8.6 模型降级策略
+
+当主模型失败时，自动降级到备用模型：
+
+```python
+MODEL_FALLBACK_ORDER = ["qwen-max", "deepseek-v3", "qwen-plus"]
+
+async def chat_completion(messages, model, fallback=True):
+    for try_model in MODEL_FALLBACK_ORDER:
+        try:
+            return await call_model(messages, model=try_model)
+        except ModelTimeoutError:
+            continue
+    raise AllProvidersDownError()
+```
+
+---
+
+## 9. 缓存三防体系（从原方案 §14.4 整合）
 
 ### 穿透防御（Cache Penetration）
 

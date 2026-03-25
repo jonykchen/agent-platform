@@ -13,6 +13,7 @@ AGENT_TOTAL_TIMEOUT_S = 300   # 单次 Agent 任务总超时（5分钟）
 MODEL_CALL_TIMEOUT_S = 30     # 单次模型调用超时
 TOOL_CALL_TIMEOUT_S = 15      # 单次工具调用超时
 APPROVAL_WAIT_TIMEOUT_S = 7200  # 审批等待超时（2小时）
+STREAM_TIMEOUT_S = 60         # 流式响应总超时
 
 # ====== Token 限制 ======
 MAX_SYSTEM_PROMPT_TOKENS = 4000  # System Prompt 最大 token 数
@@ -34,6 +35,20 @@ CACHE_USER_PREF_TTL_DAYS = 7           # 用户偏好 TTL
 CACHE_TOOL_RESULT_TTL_MINUTES = 10     # 只读工具结果 TTL
 CACHE_PROMPT_TEMPLATE_TTL_HOURS = 1    # Prompt 模板 TTL
 CACHE_ROUTE_POLICY_TTL_MINUTES = 5     # 路由策略 TTL
+
+# ====== 并发限制 ======
+MAX_CONCURRENT_REQUESTS = 50           # 最大并发请求数
+MAX_CONCURRENT_MODEL_CALLS = 20        # 最大并发模型调用数
+MAX_CONCURRENT_TOOL_CALLS = 30         # 最大并发工具调用数
+
+# ====== 熔断器默认配置 ======
+CIRCUIT_FAILURE_THRESHOLD = 5          # 熔断器失败阈值
+CIRCUIT_RECOVERY_TIMEOUT = 30          # 熔断器恢复超时（秒）
+
+# ====== 重试默认配置 ======
+RETRY_MAX_ATTEMPTS = 3                 # 最大重试次数
+RETRY_MIN_WAIT_S = 1.0                 # 最小等待时间（秒）
+RETRY_MAX_WAIT_S = 10.0                # 最大等待时间（秒）
 
 
 class RiskLevel:

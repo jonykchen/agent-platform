@@ -55,10 +55,15 @@
 - final_answer：汇总结果，生成用户友好的响应
 """
 
+import asyncio
+
 import structlog
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 
+from app.core.constants import (
+    MAX_CONCURRENT_MODEL_CALLS,
+    MAX_CONCURRENT_TOOL_CALLS,
+)
 from app.graph.state import AgentState
 from app.graph.nodes import (
     thinking_node,
@@ -69,6 +74,22 @@ from app.graph.nodes import (
 )
 
 logger = structlog.get_logger()
+
+# 全局并发限制信号量
+_model_semaphore = asyncio.Semaphore(MAX_CONCURRENT_MODEL_CALLS)
+_tool_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TOOL_CALLS)
+
+
+async def _thinking_with_limit(state: AgentState) -> dict:
+    """带并发限制的思考节点"""
+    async with _model_semaphore:
+        return await thinking_node(state)
+
+
+async def _tool_call_with_limit(state: AgentState) -> dict:
+    """带并发限制的工具调用节点"""
+    async with _tool_semaphore:
+        return await tool_call_node(state)
 
 
 def build_agent_graph():
@@ -89,14 +110,14 @@ def build_agent_graph():
     graph = StateGraph(AgentState)
 
     # 添加节点 - 每个节点负责特定的处理逻辑
-    # thinking: 模型推理，决定下一步行动
+    # thinking: 模型推理，决定下一步行动（带并发限制）
     # risk_check: 风险评估，判断是否需要审批
-    # tool_call: 执行工具调用
+    # tool_call: 执行工具调用（带并发限制）
     # approval_wait: 等待人工审批（interrupt 点）
     # final_answer: 汇总结果，生成最终响应
-    graph.add_node("thinking", thinking_node)
+    graph.add_node("thinking", _thinking_with_limit)
     graph.add_node("risk_check", risk_check_node)
-    graph.add_node("tool_call", tool_call_node)
+    graph.add_node("tool_call", _tool_call_with_limit)
     graph.add_node("approval_wait", approval_wait_node)
     graph.add_node("final_answer", final_answer_node)
 

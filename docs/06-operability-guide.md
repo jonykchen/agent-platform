@@ -1,6 +1,8 @@
 # 运维指南 — 配置管理、Feature Flag、CI/CD 与服务发现
 
-> **版本**：v2.0 | **状态**：✅ 完成 | **对应审查项**：M-03, M-04, M-05
+> **版本**：v2.1 | **状态**：✅ 完成 | **对应审查项**：M-03, M-04, M-05
+>
+> **v2.1 更新**：新增三级健康检查、Prometheus Metrics、缓存管理器
 
 ---
 
@@ -905,4 +907,191 @@ def get_tool_bus_channel():
     
     channel = grpc.insecure_channel(f"{host}:{port}", options=channel_options)
     return channel
+```
+
+---
+
+## 6. 三级健康检查（v2.1 新增）
+
+### 实现位置
+
+`services/orchestrator-python/app/core/health_checker.py`
+`services/orchestrator-python/app/api/v1/health.py`
+
+### 端点设计
+
+| 端点 | 用途 | Kubernetes 探针 | 检查内容 |
+|------|------|-----------------|----------|
+| `/health/live` | 存活检查 | livenessProbe | 进程存活 |
+| `/health/ready` | 就绪检查 | readinessProbe | Redis + ModelGateway |
+| `/health/deep` | 深度检查 | 无 | Redis + ModelGateway + ToolBus + Database |
+
+### 状态枚举
+
+```python
+class HealthStatus(str, Enum):
+    HEALTHY = "healthy"     # 健康
+    DEGRADED = "degraded"   # 降级（部分依赖不可用）
+    UNHEALTHY = "unhealthy" # 不健康（关键依赖不可用）
+```
+
+### Kubernetes 探针配置
+
+```yaml
+# deployment.yaml
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 3
+```
+
+### 检查逻辑
+
+```python
+async def check_readiness(self) -> tuple[bool, dict]:
+    """检查就绪状态"""
+    redis_health = await self.check_redis()
+    model_health = await self.check_model_gateway()
+
+    is_ready = (
+        redis_health.status != HealthStatus.UNHEALTHY
+        and model_health.status != HealthStatus.UNHEALTHY
+    )
+
+    return is_ready, {
+        "redis": redis_health.status.value,
+        "model_gateway": model_health.status.value,
+    }
+```
+
+---
+
+## 7. Prometheus Metrics（v2.1 新增）
+
+### 实现位置
+
+`services/orchestrator-python/app/core/metrics.py`
+
+### 暴露端点
+
+```bash
+curl http://localhost:8000/metrics
+```
+
+### 指标分类
+
+| 类别 | 指标名 | 类型 | 说明 |
+|------|--------|------|------|
+| **请求** | `orchestrator_request_total` | Counter | 总请求数 |
+| | `orchestrator_request_latency_seconds` | Histogram | 请求延迟 |
+| | `orchestrator_requests_in_progress` | Gauge | 进行中请求数 |
+| **模型** | `model_call_total` | Counter | 模型调用总数 |
+| | `model_call_latency_seconds` | Histogram | 模型调用延迟 |
+| | `model_calls_in_progress` | Gauge | 进行中模型调用数 |
+| **工具** | `tool_call_total` | Counter | 工具调用总数 |
+| | `tool_call_latency_seconds` | Histogram | 工具调用延迟 |
+| **熔断器** | `circuit_breaker_state` | Gauge | 熔断器状态 (0=closed, 1=open, 2=half-open) |
+| | `circuit_breaker_failures_total` | Counter | 熔断器失败总数 |
+| **缓存** | `cache_hits_total` | Counter | 缓存命中数 |
+| | `cache_misses_total` | Counter | 缓存未命中数 |
+| | `cache_size` | Gauge | 当前缓存大小 |
+| **Agent** | `agent_run_total` | Counter | Agent 运行总数 |
+| | `agent_step_count` | Histogram | 每次运行步骤数 |
+| | `agent_run_latency_seconds` | Histogram | Agent 运行延迟 |
+
+### 延迟 Bucket 配置
+
+```python
+# 模型调用延迟 buckets
+MODEL_LATENCY = Histogram(
+    "model_call_latency_seconds",
+    "Model call latency",
+    buckets=[5, 10, 15, 20, 30, 45, 60, 90, 120],
+)
+
+# 请求延迟 buckets
+REQUEST_LATENCY = Histogram(
+    "orchestrator_request_latency_seconds",
+    "Request latency",
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0],
+)
+```
+
+### Grafana Dashboard 查询示例
+
+```promql
+# P99 请求延迟
+histogram_quantile(0.99, rate(orchestrator_request_latency_seconds_bucket[5m]))
+
+# 模型调用成功率
+sum(rate(model_call_total{status="success"}[5m])) 
+/ sum(rate(model_call_total[5m]))
+
+# 缓存命中率
+sum(rate(cache_hits_total[5m])) 
+/ (sum(rate(cache_hits_total[5m])) + sum(rate(cache_misses_total[5m])))
+
+# 熔断器状态
+circuit_breaker_state{service="model_gateway"}
+```
+
+---
+
+## 8. 缓存管理器（v2.1 新增）
+
+### 实现位置
+
+`services/orchestrator-python/app/core/cache.py`
+
+### 初始化
+
+```python
+# main.py
+from app.core.cache import init_cache_manager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    redis_client = Redis.from_url(config.redis_url)
+    init_cache_manager(redis_client)
+    ...
+```
+
+### 使用示例
+
+```python
+from app.core.cache import get_cache_manager
+
+# RAG 缓存
+rag_cache = get_cache_manager().get_rag_cache()
+result = await rag_cache.get_or_set(
+    DualLayerCache._hash_key(query),
+    lambda: await rag_retrieve(query),
+)
+
+# 工具 Schema 缓存
+schema_cache = get_cache_manager().get_tool_schema_cache()
+schema = await schema_cache.get_or_set(
+    f"schema:{tool_name}",
+    lambda: await fetch_tool_schema(tool_name),
+)
+```
+
+### 统计查询
+
+```python
+stats = get_cache_manager().get_all_stats()
+# {
+#   "rag": {"hit_count": 100, "miss_count": 50, "hit_rate": 0.67},
+#   "tool_schema": {"hit_count": 80, "miss_count": 20, "hit_rate": 0.80},
+# }
 ```
