@@ -1,4 +1,42 @@
-"""LangGraph 状态机定义"""
+"""LangGraph 状态机定义
+
+【核心概念】状态管理在 Agent 系统中的作用
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+状态是 Agent 执行过程中所有信息的载体，贯穿整个推理循环。
+
+为什么选择 LangGraph 的状态管理？
+┌─────────────────────────────────────────────────────────────────────────┐
+│  方案              │  优点                    │  缺点                  │
+├────────────────────┼──────────────────────────┼────────────────────────┤
+│  全局变量          │  简单直接                │  并发不安全、难调试    │
+│  类封装            │  OOP 友好                │  序列化复杂、状态追踪难│
+│  LangGraph State   │  自动追踪、支持回滚      │  学习曲线              │
+│  ✓ TypedDict       │  类型安全、IDE 支持      │                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+【技术选型】为什么使用 TypedDict + Annotated？
+- TypedDict: Python 3.8+ 原生支持，提供类型提示但不影响运行时性能
+- Annotated[list, add_messages]: LangGraph 的魔法，自动累积消息历史
+  - 每次返回 {"messages": [...]} 会追加而非覆盖
+  - 类似 Redux 的 reducer 模式，支持不可变更新
+
+【设计原则】状态字段分类
+1. 会话元数据：session_id, tenant_id, user_id, request_id
+   - 用于多租户隔离、审计追踪
+2. 执行控制：step_count, max_steps, current_step
+   - 防止无限循环，控制执行流程
+3. 数据流转：messages, tool_calls, tool_results
+   - Agent 与外部系统交互的数据
+4. 风控审批：risk_level, approval_id, approval_status
+   - 高风险操作的人工审批机制
+5. 错误处理：error, error_code
+   - 统一错误码体系，便于前端处理
+
+【参考】
+- LangGraph 状态管理: https://langchain-ah.readthedocs.io/en/latest/concepts/state.html
+- TypedDict PEP 589: https://peps.python.org/pep-0589/
+"""
 
 from typing import Annotated, TypedDict
 
@@ -6,53 +44,129 @@ from langgraph.graph.message import add_messages
 
 
 class AgentState(TypedDict):
-    """Agent 状态
+    """Agent 状态 - LangGraph 状态机核心数据结构
 
-    使用 LangGraph 的状态管理，支持消息累积。
+    【设计模式】Immutable State + Reducer
+
+    状态在节点间传递时遵循不可变原则：
+    - 每个节点返回的是"状态更新"而非完整状态
+    - LangGraph 自动合并更新到当前状态
+    - 类似 React 的 setState 或 Redux 的 reducer
+
+    示例：
+        # 节点返回部分更新
+        def my_node(state: AgentState) -> dict:
+            return {"step_count": state["step_count"] + 1}
+
+        # LangGraph 自动合并：
+        # new_state = {**old_state, **returned_updates}
+
+    【消息累积机制】
+    messages 字段使用 add_messages reducer：
+    - 返回 {"messages": [new_msg]} → 追加到现有列表
+    - 返回 {"messages": [{"id": "x", "content": "删除"}]} → 删除指定 ID
+
+    这是 LangGraph 的核心特性，让对话历史自动累积。
     """
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 会话元数据 - 用于多租户隔离和追踪
+    # ═══════════════════════════════════════════════════════════════════════════
+
     # 对话历史（自动累积）
+    # Annotated[list, add_messages] 是 LangGraph 的特殊语法
+    # 表示：1) 这是一个列表类型 2) 使用 add_messages reducer 合并更新
+    # 效果：每次返回 {"messages": [...]} 会追加到现有列表，而非覆盖
     messages: Annotated[list, add_messages]
 
-    # 当前输入
+    # 当前输入 - 用户本轮消息
     input: str
 
-    # 会话信息
+    # 会话信息 - 用于：
+    # - session_id: 持久化对话历史，支持多轮对话
+    # - tenant_id: 多租户数据隔离，确保不同租户数据不混淆
+    # - user_id: 权限校验，审计追踪
+    # - request_id: 全链路追踪，日志关联
     session_id: str
     tenant_id: str
     user_id: str
     request_id: str
 
-    # 执行状态
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 执行控制 - 防止无限循环，控制 Agent 行为
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 步骤计数器 - 每次进入 thinking 节点时递增
     step_count: int
+
+    # 最大步骤限制 - 防止 Agent 陷入无限循环
+    # 默认 10 步，可根据任务复杂度调整
     max_steps: int
 
-    # 当前步骤类型
+    # 当前步骤类型 - 控制流程路由
+    # 可能值：tool_call, rag_retrieve, final_answer, error, max_steps_exceeded
     current_step: str
 
-    # 工具调用信息
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 工具调用数据 - Agent 与外部系统交互
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 工具调用请求 - 由 thinking 节点生成
+    # 格式：[{"call_id": "...", "tool_name": "...", "arguments": {...}}]
     tool_calls: list[dict]
+
+    # 工具执行结果 - 由 tool_call 节点返回
+    # 格式：[{"call_id": "...", "status": "success", "result_json": "..."}]
     tool_results: list[dict]
 
-    # RAG 检索结果
+    # ═══════════════════════════════════════════════════════════════════════════
+    # RAG 检索结果 - 知识库支持（暂未实现）
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # RAG 检索到的文档片段
     retrieved_docs: list[dict]
 
-    # 风险检查结果
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 风险检查 - 高风险操作的人工审批机制
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 风险等级 - 由 risk_check 节点评估
+    # 可能值：low, medium, high, critical
     risk_level: str
+
+    # 风险原因 - 记录触发风控的具体原因
     risk_reason: str | None
 
-    # 审批信息
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 审批信息 - 支持高风险操作的人工审批
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 审批单 ID - 需要审批时生成，用于追踪审批状态
     approval_id: str | None
+
+    # 审批状态 - 由审批系统回调更新
+    # 可能值：pending, approved, rejected
     approval_status: str | None
 
-    # 最终输出
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 输出与错误处理
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 最终输出 - 由 final_answer 节点生成
     output: str
 
-    # 错误信息
+    # 错误信息 - 发生异常时记录
     error: str | None
+
+    # 错误码 - 统一的错误码体系，便于前端处理
+    # 格式：ERR_<模块>_<错误类型>，如 ERR_AGENT_MAX_STEPS_EXCEEDED
     error_code: str | None
 
-    # 元数据
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 扩展元数据 - 灵活扩展字段
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # 用于存储非标准字段，如 A/B 测试分组、客户端版本等
     metadata: dict
 
 
@@ -64,7 +178,35 @@ def create_initial_state(
     request_id: str,
     max_steps: int = 10,
 ) -> AgentState:
-    """创建初始状态"""
+    """创建初始状态
+
+    【工厂函数模式】
+    使用工厂函数而非直接构造 TypedDict 的好处：
+    1. 提供默认值，简化调用
+    2. 类型检查更严格
+    3. 可扩展验证逻辑
+
+    Args:
+        input: 用户输入消息
+        session_id: 会话 ID（用于持久化）
+        tenant_id: 租户 ID（用于多租户隔离）
+        user_id: 用户 ID（用于权限校验）
+        request_id: 请求追踪 ID（全链路追踪）
+        max_steps: 最大步骤数，防止无限循环（默认 10）
+
+    Returns:
+        AgentState: 初始化的状态字典
+
+    使用示例：
+        state = create_initial_state(
+            input="查询订单 ORD-12345",
+            session_id="sess_abc123",
+            tenant_id="tenant_001",
+            user_id="user_123",
+            request_id="req_xyz789",
+        )
+        # 然后传入 graph.invoke(state)
+    """
     return AgentState(
         messages=[],
         input=input,

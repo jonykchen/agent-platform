@@ -1,14 +1,77 @@
 """统一的异常类体系 (C-01)
 
-所有业务异常必须继承自基类，确保错误码和消息格式一致。
-跨服务的错误码定义见 contracts/proto/common/error_code.proto。
+【核心概念】为什么需要自定义异常体系？
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+在微服务架构中，异常处理需要解决以下问题：
+1. 错误码统一：前后端、跨服务使用一致的错误码
+2. 消息分离：技术信息（日志）vs 用户友好信息（前端展示）
+3. 追踪关联：错误发生时携带 request_id 用于排查
+4. 分类清晰：按模块/严重程度分类错误
+
+【设计原则】
+┌─────────────────────────────────────────────────────────────────────────┐
+│  原则                │  实现方式                                       │
+├──────────────────────┼──────────────────────────────────────────────────┤
+│  单一继承根          │  所有异常继承 BasePlatformException              │
+│  错误码规范          │  ERR_<模块>_<具体错误>，如 ERR_AGENT_MAX_STEPS  │
+│  双消息机制          │  message（技术）+ user_message（用户友好）       │
+│  详情携带            │  details 字典存储上下文信息                     │
+│  模块分组            │  按错误码范围分组：10xxx(通用), 20xxx(Agent)...  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+【错误码分类规范】
+- 10xxx：通用错误（请求错误、认证、限流、超时）
+- 20xxx：Agent 编排错误（步骤超限、上下文过长、工具不存在）
+- 30xxx：模型网关错误（提供商不可用、内容过滤、超时）
+- 40xxx：工具总线错误（参数校验、执行失败、风控拒绝）
+
+【跨服务错误传递】
+gRPC/HTTP 响应格式统一：
+{
+    "error": "ERR_CODE",
+    "message": "技术信息（日志用）",
+    "user_message": "用户友好信息（前端展示）",
+    "details": {...}  // 可选的额外上下文
+}
+
+【与 Java 服务对齐】
+错误码定义在 contracts/proto/common/error_code.proto，
+Java 端使用 BusinessException，Python 端使用本模块，
+确保跨服务错误码一致。
+
+【参考】
+- Google API 错误模型: https://cloud.google.com/apis/design/errors
+- HTTP 状态码映射: 4xx 客户端错误, 5xx 服务端错误
 """
 
 from typing import Any, Optional
 
 
 class BasePlatformException(Exception):
-    """平台基础异常"""
+    """平台基础异常 - 所有业务异常的基类
+
+    【设计模式】Template Method + Information Expert
+
+    子类只需提供特定参数，基类负责：
+    1. 错误码标准化
+    2. 默认用户消息生成
+    3. to_dict() 序列化
+
+    使用示例：
+        # 直接抛出
+        raise InvalidRequestError("订单号格式错误", details={"order_id": "xxx"})
+
+        # 捕获并转换
+        try:
+            ...
+        except SomeError as e:
+            raise ToolExecutionFailedError("query_order", str(e)) from e
+
+        # 响应格式化
+        except BasePlatformException as e:
+            return JSONResponse(status_code=400, content=e.to_dict())
+    """
 
     def __init__(
         self,
@@ -17,13 +80,21 @@ class BasePlatformException(Exception):
         user_message: Optional[str] = None,
         details: Optional[dict[str, Any]] = None,
     ):
+        # 技术信息 - 用于日志和调试
         self.message = message
+        # 错误码 - 用于前端/客户端处理
         self.code = code
+        # 用户友好信息 - 用于前端展示
         self.user_message = user_message or message
+        # 额外上下文 - 用于问题排查
         self.details = details or {}
         super().__init__(self.message)
 
     def to_dict(self) -> dict:
+        """转换为 API 响应格式
+
+        用于 FastAPI 异常处理器返回 JSON 响应。
+        """
         return {
             "error": self.code,
             "message": self.message,
