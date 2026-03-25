@@ -40,11 +40,33 @@
 - step_count: 累加步骤计数
 """
 
+import json
 import structlog
 
 from app.graph.state import AgentState
+from app.core.config import config
+from app.core.exceptions import ModelTimeoutError, AllProvidersDownError
 
 logger = structlog.get_logger()
+
+# 系统提示词模板
+SYSTEM_PROMPT = """你是一个智能助手，负责分析用户请求并决定最佳行动方案。
+
+你的职责：
+1. 分析用户输入，理解意图
+2. 决定执行路径：
+   - 工具调用：需要外部数据或执行操作
+   - 直接回答：简单问题，无需外部资源
+
+当需要调用工具时，返回 tool_calls 格式。
+当可以直接回答时，返回 content 内容。
+
+可用工具：
+- query_order_status: 查询订单状态，参数 order_id
+- get_user_info: 获取用户信息，参数 user_id
+- create_payment: 创建支付订单，参数 amount, user_id
+
+请根据用户请求选择合适的行动。"""
 
 
 async def thinking_node(state: AgentState) -> dict:
@@ -100,89 +122,58 @@ async def thinking_node(state: AgentState) -> dict:
             "error_code": "ERR_AGENT_MAX_STEPS_EXCEEDED",
         }
 
-    # TODO: 调用模型网关进行推理
-    # 当前使用 Mock 实现
-    user_input = state["input"]
+    # 构建对话消息
+    messages = _build_messages(state)
 
-    # 意图分类 - 判断用户需要什么类型的服务
-    is_query = _is_query_request(user_input)
-    is_rag = _is_rag_request(user_input)
+    # 调用模型网关进行推理
+    try:
+        from app.tools.clients.model_gateway_client import get_model_gateway_client
 
-    logger.debug(
-        "intent_classification",
-        is_query=is_query,
-        is_rag=is_rag,
-        user_input=user_input[:50],
-        request_id=request_id,
-    )
+        client = get_model_gateway_client()
 
-    # 路由决策
-    if is_query:
-        # 需要查询类工具 - 生成工具调用参数
-        tool_name = _detect_tool(user_input)
-        arguments = _extract_arguments(user_input)
-        tool_call = {
-            "call_id": f"call_{step_count}",
-            "tool_name": tool_name,
-            "arguments": arguments,
-        }
+        # 获取工具定义（如果有）
+        tools = _get_available_tools(state)
+
+        model_response = await client.chat_completion(
+            messages=messages,
+            model=config.default_model if hasattr(config, "default_model") else None,
+            temperature=config.default_temperature if hasattr(config, "default_temperature") else 0.7,
+            max_tokens=config.default_max_tokens if hasattr(config, "default_max_tokens") else 2000,
+            tools=tools if tools else None,
+            tool_choice="auto" if tools else None,
+            fallback=True,
+        )
 
         duration_ms = int((time.time() - start_time) * 1000)
+
+        # 解析模型响应
+        result = _parse_model_response(model_response, step_count, request_id, duration_ms)
+
         logger.info(
             "node_completed",
             node="thinking",
             step=step_count,
             duration_ms=duration_ms,
-            decision="tool_call",
-            tool_name=tool_name,
-            arguments_preview=str(arguments)[:100],
+            decision=result.get("current_step", "unknown"),
             request_id=request_id,
         )
 
-        return {
-            "current_step": "tool_call",
-            "tool_calls": [tool_call],
-            "thinking": f"分析用户输入，判断需要调用 {tool_name} 工具",
-            "step_count": step_count + 1,
-        }
+        return result
 
-    if is_rag:
-        # 需要 RAG 检索（暂不实现）
+    except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
-        logger.info(
-            "node_completed",
+        logger.error(
+            "node_failed",
             node="thinking",
             step=step_count,
             duration_ms=duration_ms,
-            decision="rag_retrieve",
+            error=str(e),
+            error_type=type(e).__name__,
             request_id=request_id,
         )
-        return {
-            "current_step": "rag_retrieve",
-            "thinking": "分析用户输入，判断需要进行知识检索",
-            "step_count": step_count + 1,
-        }
 
-    # 可以直接回答 - 简单问题
-    output = _generate_direct_response(user_input)
-    duration_ms = int((time.time() - start_time) * 1000)
-
-    logger.info(
-        "node_completed",
-        node="thinking",
-        step=step_count,
-        duration_ms=duration_ms,
-        decision="final_answer",
-        output_preview=output[:100],
-        request_id=request_id,
-    )
-
-    return {
-        "current_step": "final_answer",
-        "output": output,
-        "thinking": "简单问题，可以直接回答",
-        "step_count": step_count + 1,
-    }
+        # 根据异常类型返回错误
+        return _handle_model_error(e, step_count, request_id)
 
 
 def _is_query_request(input: str) -> bool:
@@ -224,7 +215,244 @@ def _extract_arguments(input: str) -> dict:
     return {}
 
 
-def _generate_direct_response(input: str) -> str:
-    """生成直接响应"""
-    # Mock 响应
-    return f"收到您的问题：{input[:50]}。这是一个简单的咨询，我可以直接为您解答。\n\n请问还有其他需要帮助的吗？"
+def _build_messages(state: AgentState) -> list[dict]:
+    """构建对话消息
+
+    消息结构：
+    1. System 提示词（定义 Agent 角色和能力）
+    2. 对话历史（多轮对话支持）
+    3. 工具结果（如果有）
+    4. 当前用户输入
+
+    Args:
+        state: Agent 状态
+
+    Returns:
+        OpenAI 格式的消息列表
+    """
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    # 添加对话历史
+    if state.get("messages"):
+        for msg in state["messages"]:
+            if isinstance(msg, dict):
+                messages.append(msg)
+
+    # 添加工具结果（如果有）
+    if state.get("tool_results"):
+        for result in state["tool_results"]:
+            messages.append({
+                "role": "tool",
+                "tool_call_id": result.get("call_id", ""),
+                "content": result.get("result_json", ""),
+            })
+
+    # 添加当前输入
+    messages.append({"role": "user", "content": state["input"]})
+
+    return messages
+
+
+def _get_available_tools(state: AgentState) -> list[dict] | None:
+    """获取可用工具定义
+
+    工具定义格式遵循 OpenAI Function Calling 规范：
+    - type: "function"
+    - function.name: 工具名称
+    - function.description: 工具描述
+    - function.parameters: JSON Schema 格式的参数定义
+
+    Args:
+        state: Agent 状态（可从中获取租户特定的工具列表）
+
+    Returns:
+        工具定义列表，或 None（无可用工具）
+    """
+    # 从状态或配置获取工具列表
+    # 当前返回默认工具集
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "query_order_status",
+                "description": "查询订单状态，包括物流信息和预计到达时间",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "order_id": {
+                            "type": "string",
+                            "description": "订单编号，格式如 ORD-20240101-XXXXX",
+                        },
+                    },
+                    "required": ["order_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_user_info",
+                "description": "获取用户基本信息，包括姓名、联系方式、账户余额",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "user_id": {
+                            "type": "string",
+                            "description": "用户唯一标识",
+                        },
+                    },
+                    "required": ["user_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "create_payment",
+                "description": "创建支付订单",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "amount": {
+                            "type": "number",
+                            "description": "支付金额（单位：元）",
+                        },
+                        "user_id": {
+                            "type": "string",
+                            "description": "用户唯一标识",
+                        },
+                    },
+                    "required": ["amount", "user_id"],
+                },
+            },
+        },
+    ]
+
+
+def _parse_model_response(
+    response: dict,
+    step_count: int,
+    request_id: str,
+    duration_ms: int,
+) -> dict:
+    """解析模型响应
+
+    响应类型判断：
+    1. finish_reason == "tool_calls": 工具调用
+    2. finish_reason == "stop": 直接回答
+    3. 其他: 异常处理
+
+    Args:
+        response: 模型网关返回的响应
+        step_count: 当前步骤数
+        request_id: 请求 ID
+        duration_ms: 耗时
+
+    Returns:
+        状态更新字典
+    """
+    choices = response.get("choices", [])
+    if not choices:
+        logger.warning(
+            "empty_choices",
+            response=response,
+            request_id=request_id,
+        )
+        return {
+            "current_step": "error",
+            "error": "模型返回空响应",
+            "error_code": "ERR_MODEL_EMPTY_RESPONSE",
+            "step_count": step_count + 1,
+        }
+
+    choice = choices[0]
+    message = choice.get("message", {})
+    finish_reason = choice.get("finish_reason", "stop")
+
+    # 工具调用
+    if finish_reason == "tool_calls" or message.get("tool_calls"):
+        tool_calls = []
+        for tc in message.get("tool_calls", []):
+            function = tc.get("function", {})
+            try:
+                arguments = json.loads(function.get("arguments", "{}"))
+            except json.JSONDecodeError:
+                arguments = {}
+
+            tool_calls.append({
+                "call_id": tc.get("id", f"call_{step_count}"),
+                "tool_name": function.get("name", ""),
+                "arguments": arguments,
+            })
+
+        logger.debug(
+            "parsed_tool_calls",
+            tool_calls=tool_calls,
+            request_id=request_id,
+        )
+
+        return {
+            "current_step": "tool_call",
+            "tool_calls": tool_calls,
+            "thinking": f"模型决定调用 {len(tool_calls)} 个工具",
+            "step_count": step_count + 1,
+        }
+
+    # 直接回答
+    content = message.get("content", "")
+    if content:
+        return {
+            "current_step": "final_answer",
+            "output": content,
+            "thinking": "模型直接回答用户问题",
+            "step_count": step_count + 1,
+        }
+
+    # 无内容响应
+    return {
+        "current_step": "error",
+        "error": "模型返回无内容响应",
+        "error_code": "ERR_MODEL_EMPTY_CONTENT",
+        "step_count": step_count + 1,
+    }
+
+
+def _handle_model_error(error: Exception, step_count: int, request_id: str) -> dict:
+    """处理模型调用错误
+
+    错误类型映射：
+    - ModelTimeoutError → ERR_MODEL_TIMEOUT
+    - AllProvidersDownError → ERR_MODEL_ALL_PROVIDERS_DOWN
+    - 其他 → ERR_MODEL_CALL_FAILED
+
+    Args:
+        error: 异常对象
+        step_count: 当前步骤数
+        request_id: 请求 ID
+
+    Returns:
+        状态更新字典
+    """
+    if isinstance(error, ModelTimeoutError):
+        return {
+            "current_step": "error",
+            "error": f"模型调用超时: {error.timeout_s}秒",
+            "error_code": "ERR_MODEL_TIMEOUT",
+            "step_count": step_count + 1,
+        }
+
+    if isinstance(error, AllProvidersDownError):
+        return {
+            "current_step": "error",
+            "error": "所有模型提供商不可用",
+            "error_code": "ERR_MODEL_ALL_PROVIDERS_DOWN",
+            "step_count": step_count + 1,
+        }
+
+    # 其他错误
+    return {
+        "current_step": "error",
+        "error": f"模型调用失败: {str(error)}",
+        "error_code": "ERR_MODEL_CALL_FAILED",
+        "step_count": step_count + 1,
+    }

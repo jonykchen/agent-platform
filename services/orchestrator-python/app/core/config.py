@@ -200,6 +200,11 @@ class AppConfig(BaseSettings):
     # Agent 执行配置 - 控制推理循环
     # ─────────────────────────────────────────────────────────────────────────
 
+    # 默认模型配置
+    default_model: str = "qwen-max"
+    default_temperature: float = 0.7
+    default_max_tokens: int = 2000
+
     # ReAct 模式的循环限制
     max_agent_steps: int = 10  # 最大推理步数，防止无限循环
 

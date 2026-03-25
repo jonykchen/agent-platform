@@ -48,12 +48,18 @@ OpenAI 兼容接口：
 
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+import time
+import uuid
+import structlog
 
 from app.providers.base import ChatCompletionRequest, ChatCompletionResponse
+from app.router.model_router import get_model_router
+from app.core.exceptions import AllProvidersDownError, ModelTimeoutError
 
 router = APIRouter()
+logger = structlog.get_logger()
 
 
 class ChatRequest(BaseModel):
@@ -102,12 +108,6 @@ async def chat_completion(request: ChatRequest):
             - choices: 生成结果列表
             - usage: Token 使用统计
     """
-    import time
-    import uuid
-    import structlog
-
-    logger = structlog.get_logger()
-
     request_id = f"chat-{uuid.uuid4().hex[:8]}"
     start_time = time.time()
 
@@ -115,40 +115,141 @@ async def chat_completion(request: ChatRequest):
         "request_received",
         endpoint="/v1/chat/completions",
         request_id=request_id,
-        model=requested := request.model,
+        model=request.model,
         message_count=len(request.messages),
         temperature=request.temperature,
         max_tokens=request.max_tokens,
         stream=request.stream,
     )
 
-    # TODO: 实现模型路由和调用逻辑
-    # 当前返回 Mock 响应
+    if request.stream:
+        logger.warning(
+            "streaming_not_supported",
+            request_id=request_id,
+        )
 
-    latency_ms = int((time.time() - start_time) * 1000)
+    try:
+        # 获取模型路由器
+        model_router = get_model_router()
 
-    logger.info(
-        "request_completed",
-        endpoint="/v1/chat/completions",
-        request_id=request_id,
-        model=request.model,
-        latency_ms=latency_ms,
-        status="mock_response",
-    )
+        # 构建请求对象
+        chat_request = ChatCompletionRequest(
+            messages=[
+                {"role": m["role"], "content": m["content"]}
+                for m in request.messages
+            ],
+            model=request.model,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            stream=False,
+        )
 
-    return ChatResponse(
-        id=request_id,
-        created=int(time.time()),
-        model=request.model,
-        choices=[
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": "收到您的消息，Model Gateway 服务待实现。",
-                },
-                "finish_reason": "stop",
-            }
-        ],
-        usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-    )
+        # 路由到最优模型
+        provider, model_name, circuit_breaker = await model_router.route(chat_request)
+
+        logger.info(
+            "model_routed",
+            request_id=request_id,
+            requested_model=request.model,
+            actual_model=model_name,
+            provider=provider.provider_name,
+        )
+
+        # 执行模型调用
+        response = await provider.chat_completion(chat_request)
+
+        # 记录成功
+        circuit_breaker.record_success()
+
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        logger.info(
+            "request_completed",
+            endpoint="/v1/chat/completions",
+            request_id=request_id,
+            model=response.model,
+            latency_ms=latency_ms,
+            prompt_tokens=response.usage.prompt_tokens,
+            completion_tokens=response.usage.completion_tokens,
+        )
+
+        return ChatResponse(
+            id=response.id,
+            created=response.created,
+            model=response.model,
+            choices=[
+                {
+                    "index": choice.index,
+                    "message": {
+                        "role": choice.message.role,
+                        "content": choice.message.content,
+                    },
+                    "finish_reason": choice.finish_reason,
+                }
+                for choice in response.choices
+            ],
+            usage={
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            },
+        )
+
+    except AllProvidersDownError as e:
+        latency_ms = int((time.time() - start_time) * 1000)
+        logger.error(
+            "all_providers_down",
+            request_id=request_id,
+            latency_ms=latency_ms,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ERR_MODEL_ALL_PROVIDERS_DOWN",
+                "message": "所有模型提供商暂时不可用，请稍后重试",
+                "request_id": request_id,
+            },
+        )
+
+    except ModelTimeoutError as e:
+        latency_ms = int((time.time() - start_time) * 1000)
+        logger.error(
+            "model_timeout",
+            request_id=request_id,
+            timeout_s=e.timeout_s,
+            latency_ms=latency_ms,
+        )
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "error": "ERR_MODEL_TIMEOUT",
+                "message": f"模型响应超时 ({e.timeout_s}秒)",
+                "request_id": request_id,
+            },
+        )
+
+    except Exception as e:
+        latency_ms = int((time.time() - start_time) * 1000)
+        logger.error(
+            "request_failed",
+            request_id=request_id,
+            error=str(e),
+            error_type=type(e).__name__,
+            latency_ms=latency_ms,
+        )
+
+        # 尝试记录熔断器失败
+        try:
+            if "circuit_breaker" in dir() and circuit_breaker:
+                circuit_breaker.record_failure()
+        except Exception:
+            pass
+
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "ERR_INTERNAL_ERROR",
+                "message": "内部服务错误",
+                "request_id": request_id,
+            },
+        )
