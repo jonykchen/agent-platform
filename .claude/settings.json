@@ -86,52 +86,17 @@
     ]
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in *.py) python -m py_compile \"$CLAUDE_FILE_PATH\" 2>&1 || python3 -m py_compile \"$CLAUDE_FILE_PATH\" 2>&1 || echo 'SYNTAX_ERROR' ;; esac"
-          },
-          {
-            "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in *.sql) grep -E '(DROP|TRUNCATE|DELETE FROM audit)' \"$CLAUDE_FILE_PATH\" 2>/dev/null && echo '⚠️ DANGEROUS_SQL' || echo 'SQL_OK' ;; esac"
-          },
-          {
-            "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in *.java) echo 'Java file - ensure Spring Boot conventions' ;; esac"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "matcher": "Write",
         "hooks": [
           {
             "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in services/orchestrator-python/*.py|services/orchestrator-python/*/*.py|services/orchestrator-python/*/*/*.py) cd services/orchestrator-python && (uv run ruff check \"$CLAUDE_FILE_PATH\" --fix 2>/dev/null || true) && (uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null || true) && echo '✅ Formatted' ;; esac"
+            "command": "case \"$CLAUDE_FILE_PATH\" in services/orchestrator-python/*.py|services/orchestrator-python/**/*.py) cd services/orchestrator-python && uv run ruff check --fix \"$CLAUDE_FILE_PATH\" 2>/dev/null; uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null ;; services/model-gateway-python/*.py|services/model-gateway-python/**/*.py) cd services/model-gateway-python && uv run ruff check --fix \"$CLAUDE_FILE_PATH\" 2>/dev/null; uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null ;; services/knowledge-python/*.py|services/knowledge-python/**/*.py) cd services/knowledge-python && uv run ruff check --fix \"$CLAUDE_FILE_PATH\" 2>/dev/null; uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null ;; esac"
           },
           {
             "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in services/model-gateway-python/*.py|services/model-gateway-python/*/*.py|services/model-gateway-python/*/*/*.py) cd services/model-gateway-python && (uv run ruff check \"$CLAUDE_FILE_PATH\" --fix 2>/dev/null || true) && (uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null || true) && echo '✅ Formatted' ;; esac"
-          },
-          {
-            "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in services/knowledge-python/*.py|services/knowledge-python/*/*.py|services/knowledge-python/*/*/*.py) cd services/knowledge-python && (uv run ruff check \"$CLAUDE_FILE_PATH\" --fix 2>/dev/null || true) && (uv run ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null || true) && echo '✅ Formatted' ;; esac"
-          },
-          {
-            "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in */test_*.py|test_*.py) echo '🧪 Test file created - run: make test' ;; esac"
-          },
-          {
-            "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in services/*/graph/nodes/*.py) echo '🤖 LangGraph node - update graph/builder.py' ;; esac"
-          },
-          {
-            "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in services/*/tools/*.py) echo '🔧 Tool created - register in tools/__init__.py' ;; esac"
+            "command": "case \"$CLAUDE_FILE_PATH\" in */graph/nodes/*.py) echo '⚠️ LangGraph node created - register in graph/builder.py' ;; */tools/*.py) echo '⚠️ Tool created - register in tools/__init__.py' ;; */test_*.py) echo 'ℹ️ Test file created - run: make test' ;; esac"
           }
         ]
       },
@@ -140,7 +105,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "case \"$CLAUDE_FILE_PATH\" in contracts/proto/*.proto|contracts/proto/*/*.proto) buf lint \"$CLAUDE_FILE_PATH\" 2>/dev/null || echo '⚠️ Proto lint issues' ;; esac"
+            "command": "case \"$CLAUDE_FILE_PATH\" in contracts/proto/*.proto|contracts/proto/**/*.proto) buf lint \"$CLAUDE_FILE_PATH\" 2>/dev/null || echo '⚠️ Proto lint issues' ;; esac"
           }
         ]
       }
