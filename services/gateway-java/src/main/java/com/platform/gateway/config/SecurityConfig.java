@@ -1,5 +1,8 @@
 package com.platform.gateway.config;
 
+import com.platform.gateway.security.ApiKeyAuthenticationFilter;
+import com.platform.gateway.security.JwtAuthenticationFilter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -9,13 +12,31 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * Spring Security 配置
+ *
+ * 【认证架构】
+ * 多种认证方式并存：
+ * 1. JWT Token: 用户登录后的会话认证
+ * 2. API Key: 服务间调用或外部系统集成
+ *
+ * 【过滤器链顺序】
+ * Request → JwtFilter → ApiKeyFilter → ... → Controller
+ *
+ * 【授权规则】
+ * - 公开端点: /health, /actuator, /auth/login
+ * - 用户端点: 需要 JWT 认证
+ * - 服务端点: 需要 API Key 或 JWT
  */
 @Configuration
 @EnableWebSecurity
+@RequiredArgsConstructor
 public class SecurityConfig {
+
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -37,10 +58,13 @@ public class SecurityConfig {
                         .requestMatchers("/api/**").authenticated()
                         // 其他请求
                         .anyRequest().permitAll()
-                );
+                )
 
-        // TODO: 添加 JWT 过滤器和 API Key 认证
-        // 当前 Phase 1 MVP 允许所有请求通过（依赖网关层的租户隔离）
+                // 添加 JWT 过滤器（在 UsernamePasswordAuthenticationFilter 之前）
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+
+                // 添加 API Key 过滤器（在 JWT 过滤器之后）
+                .addFilterAfter(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }
