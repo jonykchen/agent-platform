@@ -248,3 +248,32 @@ class ApprovalRequiredError(BasePlatformException):
             user_message="该操作需要人工审批，已提交审批申请",
             details={"approval_id": approval_id},
         )
+
+
+class ToolBusUnavailableError(BasePlatformException):
+    def __init__(self, reason: str = ""):
+        super().__init__(
+            f"工具总线服务不可用: {reason}",
+            code="ERR_TOOLBUS_UNAVAILABLE",
+            user_message="工具服务暂时不可用，请稍后重试",
+            details={"reason": reason},
+        )
+
+
+class DatabaseError(BasePlatformException):
+    def __init__(self, message: str, details=None):
+        super().__init__(
+            message,
+            code="ERR_DATABASE_ERROR",
+            user_message="数据服务异常，请稍后重试",
+            details=details,
+        )
+
+
+class DatabaseConnectionError(BasePlatformException):
+    def __init__(self, message: str):
+        super().__init__(
+            message,
+            code="ERR_DATABASE_CONNECTION",
+            user_message="数据服务连接失败，请稍后重试",
+        )

@@ -134,8 +134,15 @@ async def lifespan(app: FastAPI):
     # step_buffer = StepBuffer(db_pool)
     # await step_buffer.start()
 
-    # TODO: 初始化数据库连接池（使用 asyncpg）
-    # TODO: 初始化 gRPC 客户端（连接 ToolBus）
+    # 6. 数据库连接池（使用 asyncpg）
+    from app.infrastructure.database import init_database_pool
+    await init_database_pool()
+    logger.info("Database pool initialized")
+
+    # 7. gRPC 客户端（连接 ToolBus）
+    from app.infrastructure.grpc_client import init_grpc_client
+    await init_grpc_client()
+    logger.info("gRPC client initialized")
 
     # ─────────────────────────────────────────────────────────────────────
     # Runtime: 处理请求
@@ -149,6 +156,13 @@ async def lifespan(app: FastAPI):
     # 释放顺序与初始化相反
     if step_buffer:
         await step_buffer.stop()
+
+    from app.infrastructure.grpc_client import close_grpc_client
+    from app.infrastructure.database import close_database_pool
+
+    await close_grpc_client()
+    await close_database_pool()
+
     if redis_client:
         await redis_client.close()
 
