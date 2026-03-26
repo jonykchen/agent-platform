@@ -13,58 +13,19 @@ import net.devh.boot.grpc.server.service.GrpcService;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
  * ToolBus gRPC 服务实现
  *
- * 【核心概念】为什么使用 gRPC 而非 REST？
- * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- *
- * gRPC vs REST 对比：
- * ┌─────────────────┬──────────────────────────┬──────────────────────────┐
- * │  特性            │  gRPC                    │  REST                    │
- * ├─────────────────┼──────────────────────────┼──────────────────────────┤
- * │  数据格式        │  Protobuf（二进制）       │  JSON（文本）            │
- * │  性能           │  快（体积小、序列化快）    │  较慢                    │
- * │  类型安全        │  强类型（.proto 定义）    │  弱类型                  │
- * │  流式传输        │  原生支持双向流           │  需额外实现（SSE/WebSocket）│
- * │  代码生成        │  自动生成客户端/服务端     │  需手动或 OpenAPI 工具   │
- * │  浏览器支持      │  需要 gRPC-Web 代理       │  原生支持                │
- * └─────────────────┴──────────────────────────┴──────────────────────────┘
- *
- * ToolBus 选择 gRPC 的原因：
- * 1. 内部服务通信：Orchestrator（Python）与 ToolBus（Java）都是后端服务
- * 2. 高频调用：工具调用频繁，需要高性能
- * 3. 强类型约束：Protobuf 定义接口，避免字段不一致
- * 4. 批量操作：executeToolsBatch 一次调用多个工具
- *
- * 【gRPC 调用模型】
- * ┌─────────────────────────────────────────────────────────────────────────┐
- * │  Orchestrator (Python)                                                  │
- * │       │                                                                 │
- * │       │ gRPC Stub (自动生成)                                             │
- * │       ▼                                                                 │
- * │  ┌─────────────────────────────────────────────────────────────────────┐│
- * │  │                     ToolBus (Java)                                  ││
- * │  │  ┌───────────────┐    ┌───────────────┐    ┌───────────────┐      ││
- * │  │  │ executeTool   │    │ listTools     │    │ validateInput │      ││
- * │  │  │ (Unary)       │    │ (Unary)       │    │ (Unary)       │      ││
- * │  │  └───────────────┘    └───────────────┘    └───────────────┘      ││
- * │  └─────────────────────────────────────────────────────────────────────┘│
- * └─────────────────────────────────────────────────────────────────────────┘
- *
- * 【Protobuf 定义示例】（contracts/proto/toolbus/service.proto）
- * service ToolBusService {
- *   rpc ExecuteTool(ToolExecuteRequest) returns (ToolExecuteResponse);
- *   rpc ExecuteToolsBatch(ToolsBatchRequest) returns (ToolsBatchResponse);
- *   rpc ListTools(ListToolsRequest) returns (ListToolsResponse);
- * }
- *
- * 【参考】
- * - gRPC 官方文档: https://grpc.io/docs/
- * - Protobuf 语法: https://protobuf.dev/programming-guides/
- * - grpc-spring-boot-starter: https://yidongnan.github.io/grpc-spring-boot-starter/
+ * 【并行执行优化】
+ * 使用 CompletableFuture 实现工具并行调用：
+ * - 无依赖的工具可同时执行
+ * - 减少总耗时（从串行变为并行）
+ * - 保持错误处理一致性
  */
 @Slf4j
 @GrpcService
@@ -76,20 +37,11 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
     private final ToolPermissionService permissionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // 虚拟线程池（Java 21）
+    private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
     /**
      * 执行单个工具调用
-     *
-     * 【处理流程】
-     * 1. 检查工具是否存在（工具注册表）
-     * 2. 权限检查（租户 + 用户 + 工具维度）
-     * 3. 执行工具（Mock 或真实实现）
-     * 4. 构建响应（包含风险等级、耗时等）
-     *
-     * 【响应状态】
-     * - success: 执行成功，result_json 包含结果
-     * - pending_approval: 需要审批，返回 approval_id
-     * - rejected: 风控拒绝，error 包含原因
-     * - failed: 执行失败，error 包含错误信息
      */
     @Override
     public void executeTool(ToolExecuteRequest request, io.grpc.stub.StreamObserver<ToolExecuteResponse> responseObserver) {
@@ -103,7 +55,6 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
 
         try {
             // 1. 检查工具是否存在
-            // 工具注册表维护所有可用工具的定义（名称、参数 Schema、风险等级）
             var toolOpt = toolRegistry.get(toolName, request.getToolVersion());
             if (toolOpt.isEmpty()) {
                 responseObserver.onNext(buildErrorResponse(request,
@@ -115,8 +66,6 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
             ToolDefinition tool = toolOpt.get();
 
             // 2. 权限检查
-            // 检查顺序：租户配置 → 用户权限 → 工具级别
-            // skipRiskCheck 用于内部调用（已通过上层风控）
             if (!request.getSkipRiskCheck()) {
                 var permissionCheck = permissionService.checkPermission(tenantId, userId, toolName);
                 if (!permissionCheck.isAllowed()) {
@@ -128,7 +77,6 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
             }
 
             // 3. 执行工具
-            // 当前使用 Mock 执行器，生产环境替换为真实实现
             ToolExecutionResult result = mockToolExecutor.execute(
                     toolName,
                     request.getToolVersion(),
@@ -136,7 +84,6 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
             );
 
             // 4. 构建响应
-            // 包含：调用 ID、状态、结果、风险等级、耗时
             ToolExecuteResponse.Builder responseBuilder = ToolExecuteResponse.newBuilder()
                     .setContext(request.getContext())
                     .setCallId(result.getCallId())
@@ -148,7 +95,6 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
             if (result.getStatus().equals("success")) {
                 responseBuilder.setResultJson(result.getResultJson());
             } else if (result.getStatus().equals("pending_approval")) {
-                // 高风险操作需要审批
                 responseBuilder.setApprovalId(result.getApprovalId());
                 responseBuilder.setApprovalReason(result.getApprovalReason());
             } else {
@@ -172,62 +118,99 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
     }
 
     /**
-     * 批量执行工具调用
+     * 批量执行工具调用 - 并行优化
      *
-     * 【批处理优化】
-     * - 减少网络往返：一次 RPC 调用执行多个工具
-     * - 并行执行：工具间无依赖时可并行
-     * - 结果聚合：统一返回所有结果
+     * 【并行执行策略】
+     * 1. 使用 CompletableFuture 异步执行每个工具
+     * 2. 使用虚拟线程（Java 21）避免线程池阻塞
+     * 3. 等待所有结果完成后统一返回
+     * 4. 错误隔离：单个工具失败不影响其他工具
      *
-     * 注意：当前实现为顺序执行，后续可优化为并行执行
+     * 【性能提升】
+     * - 串行：总耗时 = Σ 单个工具耗时
+     * - 并行：总耗时 ≈ Max 单个工具耗时
      */
     @Override
     public void executeToolsBatch(ToolsBatchRequest request,
             io.grpc.stub.StreamObserver<ToolsBatchResponse> responseObserver) {
 
-        log.info("ExecuteToolsBatch request: requestId={}, count={}",
-                request.getContext().getRequestId(), request.getToolsCount());
+        String requestId = request.getContext().getRequestId();
+        int toolCount = request.getToolsCount();
 
-        // TODO: 并行执行多个工具以提升性能
-        // 当前为顺序执行，可使用 CompletableFuture 或虚拟线程并行化
-        List<ToolExecuteResponse> results = request.getToolsList().stream()
-                .map(toolRequest -> {
-                    // 同步调用单个工具（简化实现）
-                    try {
-                        ToolExecutionResult result = mockToolExecutor.execute(
-                                toolRequest.getToolName(),
-                                toolRequest.getToolVersion(),
-                                toolRequest.getArgumentsJson()
-                        );
-                        return ToolExecuteResponse.newBuilder()
-                                .setContext(request.getContext())
-                                .setCallId(result.getCallId())
-                                .setStatus(result.getStatus())
-                                .setResultJson(result.getResultJson() != null ? result.getResultJson() : "")
-                                .setDurationMs(result.getDurationMs())
-                                .build();
-                    } catch (Exception e) {
-                        return buildErrorResponse(toolRequest, "ERR_TOOL_EXECUTION_FAILED", e.getMessage());
-                    }
-                })
+        log.info("ExecuteToolsBatch request: requestId={}, count={}", requestId, toolCount);
+
+        long startTime = System.currentTimeMillis();
+
+        // 并行执行所有工具
+        List<CompletableFuture<ToolExecuteResponse>> futures = request.getToolsList().stream()
+                .map(toolRequest -> CompletableFuture.supplyAsync(
+                        () -> executeToolInternal(toolRequest),
+                        virtualThreadExecutor
+                ))
                 .collect(Collectors.toList());
 
-        ToolsBatchResponse response = ToolsBatchResponse.newBuilder()
-                .setContext(request.getContext())
-                .addAllResults(results)
-                .setTotalDurationMs(results.stream().mapToInt(ToolExecuteResponse::getDurationMs).sum())
-                .build();
+        // 等待所有结果
+        CompletableFuture<Void> allFutures = CompletableFuture.allOf(
+                futures.toArray(new CompletableFuture[0])
+        );
 
-        responseObserver.onNext(response);
-        responseObserver.onCompleted();
+        try {
+            // 阻塞等待（虚拟线程不会阻塞平台线程）
+            allFutures.join();
+
+            // 收集结果
+            List<ToolExecuteResponse> results = futures.stream()
+                    .map(CompletableFuture::join)
+                    .collect(Collectors.toList());
+
+            long totalDurationMs = System.currentTimeMillis() - startTime;
+
+            log.info("ExecuteToolsBatch completed: requestId={}, count={}, parallelDurationMs={}",
+                    requestId, results.size(), totalDurationMs);
+
+            ToolsBatchResponse response = ToolsBatchResponse.newBuilder()
+                    .setContext(request.getContext())
+                    .addAllResults(results)
+                    .setTotalDurationMs((int) totalDurationMs)
+                    .build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+
+        } catch (Exception e) {
+            log.error("ExecuteToolsBatch failed: requestId={}", requestId, e);
+            responseObserver.onError(Status.INTERNAL
+                    .withDescription("Batch execution failed: " + e.getMessage())
+                    .asRuntimeException());
+        }
+    }
+
+    /**
+     * 内部执行工具（用于并行调用）
+     */
+    private ToolExecuteResponse executeToolInternal(ToolExecuteRequest toolRequest) {
+        try {
+            ToolExecutionResult result = mockToolExecutor.execute(
+                    toolRequest.getToolName(),
+                    toolRequest.getToolVersion(),
+                    toolRequest.getArgumentsJson()
+            );
+
+            return ToolExecuteResponse.newBuilder()
+                    .setContext(toolRequest.getContext())
+                    .setCallId(result.getCallId())
+                    .setStatus(result.getStatus())
+                    .setResultJson(result.getResultJson() != null ? result.getResultJson() : "")
+                    .setDurationMs(result.getDurationMs())
+                    .build();
+
+        } catch (Exception e) {
+            return buildErrorResponse(toolRequest, "ERR_TOOL_EXECUTION_FAILED", e.getMessage());
+        }
     }
 
     /**
      * 列出可用工具
-     *
-     * 【过滤条件】
-     * - category: 按类别过滤（如 "query", "write"）
-     * - includeDeprecated: 是否包含已废弃工具
      */
     @Override
     public void listTools(ListToolsRequest request,
@@ -238,11 +221,9 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
 
         List<ToolInfo> tools = toolRegistry.listAll().stream()
                 .filter(tool -> {
-                    // 类别过滤
                     if (!request.getCategory().isEmpty() && !tool.getCategory().equals(request.getCategory())) {
                         return false;
                     }
-                    // 废弃工具过滤
                     if (!request.getIncludeDeprecated() && tool.isDeprecated()) {
                         return false;
                     }
@@ -263,12 +244,6 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
 
     /**
      * 获取工具详情
-     *
-     * 返回工具的完整定义：
-     * - 名称、版本、描述
-     * - 输入参数 Schema（JSON Schema 格式）
-     * - 风险等级
-     * - 是否需要审批
      */
     @Override
     public void getToolInfo(GetToolInfoRequest request,
@@ -302,14 +277,6 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
 
     /**
      * 验证工具输入参数
-     *
-     * 【验证规则】
-     * 1. JSON 格式校验
-     * 2. 必填字段检查
-     * 3. 类型匹配校验
-     * 4. 业务规则校验
-     *
-     * 当前仅做 JSON 格式校验，后续可扩展为完整的 Schema 验证
      */
     @Override
     public void validateToolInput(ValidateToolInputRequest request,
@@ -317,7 +284,6 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
 
         log.info("ValidateToolInput request: toolName={}", request.getToolName());
 
-        // 简化实现：解析 JSON 判断是否有效
         boolean valid = true;
         List<ValidationError> errors = List.of();
 
