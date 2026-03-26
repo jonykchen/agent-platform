@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 
 import structlog
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import config
@@ -51,9 +51,17 @@ class DocumentUploadResponse(BaseModel):
     message: str
 
 
-def _get_tenant_id() -> str:
-    """获取租户 ID（从请求头或默认）"""
-    # TODO: 从请求头获取
+def _get_tenant_id(request_headers: dict = None) -> str:
+    """获取租户 ID（从请求头）
+
+    【请求头约定】
+    - X-Tenant-ID: 租户唯一标识
+    - 如果未提供，使用默认租户（开发环境）
+    """
+    if request_headers:
+        tenant_id = request_headers.get("X-Tenant-ID")
+        if tenant_id:
+            return tenant_id
     return "default_tenant"
 
 
@@ -111,8 +119,8 @@ def _chunk_text(text: str, chunk_size: int = None, overlap: int = None) -> list[
 
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
-    tenant_id: str = Depends(_get_tenant_id),
 ):
     """上传并处理文档
 
@@ -125,12 +133,13 @@ async def upload_document(
     6. 返回文档信息
 
     Args:
+        request: FastAPI 请求对象
         file: 上传的文件
-        tenant_id: 租户 ID
 
     Returns:
         上传响应
     """
+    tenant_id = _get_tenant_id(dict(request.headers))
     # 验证文件扩展名
     ext = Path(file.filename).suffix.lower()
     if ext not in PROCESSORS:
@@ -215,18 +224,19 @@ async def upload_document(
 
 @router.get("/{document_id}", response_model=DocumentInfo)
 async def get_document(
+    request: Request,
     document_id: str,
-    tenant_id: str = Depends(_get_tenant_id),
 ):
     """获取文档信息
 
     Args:
+        request: FastAPI 请求对象
         document_id: 文档 ID
-        tenant_id: 租户 ID
 
     Returns:
         文档信息
     """
+    tenant_id = _get_tenant_id(dict(request.headers))
     indexer = get_vector_indexer()
     doc_info = await indexer.get_document_info(document_id, tenant_id)
 
@@ -246,18 +256,19 @@ async def get_document(
 
 @router.delete("/{document_id}")
 async def delete_document(
+    request: Request,
     document_id: str,
-    tenant_id: str = Depends(_get_tenant_id),
 ):
     """删除文档
 
     Args:
+        request: FastAPI 请求对象
         document_id: 文档 ID
-        tenant_id: 租户 ID
 
     Returns:
         删除结果
     """
+    tenant_id = _get_tenant_id(dict(request.headers))
     indexer = get_vector_indexer()
 
     # 检查文档是否存在
@@ -272,7 +283,7 @@ async def delete_document(
 
 @router.get("/", response_model=list[DocumentInfo])
 async def list_documents(
-    tenant_id: str = Depends(_get_tenant_id),
+    request: Request,
     status: str | None = None,
     limit: int = 20,
     offset: int = 0,
@@ -280,7 +291,7 @@ async def list_documents(
     """列出文档
 
     Args:
-        tenant_id: 租户 ID
+        request: FastAPI 请求对象
         status: 状态筛选
         limit: 返回数量
         offset: 偏移量
@@ -288,5 +299,43 @@ async def list_documents(
     Returns:
         文档列表
     """
-    # TODO: 实现数据库查询
-    return []
+    tenant_id = _get_tenant_id(dict(request.headers))
+    indexer = get_vector_indexer()
+    pool = await indexer._get_pool()
+
+    # 构建查询
+    sql = """
+        SELECT id, tenant_id, name, file_type, file_size, status, chunk_count, created_at
+        FROM knowledge_document
+        WHERE tenant_id = $1
+    """
+    params = [tenant_id]
+    param_idx = 2
+
+    if status:
+        sql += f" AND status = ${param_idx}"
+        params.append(status)
+        param_idx += 1
+
+    sql += f" ORDER BY created_at DESC LIMIT ${param_idx} OFFSET ${param_idx + 1}"
+    params.extend([limit, offset])
+
+    try:
+        results = await pool.fetch(sql, *params)
+
+        return [
+            DocumentInfo(
+                document_id=r["id"],
+                name=r["name"],
+                file_type=r["file_type"],
+                file_size=r["file_size"],
+                status=r["status"],
+                chunk_count=r["chunk_count"],
+                created_at=r["created_at"].isoformat(),
+            )
+            for r in results
+        ]
+
+    except Exception as e:
+        logger.error("list_documents_failed", error=str(e))
+        return []

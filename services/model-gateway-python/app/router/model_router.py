@@ -199,9 +199,51 @@ class ModelRouter:
     async def _get_policy(self, tenant_id: str | None) -> dict:
         """获取路由策略
 
-        TODO: 从数据库或 Redis 加载租户策略
+        【策略加载流程】
+        1. 从 Redis 加载租户级策略（如有）
+        2. 使用默认策略作为后备
+
+        【租户策略格式】（存储在 Redis）
+        Key: model_policy:{tenant_id}
+        Value: {
+            "primary_model": "qwen-max",
+            "fallback_models": ["qwen-plus", "qwen-turbo"],
+            "rate_limit": 100,  # 每分钟最大调用数
+            "cost_budget": 10.0  # 日成本预算（美元）
+        }
         """
-        # 当前返回默认策略
+        # 如果有租户 ID，尝试从 Redis 加载
+        if tenant_id:
+            try:
+                from redis.asyncio import Redis
+                from app.core.config import config
+
+                redis = Redis.from_url(config.redis_url)
+                policy_key = f"model_policy:{tenant_id}"
+
+                policy_data = await redis.get(policy_key)
+                if policy_data:
+                    import json
+                    policy = json.loads(policy_data)
+                    await redis.close()
+
+                    logger.debug(
+                        "tenant_policy_loaded",
+                        tenant_id=tenant_id,
+                        primary_model=policy.get("primary_model"),
+                    )
+                    return policy
+
+                await redis.close()
+
+            except Exception as e:
+                logger.warning(
+                    "tenant_policy_load_failed",
+                    tenant_id=tenant_id,
+                    error=str(e),
+                )
+
+        # 返回默认策略
         return self._default_policy
 
     def set_default_policy(self, policy: dict) -> None:

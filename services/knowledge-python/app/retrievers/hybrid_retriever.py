@@ -5,6 +5,7 @@
 
 import json
 import structlog
+import numpy as np
 
 try:
     import asyncpg
@@ -83,9 +84,63 @@ class HybridRetriever:
 
         使用 pgvector 的向量相似度搜索。
         """
-        # TODO: 实现真实的 embedding 调用
-        # 当前返回 Mock 数据
-        return []
+        try:
+            # 生成查询向量
+            from app.indexers.vector_indexer import EmbeddingClient
+            from app.core.config import config
+
+            embedding_client = EmbeddingClient(
+                base_url=config.embedding_service_url,
+                model=config.embedding_model,
+            )
+            query_embedding = await embedding_client.embed(query)
+
+            # 构建查询
+            sql = """
+                SELECT
+                    c.id as chunk_id,
+                    c.document_id,
+                    c.chunk_index,
+                    c.content,
+                    c.metadata,
+                    d.name as document_name,
+                    1 - (c.embedding <=> $1::vector) as score
+                FROM knowledge_chunk c
+                JOIN knowledge_document d ON c.document_id = d.id
+                WHERE c.tenant_id = $2
+                    AND d.status = 'ready'
+            """
+
+            params = [query_embedding.tolist(), tenant_id]
+            param_idx = 3
+
+            if doc_ids:
+                sql += f" AND c.document_id = ANY(${param_idx})"
+                params.append(doc_ids)
+                param_idx += 1
+
+            sql += f" ORDER BY c.embedding <=> $1::vector LIMIT ${param_idx}"
+            params.append(top_k)
+
+            results = await pool.fetch(sql, *params)
+
+            return [
+                {
+                    "chunk_id": r["chunk_id"],
+                    "document_id": r["document_id"],
+                    "document_name": r["document_name"],
+                    "chunk_index": r["chunk_index"],
+                    "content": r["content"],
+                    "score": float(r["score"]),
+                    "metadata": json.loads(r["metadata"]) if r["metadata"] else {},
+                    "source": "vector",
+                }
+                for r in results
+            ]
+
+        except Exception as e:
+            logger.warning("Vector search failed", error=str(e))
+            return []
 
     async def _keyword_search(
         self,
