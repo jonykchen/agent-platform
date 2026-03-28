@@ -57,6 +57,8 @@ from redis.asyncio import Redis
 from app.api.v1 import chat, health
 from app.api.middleware.error_handler import ErrorHandlerMiddleware
 from app.api.middleware.request_context import RequestContextMiddleware
+from app.api.middleware.rate_limit_middleware import RateLimitMiddleware
+from app.api.middleware.tracing_middleware import TracingMiddleware
 from app.core.config import config
 from app.core.feature_flags import FeatureFlagClient
 from app.core.health_checker import init_health_checker
@@ -107,6 +109,10 @@ async def lifespan(app: FastAPI):
 
     # 1. 日志初始化（必须最先）
     setup_logging(config.environment, config.debug)
+
+    # 1.5 初始化追踪系统
+    from app.core.tracing import setup_tracing
+    setup_tracing("orchestrator-python")
 
     logger.info(
         "Orchestrator starting",
@@ -204,8 +210,10 @@ def create_app() -> FastAPI:
 
     # 自定义中间件（顺序重要：后添加的先执行）
     app.add_middleware(ErrorHandlerMiddleware)  # 统一异常响应格式
-    app.add_middleware(RequestContextMiddleware)  # 提取 request_id、tenant_id
+    app.add_middleware(TracingMiddleware)  # 追踪信息注入
+    app.add_middleware(RateLimitMiddleware)  # 速率限制
     app.add_middleware(RequestMetricsMiddleware)  # Prometheus 指标采集
+    app.add_middleware(RequestContextMiddleware)  # 提取 request_id、tenant_id
 
     # ─────────────────────────────────────────────────────────────────────
     # 路由注册

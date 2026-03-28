@@ -1,0 +1,76 @@
+# ============================================================
+#  Agent Platform - Pre-commit Hooks
+#  在每次提交前自动运行代码质量检查
+# ============================================================
+# 安装: pre-commit install
+# 运行: pre-commit run --all-files
+# ============================================================
+
+repos:
+  # ====== Python Lint & Format ======
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: \.py$
+      - id: ruff-format
+        files: \.py$
+
+  # ====== Secrets Detection ======
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+
+  # ====== General Checks ======
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: detect-private-key
+      - id: debug-statements
+        files: \.py$
+      - id: no-commit-to-branch
+        args: [--branch, master, --branch, main]
+
+  # ====== Type Check ======
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        files: services/.*\.py$
+        args: [--ignore-missing-imports, --no-error-summary]
+        pass_filenames: false
+        additional_dependencies:
+          - pydantic>=2.7.0
+          - types-redis
+          - types-requests
+
+# 全局配置
+default_language_version:
+  python: python3.12
+
+# 跳过某些文件
+exclude: |
+  (?x)^(
+    \.git/|
+    \.mypy_cache/|
+    \.pytest_cache/|
+    \.ruff_cache/|
+    __pycache__/|
+    node_modules/|
+    target/|
+    dist/|
+    \.egg-info/
+  )$

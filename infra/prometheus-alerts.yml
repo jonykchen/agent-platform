@@ -1,0 +1,193 @@
+# ============================================================
+#  Prometheus Alerting Rules
+#  Agent Platform 生产级告警规则
+# ============================================================
+
+groups:
+  # ====== 服务健康告警 ======
+  - name: agent-platform-health
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "服务 {{ $labels.job }} 不可用"
+          description: "服务 {{ $labels.instance }} 已经超过 2 分钟无响应"
+
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(orchestrator_request_latency_seconds_bucket[5m])) by (le, endpoint)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "高延迟告警: {{ $labels.endpoint }}"
+          description: "P95 延迟超过 5 秒"
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(orchestrator_request_total{status=~"5.."}[5m]))
+          / sum(rate(orchestrator_request_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "高错误率告警"
+          description: "HTTP 5xx 错误率超过 10%"
+
+  # ====== 熔断器告警 ======
+  - name: agent-platform-circuit-breaker
+    rules:
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "熔断器打开: {{ $labels.service }}"
+          description: "服务 {{ $labels.service }} 的熔断器已打开，请求被快速失败"
+
+      - alert: CircuitBreakerHighFailures
+        expr: rate(circuit_breaker_failures_total[5m]) > 5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "熔断器高失败率: {{ $labels.service }}"
+          description: "服务 {{ $labels.service }} 失败率过高"
+
+  # ====== 模型调用告警 ======
+  - name: agent-platform-model
+    rules:
+      - alert: ModelCallHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(model_call_latency_seconds_bucket[5m])) by (le, model)
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "模型调用延迟过高: {{ $labels.model }}"
+          description: "模型 {{ $labels.model }} P95 延迟超过 30 秒"
+
+      - alert: ModelCallHighErrorRate
+        expr: |
+          sum(rate(model_call_total{status="error"}[5m]))
+          / sum(rate(model_call_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "模型调用错误率过高"
+          description: "模型调用错误率超过 5%"
+
+      - alert: AllProvidersDown
+        expr: |
+          sum(model_call_total{status="error"})
+          / sum(model_call_total) > 0.9
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "所有模型提供商不可用"
+          description: "模型调用成功率低于 10%，可能所有提供商都不可用"
+
+  # ====== 工具调用告警 ======
+  - name: agent-platform-tool
+    rules:
+      - alert: ToolCallHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(tool_call_latency_seconds_bucket[5m])) by (le, tool_name)
+          ) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "工具调用延迟过高: {{ $labels.tool_name }}"
+          description: "工具 {{ $labels.tool_name }} P95 延迟超过 10 秒"
+
+      - alert: ToolCallFailure
+        expr: rate(tool_call_total{status="failed"}[5m]) > 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "工具调用失败: {{ $labels.tool_name }}"
+          description: "工具 {{ $labels.tool_name }} 失败率过高"
+
+  # ====== Agent 运行告警 ======
+  - name: agent-platform-agent
+    rules:
+      - alert: AgentMaxStepsExceeded
+        expr: rate(agent_run_total{status="max_steps_exceeded"}[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 步数超限频繁"
+          description: "超过最大步数的 Agent 运行比例过高"
+
+      - alert: AgentHighFailureRate
+        expr: |
+          sum(rate(agent_run_total{status="failed"}[10m]))
+          / sum(rate(agent_run_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 失败率过高"
+          description: "Agent 运行失败率超过 10%"
+
+      - alert: AgentLongRunning
+        expr: |
+          histogram_quantile(0.95, rate(agent_run_latency_seconds_bucket[10m])) > 120
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 运行时间过长"
+          description: "P95 运行时间超过 2 分钟"
+
+  # ====== 缓存告警 ======
+  - name: agent-platform-cache
+    rules:
+      - alert: CacheHitRateLow
+        expr: |
+          sum(rate(cache_hits_total[10m]))
+          / (sum(rate(cache_hits_total[10m])) + sum(rate(cache_misses_total[10m]))) < 0.5
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "缓存命中率过低"
+          description: "缓存命中率低于 50%，考虑优化缓存策略"
+
+  # ====== 资源告警 ======
+  - name: agent-platform-resources
+    rules:
+      - alert: HighMemoryUsage
+        expr: |
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+          / node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "内存使用率过高"
+          description: "内存使用率超过 90%"
+
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU 使用率过高"
+          description: "CPU 使用率超过 80%"

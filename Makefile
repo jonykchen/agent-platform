@@ -48,6 +48,25 @@ test-frontend:
 		pnpm test 2>/dev/null || npm test 2>/dev/null || echo "Frontend tests skipped"; \
 	fi
 
+# ---- 测试覆盖率 ----
+test-coverage: test-coverage-python test-coverage-java
+	@echo "✅ Coverage reports generated"
+
+test-coverage-python:
+	@echo "Running Python tests with coverage..."
+	@if [ -f services/orchestrator-python/pyproject.toml ]; then \
+		cd services/orchestrator-python && uv run pytest tests/ --cov=app --cov-report=html --cov-report=term --cov-fail-under=80; \
+	fi
+	@if [ -f services/model-gateway-python/pyproject.toml ]; then \
+		cd services/model-gateway-python && uv run pytest tests/ --cov=app --cov-report=html --cov-report=term; \
+	fi
+
+test-coverage-java:
+	@echo "Running Java tests with coverage..."
+	@if [ -d services/gateway-java ]; then \
+		cd services/gateway-java && ./mvnw jacoco:prepare-agent test jacoco:report; \
+	fi
+
 # ---- 代码质量 ----
 lint: lint-java lint-python lint-proto lint-frontend
 	@echo "✅ Lint passed"

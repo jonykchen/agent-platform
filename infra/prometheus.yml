@@ -6,6 +6,17 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# 告警规则文件
+rule_files:
+  - alerts.yml
+
+# Alertmanager 配置
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
 scrape_configs:
   # OpenTelemetry Collector
   - job_name: 'otel-collector'
@@ -29,3 +40,20 @@ scrape_configs:
     static_configs:
       - targets: ['host.docker.internal:8001']
     metrics_path: '/metrics'
+
+  # Knowledge Service (Python)
+  - job_name: 'knowledge-python'
+    static_configs:
+      - targets: ['host.docker.internal:8081']
+    metrics_path: '/metrics'
+
+  # Tool Bus Service (Java)
+  - job_name: 'tool-bus-java'
+    static_configs:
+      - targets: ['host.docker.internal:50051']
+    metrics_path: '/metrics'
+
+  # Alertmanager
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']

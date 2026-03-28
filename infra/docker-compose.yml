@@ -130,7 +130,19 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus_data:/prometheus
+    networks:
+      - agent-network
+
+  # ====== Alertmanager ======
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: agent-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     networks:
       - agent-network
 
