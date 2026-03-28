@@ -1,13 +1,18 @@
 package com.platform.governance.notification;
 
 import com.platform.governance.approval.ApprovalTask;
-import com.platform.governance.config.NotificationConfig;
+import com.platform.governance.config.MailConfig;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -29,7 +34,12 @@ import java.util.Map;
  * notification:
  *   wecom-webhook: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx
  *   dingtalk-webhook: https://oapi.dingtalk.com/robot/send?access_token=xxx
- *   email-enabled: true
+ * mail:
+ *   host: smtp.example.com
+ *   port: 587
+ *   username: noreply@example.com
+ *   password: ${MAIL_PASSWORD}
+ *   enabled: true
  */
 @Slf4j
 @Service
@@ -38,6 +48,8 @@ public class NotificationService {
 
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final NotificationConfig notificationConfig;
+    private final MailConfig mailConfig;
+    private final JavaMailSender mailSender;
     private final RestTemplate restTemplate = new RestTemplate();
 
     private static final String APPROVAL_TOPIC = "agent-platform.approval";
@@ -164,11 +176,71 @@ public class NotificationService {
     /**
      * 邮件发送（SMTP）
      *
-     * TODO: 实现邮件发送逻辑
+     * 使用 Spring Mail 发送 HTML 格式邮件
      */
     private void sendEmailNotification(String to, String subject, String content) {
+        if (!mailConfig.isEnabled()) {
+            log.debug("Email notification disabled, skipping: to={}", to);
+            return;
+        }
+
         log.info("Sending email: to={}, subject={}", to, subject);
-        // TODO: 使用 JavaMail 或第三方服务发送邮件
+
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(mailConfig.getFrom());
+            helper.setTo(to);
+            helper.setSubject(subject);
+
+            // 构建 HTML 内容
+            String htmlContent = buildHtmlEmail(subject, content);
+            helper.setText(htmlContent, true);
+
+            mailSender.send(message);
+
+            log.info("Email sent successfully: to={}", to);
+
+        } catch (MessagingException e) {
+            log.error("Failed to send email: to={}, error={}", to, e.getMessage());
+            // 不抛异常，避免影响主流程
+        }
+    }
+
+    /**
+     * 构建 HTML 邮件内容
+     */
+    private String buildHtmlEmail(String subject, String content) {
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                    .header { background: #f5f5f5; padding: 15px; border-radius: 5px; }
+                    .content { padding: 20px; background: #fff; }
+                    .footer { font-size: 12px; color: #666; padding-top: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h2>%s</h2>
+                    </div>
+                    <div class="content">
+                        <pre>%s</pre>
+                    </div>
+                    <div class="footer">
+                        <p>此邮件由 Agent Platform 自动发送，请勿直接回复。</p>
+                        <p>发送时间: %s</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """.formatted(subject, content, Instant.now().toString());
     }
 
     /**

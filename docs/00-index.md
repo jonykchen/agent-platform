@@ -207,6 +207,16 @@
 - 常用命令速查表
 - 常见问题解答
 
+### 开发工具
+
+→ **[dev-jenv-guide.md](./dev-jenv-guide.md)** — jenv Java 版本管理指南，包含：
+- jenv 工作原理与架构
+- 安装配置步骤（macOS/Linux）
+- 基本用法（安装、注册、切换版本）
+- 进阶用法（别名、插件、项目级锁定）
+- 常见问题与解决方案
+- 与项目集成配置
+
 ### Agent 开发
 
 → **[agent-dev-guide.md](./agent-dev-guide.md)** — 新人上手 Agent 开发指南，包含：

@@ -44,3 +44,21 @@ logging:
   level:
     root: INFO
     com.platform: DEBUG
+
+# 外部服务配置
+# enabled: false = Mock 实现, true = 真实服务调用
+external-services:
+  user:
+    enabled: false
+    base-url: ${USER_SERVICE_URL:http://user-service:8080}
+    timeout-ms: 5000
+  order:
+    enabled: false
+    base-url: ${ORDER_SERVICE_URL:http://order-service:8080}
+    timeout-ms: 5000
+  payment:
+    enabled: false
+    base-url: ${PAYMENT_GATEWAY_URL:http://payment-gateway:8080}
+    timeout-ms: 10000
+    merchant-id: ${PAYMENT_MERCHANT_ID:}
+    api-key: ${PAYMENT_API_KEY:}

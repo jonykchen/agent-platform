@@ -2,21 +2,21 @@ package com.platform.gateway.security;
 
 import com.platform.gateway.exception.BusinessException;
 import com.platform.gateway.exception.ErrorCode;
+import com.platform.gateway.service.ApiKeyService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.List;
 
 /**
  * API Key 认证过滤器
@@ -41,9 +41,12 @@ import java.util.List;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String API_KEY_HEADER = "X-API-Key";
+
+    private final ApiKeyService apiKeyService;
 
     @Value("${auth.api-key.header:X-API-Key}")
     private String apiKeyHeader;
@@ -142,34 +145,47 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
     private ApiKeyPrincipal validateApiKey(String apiKey) {
         // 服务间调用
         if (apiKey.startsWith("svc_")) {
-            if (serviceApiKey != null && apiKey.equals(serviceApiKey)) {
-                return new ApiKeyPrincipal(
-                    "service",
-                    "internal_service",
-                    "system",
-                    List.of(new SimpleGrantedAuthority("ROLE_SERVICE"))
-                );
-            }
+            return validateServiceKey(apiKey);
         }
 
-        // 外部系统集成（TODO: 从数据库查询）
+        // 外部系统 - 数据库验证
         if (apiKey.startsWith("ext_")) {
-            // TODO: 实现 API Key 数据库验证
-            log.warn("External API key validation not implemented");
-            return null;
+            return apiKeyService.validateExternalKey(apiKey);
         }
 
         // 测试环境
         if (apiKey.startsWith("test_") && "local".equals(System.getProperty("env"))) {
-            return new ApiKeyPrincipal(
-                "test",
-                "test_user",
-                "tenant_001",
-                List.of(new SimpleGrantedAuthority("ROLE_OPERATOR"))
-            );
+            return validateTestKey(apiKey);
         }
 
         return null;
+    }
+
+    /**
+     * 验证服务间调用 API Key
+     */
+    private ApiKeyPrincipal validateServiceKey(String apiKey) {
+        if (serviceApiKey != null && apiKey.equals(serviceApiKey)) {
+            return new ApiKeyPrincipal(
+                "service",
+                "internal_service",
+                "system",
+                java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_SERVICE"))
+            );
+        }
+        return null;
+    }
+
+    /**
+     * 验证测试环境 API Key
+     */
+    private ApiKeyPrincipal validateTestKey(String apiKey) {
+        return new ApiKeyPrincipal(
+            "test",
+            "test_user",
+            "tenant_001",
+            java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_OPERATOR"))
+        );
     }
 
     private boolean isPublicEndpoint(String path) {

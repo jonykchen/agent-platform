@@ -3,15 +3,21 @@
 package com.platform.toolbus.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.platform.toolbus.client.PaymentGatewayClient;
+import com.platform.toolbus.dto.PaymentResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 支付工具 - 高风险，需要审批
+ *
+ * 通过 PaymentGatewayClient 接口调用服务
+ * 支持配置切换 Mock 和真实实现
  */
 @Slf4j
 @Component
@@ -19,6 +25,7 @@ import java.util.UUID;
 public class PaymentTool implements RealTool {
 
     private final ObjectMapper objectMapper;
+    private final PaymentGatewayClient paymentGatewayClient;
 
     @Override
     public String getName() {
@@ -43,24 +50,30 @@ public class PaymentTool implements RealTool {
     @Override
     public String execute(Map<String, Object> arguments) {
         String orderId = (String) arguments.get("order_id");
-        Number amount = (Number) arguments.get("amount");
+        Number amountNum = (Number) arguments.get("amount");
         String paymentMethod = (String) arguments.get("payment_method");
 
-        log.info("Processing payment: orderId={}, amount={}, method={}",
-                orderId, amount, paymentMethod);
+        BigDecimal amount = amountNum != null ? new BigDecimal(amountNum.toString()) : BigDecimal.ZERO;
 
-        // TODO: 调用真实支付网关
+        log.info("Processing payment: orderId={}, amount={}, method={} (client={})",
+                orderId, amount, paymentMethod,
+                paymentGatewayClient.isRealService() ? "real" : "mock");
+
+        PaymentResult result = paymentGatewayClient.processPayment(orderId, amount, paymentMethod);
+
+        // 返回支付结果
         try {
-            return objectMapper.writeValueAsString(Map.of(
-                "transaction_id", "TXN-" + UUID.randomUUID().toString().substring(0, 8),
-                "order_id", orderId,
-                "amount", amount,
-                "status", "success",
-                "payment_method", paymentMethod,
-                "processed_at", java.time.Instant.now().toString()
-            ));
+            Map<String, Object> response = new HashMap<>();
+            response.put("transaction_id", result.getTransactionId());
+            response.put("order_id", result.getOrderId());
+            response.put("amount", result.getAmount());
+            response.put("status", result.getStatus());
+            response.put("payment_method", result.getPaymentMethod());
+            response.put("processed_at", result.getProcessedAt());
+
+            return objectMapper.writeValueAsString(response);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to process payment", e);
+            throw new RuntimeException("Failed to serialize payment result", e);
         }
     }
 }

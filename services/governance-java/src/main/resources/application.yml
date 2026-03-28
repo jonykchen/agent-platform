@@ -33,3 +33,18 @@ logging:
   level:
     root: INFO
     com.platform: DEBUG
+
+# 通知配置
+notification:
+  wecom-webhook: ${WECOM_WEBHOOK:}
+  dingtalk-webhook: ${DINGTALK_WEBHOOK:}
+
+# 邮件配置
+mail:
+  enabled: ${MAIL_ENABLED:false}
+  host: ${MAIL_HOST:smtp.example.com}
+  port: ${MAIL_PORT:587}
+  username: ${MAIL_USERNAME:}
+  password: ${MAIL_PASSWORD:}
+  from: ${MAIL_FROM:noreply@agent-platform.com}
+  tls-enabled: true

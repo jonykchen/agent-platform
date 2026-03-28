@@ -25,6 +25,7 @@ class ApprovalCallbackHandler:
         self.topic = topic
         self.checkpoint_store = checkpoint_store
         self.consumer = None
+        self._graph = None  # Lazy load to avoid circular import
 
     async def start(self):
         """启动消费者"""
@@ -77,17 +78,56 @@ class ApprovalCallbackHandler:
             approved=approved,
         )
 
-        # TODO: 从 Redis 加载 Checkpoint
-        # checkpoint = await self.checkpoint_store.load(run_id)
+        # 1. 初始化 CheckpointStore（如果未提供）
+        if self.checkpoint_store is None:
+            from app.memory.checkpoint_store import get_checkpoint_store
+            self.checkpoint_store = get_checkpoint_store()
 
-        # TODO: 恢复 LangGraph 执行
-        # if approved:
-        #     result = await graph.invoke(checkpoint, config={"approval_result": "approved"})
-        # else:
-        #     result = await graph.invoke(checkpoint, config={"approval_result": "rejected"})
+        # 2. 从 Redis 加载 Checkpoint
+        checkpoint = await self.checkpoint_store.load(run_id)
+        if checkpoint is None:
+            logger.error("Checkpoint not found", run_id=run_id)
+            return
 
-        # Mock 实现
-        logger.info("Execution resumed (mock)", run_id=run_id, approved=approved)
+        # 3. 更新审批状态
+        checkpoint["approval_status"] = "approved" if approved else "rejected"
+        checkpoint["approval_id"] = approval_id
+
+        # 4. 恢复 LangGraph 执行
+        if self._graph is None:
+            from app.graph.builder import get_agent_graph
+            self._graph = get_agent_graph()
+
+        config = {
+            "configurable": {
+                "thread_id": checkpoint.get("session_id", run_id),
+            }
+        }
+
+        try:
+            # 使用 ainvoke 恢复执行
+            result = await self._graph.ainvoke(
+                checkpoint,
+                config=config,
+            )
+
+            logger.info(
+                "Execution resumed successfully",
+                run_id=run_id,
+                approved=approved,
+                result_status=result.get("current_step", "unknown"),
+            )
+
+            # 5. 清理 Checkpoint（执行完成）
+            await self.checkpoint_store.delete(run_id)
+
+        except Exception as e:
+            logger.error(
+                "Failed to resume execution",
+                run_id=run_id,
+                error=str(e),
+            )
+            # 保留 Checkpoint 以便后续恢复
 
 
 async def main():

@@ -3,14 +3,20 @@
 package com.platform.toolbus.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.platform.toolbus.client.OrderServiceClient;
+import com.platform.toolbus.dto.OrderInfo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 订单查询工具 - 真实实现
+ * 订单查询工具
+ *
+ * 通过 OrderServiceClient 接口调用服务
+ * 支持配置切换 Mock 和真实实现
  */
 @Slf4j
 @Component
@@ -18,7 +24,7 @@ import java.util.Map;
 public class OrderQueryTool implements RealTool {
 
     private final ObjectMapper objectMapper;
-    // private final OrderServiceClient orderServiceClient; // 注入真实服务客户端
+    private final OrderServiceClient orderServiceClient;
 
     @Override
     public String getName() {
@@ -38,24 +44,45 @@ public class OrderQueryTool implements RealTool {
     @Override
     public String execute(Map<String, Object> arguments) {
         String orderId = (String) arguments.get("order_id");
-        log.info("Querying order: {}", orderId);
+        log.info("Querying order: {} (client={})",
+            orderId, orderServiceClient.isRealService() ? "real" : "mock");
 
-        // TODO: 调用真实订单服务
-        // Order order = orderServiceClient.getOrder(orderId);
+        OrderInfo order = orderServiceClient.getOrderInfo(orderId);
 
-        // Mock 返回（待替换为真实调用）
-        try {
-            return objectMapper.writeValueAsString(Map.of(
-                "order_id", orderId,
-                "status", "delivered",
-                "amount", 299.00,
-                "items", 3,
-                "delivery_address", "北京市朝阳区***",
-                "created_at", "2026-05-01T10:00:00Z",
-                "updated_at", "2026-05-03T15:30:00Z"
-            ));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to query order", e);
+        if (order == null) {
+            try {
+                return objectMapper.writeValueAsString(Map.of(
+                    "error", "order_not_found",
+                    "order_id", orderId
+                ));
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to serialize error response", e);
+            }
         }
+
+        // 返回订单信息
+        try {
+            Map<String, Object> result = new HashMap<>();
+            result.put("order_id", order.getOrderId());
+            result.put("status", order.getStatus());
+            result.put("amount", order.getAmount());
+            result.put("items", order.getItems());
+            result.put("delivery_address", maskAddress(order.getDeliveryAddress()));
+            result.put("created_at", order.getCreatedAt());
+            result.put("updated_at", order.getUpdatedAt());
+
+            return objectMapper.writeValueAsString(result);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to serialize order info", e);
+        }
+    }
+
+    private String maskAddress(String address) {
+        if (address == null || address.length() < 10) {
+            return address;
+        }
+        // 保留前缀，隐藏详细地址
+        int maskStart = Math.min(6, address.length() / 2);
+        return address.substring(0, maskStart) + "***";
     }
 }
