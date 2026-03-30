@@ -530,27 +530,27 @@ A: `tool_call_node` 会：
 | [02-communication-contracts.md](./02-communication-contracts.md) | 工具注册 API |
 | [03-security-specification.md](./03-security-specification.md) | 风控规则 |
 | [05-performance-optimization.md](./05-performance-optimization.md) | 性能优化 |
-| [09-frontend-design.md](./09-frontend-design.md) | 前端设计（✅ 已完成实现） |
+| [09-frontend-design.md](./09-frontend-design.md) | 前端设计（✅ 开发中） |
 
 ---
 
 ## 11. 前端模块
 
-> 前端代码位于 `services/web-frontend/`，实现状态：**100% 完成**
+> 前端代码位于 `services/web-frontend/`，实现状态：**开发中**
 
 ### 11.1 前端功能一览
 
 | 模块 | 功能 | 状态 |
 |------|------|------|
-| 对话界面 | SSE 流式、虚拟滚动、离线队列 | ✅ |
-| 审批中心 | 列表、详情、WebSocket 通知 | ✅ |
-| 工具管理 | 注册、启用/禁用、详情 | ✅ |
-| 知识库管理 | 文档上传、索引状态、分块查看 | ✅ |
-| 审计日志 | 筛选、导出 CSV/JSON | ✅ |
-| 监控面板 | ECharts 图表、实时告警 | ✅ |
-| 用户管理 | CRUD、角色分配 | ✅ |
-| 租户配置 | 配额查看、设置修改 | ✅ |
-| 通知中心 | 实时通知、已读标记 | ✅ |
+| 对话界面 | SSE 流式、虚拟滚动、离线队列 | 🔧 |
+| 审批中心 | 列表、详情、WebSocket 通知 | 🔧 |
+| 工具管理 | 注册、启用/禁用、详情 | 🔧 |
+| 知识库管理 | 文档上传、索引状态、分块查看 | 🔧 |
+| 审计日志 | 筛选、导出 CSV/JSON | 🔧 |
+| 监控面板 | ECharts 图表、实时告警 | 🔧 |
+| 用户管理 | CRUD、角色分配 | 🔧 |
+| 租户配置 | 配额查看、设置修改 | 🔧 |
+| 通知中心 | 实时通知、已读标记 | 🔧 |
 
 ### 11.2 前端目录结构
 

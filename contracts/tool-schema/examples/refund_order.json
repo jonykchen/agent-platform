@@ -1,0 +1,40 @@
+{
+  "name": "refund_order",
+  "display_name": "订单退款",
+  "description": "对指定订单发起退款申请，退款金额将原路返回",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "order_id": {
+        "type": "string",
+        "description": "订单编号",
+        "pattern": "^ORD[0-9]{10}$"
+      },
+      "refund_amount": {
+        "type": "number",
+        "description": "退款金额（元）",
+        "minimum": 0.01,
+        "exclusiveMinimum": true
+      },
+      "refund_reason": {
+        "type": "string",
+        "description": "退款原因",
+        "minLength": 5,
+        "maxLength": 200
+      },
+      "refund_type": {
+        "type": "string",
+        "enum": ["full", "partial"],
+        "description": "退款类型：全额退款或部分退款"
+      }
+    },
+    "required": ["order_id", "refund_amount", "refund_reason", "refund_type"]
+  },
+  "risk_level": "critical",
+  "requires_approval": true,
+  "timeout_seconds": 30,
+  "rate_limit": {
+    "requests_per_hour": 10
+  },
+  "tags": ["finance", "refund", "critical"]
+}

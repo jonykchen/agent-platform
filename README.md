@@ -1,6 +1,8 @@
-# 企业级 Agent 平台
+# Agent Platform
 
-> **版本**: v2.1 | **状态**: ✅ 全功能完成 | **最后更新**: 2026-05-09
+> 企业级 Agent 平台，采用 **Python 编排 + Java 核心服务 + 国内 LLM** 混合架构。
+
+---
 
 ## 项目简介
 
@@ -170,10 +172,10 @@ cat .claude/projects/*/memory/tech_decisions.md
 
 | Phase | 周期 | 核心交付物 | 状态 |
 |-------|------|-----------|------|
-| **Phase 1: MVP** | 第 1-4 周 | Gateway+Orchestrator+ModelGateway+Mock ToolBus | ✅ 完成 |
-| **Phase 2: 业务闭环** | 第 5-12 周 | Governance服务+真实工具+Kafka回调恢复 | ✅ 完成 |
-| **Phase 3: 能力增强** | 第 13-20 周 | Knowledge服务(RAG)+评测体系 | ✅ 完成 |
-| **Phase 4: 规模化** | 第 21 周+ | 多租户RLS+配额管理 | ✅ 完成 |
+| **Phase 1: MVP** | 第 1-4 周 | Gateway+Orchestrator+ModelGateway+Mock ToolBus | 🔧 开发中 |
+| **Phase 2: 业务闭环** | 第 5-12 周 | Governance服务+真实工具+Kafka回调恢复 | 待启动 |
+| **Phase 3: 能力增强** | 第 13-20 周 | Knowledge服务(RAG)+评测体系 | 待启动 |
+| **Phase 4: 规模化** | 第 21 周+ | 多租户RLS+配额管理 | 待启动 |
 
 ## 文档
 

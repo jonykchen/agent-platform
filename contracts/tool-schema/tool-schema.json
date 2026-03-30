@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agent-platform.example.com/schemas/tool-schema.json",
+  "title": "Tool Definition Schema",
+  "description": "Agent Platform 工具注册 JSON Schema",
+  "type": "object",
+  "required": ["name", "description", "parameters", "risk_level"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "工具唯一标识，snake_case 格式",
+      "examples": ["query_order_status", "send_notification", "update_user_profile"]
+    },
+    "display_name": {
+      "type": "string",
+      "description": "工具显示名称",
+      "examples": ["查询订单状态", "发送通知", "更新用户资料"]
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "工具功能描述，LLM 会根据此描述决定是否调用"
+    },
+    "parameters": {
+      "$ref": "#/definitions/parameters"
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"],
+      "description": "风险等级：low=只读查询, medium=可逆操作, high=不可逆操作, critical=涉及资金/权限"
+    },
+    "requires_approval": {
+      "type": "boolean",
+      "default": false,
+      "description": "是否需要人工审批"
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "default": 15,
+      "minimum": 1,
+      "maximum": 300,
+      "description": "执行超时时间"
+    },
+    "rate_limit": {
+      "type": "object",
+      "properties": {
+        "requests_per_minute": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "requests_per_hour": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "tenant_configurable": {
+      "type": "boolean",
+      "default": true,
+      "description": "是否允许租户级配置覆盖"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "工具标签，用于分类和搜索",
+      "examples": [["query", "order"], ["notification", "messaging"]]
+    }
+  },
+  "definitions": {
+    "parameters": {
+      "type": "object",
+      "required": ["type", "properties"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["object"]
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/parameter"
+          }
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": ["type", "description"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "integer", "number", "boolean", "array", "object"]
+        },
+        "description": {
+          "type": "string"
+        },
+        "enum": {
+          "type": "array",
+          "items": {}
+        },
+        "default": {},
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "minLength": {
+          "type": "integer"
+        },
+        "maxLength": {
+          "type": "integer"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "正则表达式"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["date", "date-time", "email", "uri", "uuid"]
+        },
+        "sensitive": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否为敏感字段（日志中脱敏）"
+        }
+      }
+    }
+  }
+}

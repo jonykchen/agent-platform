@@ -1,0 +1,29 @@
+{
+  "name": "query_order_status",
+  "display_name": "查询订单状态",
+  "description": "根据订单号查询订单的当前状态、物流信息和支付状态",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "order_id": {
+        "type": "string",
+        "description": "订单编号",
+        "pattern": "^ORD[0-9]{10}$",
+        "examples": ["ORD1234567890"]
+      },
+      "include_logistics": {
+        "type": "boolean",
+        "description": "是否包含物流信息",
+        "default": true
+      }
+    },
+    "required": ["order_id"]
+  },
+  "risk_level": "low",
+  "requires_approval": false,
+  "timeout_seconds": 10,
+  "rate_limit": {
+    "requests_per_minute": 60
+  },
+  "tags": ["query", "order", "logistics"]
+}
