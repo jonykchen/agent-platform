@@ -1,35 +1,50 @@
 @echo off
+setlocal
 REM ============================================================
 REM  Agent Platform - Format Code (Windows)
 REM ============================================================
 
+cd /d "%~dp0.."
+
 echo.
-echo === 格式化代码 ===
+echo === Format Code ===
 echo.
 
 REM Python Format
 if exist "services\orchestrator-python" (
     echo [orchestrator-python]
-    cd services\orchestrator-python
-    python -m ruff format . 2>nul || pip install ruff && python -m ruff format .
-    cd ..\..
+    pushd services\orchestrator-python
+    python -m ruff format . 2>nul
+    if errorlevel 1 (
+        pip install ruff && python -m ruff format .
+    )
+    popd
     echo.
 )
 
 if exist "services\model-gateway-python" (
     echo [model-gateway-python]
-    cd services\model-gateway-python
-    python -m ruff format . 2>nul || pip install ruff && python -m ruff format .
-    cd ..\..
+    pushd services\model-gateway-python
+    python -m ruff format . 2>nul
+    if errorlevel 1 (
+        pip install ruff && python -m ruff format .
+    )
+    popd
     echo.
 )
 
 if exist "services\knowledge-python" (
     echo [knowledge-python]
-    cd services\knowledge-python
-    python -m ruff format . 2>nul || pip install ruff && python -m ruff format .
-    cd ..\..
+    pushd services\knowledge-python
+    python -m ruff format . 2>nul
+    if errorlevel 1 (
+        pip install ruff && python -m ruff format .
+    )
+    popd
     echo.
 )
 
-echo [OK] 格式化完成
+echo [OK] Format complete
+echo.
+
+endlocal

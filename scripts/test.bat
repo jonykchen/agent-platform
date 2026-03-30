@@ -1,50 +1,59 @@
 @echo off
+setlocal
 REM ============================================================
 REM  Agent Platform - Run Tests (Windows)
 REM ============================================================
 
+cd /d "%~dp0.."
+
 echo.
-echo === 运行测试 ===
+echo === Run Tests ===
 echo.
 
-REM 检查 Python
+REM Check Python
 where python >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] 未安装 Python
+if errorlevel 1 (
+    echo [ERROR] Python not installed
     exit /b 1
 )
 
-REM 检查 pytest
+REM Check pytest
 where pytest >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [INFO] 安装 pytest...
+if errorlevel 1 (
+    echo [INFO] Installing pytest...
     pip install pytest pytest-cov
+    if errorlevel 1 (
+        echo [ERROR] Failed to install pytest
+        exit /b 1
+    )
 )
 
-echo === Python 测试 ===
+echo === Python Tests ===
 echo.
 
 if exist "services\orchestrator-python" (
     echo [orchestrator-python]
-    cd services\orchestrator-python
+    pushd services\orchestrator-python
     python -m pytest tests\ -v --tb=short
-    cd ..\..
+    popd
 )
 
 if exist "services\model-gateway-python" (
     echo [model-gateway-python]
-    cd services\model-gateway-python
+    pushd services\model-gateway-python
     python -m pytest tests\ -v --tb=short
-    cd ..\..
+    popd
 )
 
 if exist "services\knowledge-python" (
     echo [knowledge-python]
-    cd services\knowledge-python
+    pushd services\knowledge-python
     python -m pytest tests\ -v --tb=short
-    cd ..\..
+    popd
 )
 
 echo.
-echo [OK] 测试完成
+echo [OK] Tests complete
 echo.
+
+endlocal

@@ -1,161 +1,179 @@
 @echo off
-REM ============================================================
-REM  Agent Platform - Windows Setup Script
-REM  支持: Windows 10/11 (CMD / PowerShell)
-REM ============================================================
-
 setlocal enabledelayedexpansion
+
+REM Switch to project root
+cd /d "%~dp0.."
 
 echo.
 echo === Agent Platform - Windows Setup ===
+echo Current directory: %CD%
 echo.
 
-REM 颜色定义（Windows 不支持 ANSI 颜色，使用简单文本）
 set "GREEN=[OK]"
-set "YELLOW=[!]"
+set "YELLOW=[*]"
 set "RED=[X]"
 
-REM ============================================================
-REM  检查必需工具
-REM ============================================================
-echo === 检查必需工具 ===
+echo === Checking Required Tools ===
 echo.
 
 REM Git
 where git >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=*" %%i in ('git --version') do echo %GREEN% Git: %%i
+if not errorlevel 1 (
+    for /f "tokens=*" %%i in ('git --version') do echo !GREEN! Git: %%i
 ) else (
-    echo %RED% 未安装 Git
-    echo   下载: https://git-scm.com/download/win
+    echo !RED! Git not installed
+    echo   Download: https://git-scm.com/download/win
     exit /b 1
 )
 
-REM Python
+REM Python (priority: python > python3 > py)
+set "PYTHON_CMD="
+
 where python >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=*" %%i in ('python --version 2^>^&1') do echo %GREEN% %%i
+if not errorlevel 1 (
+    set "PYTHON_CMD=python"
 ) else (
     where python3 >nul 2>&1
-    if %errorlevel% equ 0 (
-        for /f "tokens=*" %%i in ('python3 --version 2^>^&1') do echo %GREEN% %%i
+    if not errorlevel 1 (
+        set "PYTHON_CMD=python3"
     ) else (
-        echo %RED% 未安装 Python
-        echo   下载: https://www.python.org/downloads/
-        exit /b 1
+        where py >nul 2>&1
+        if not errorlevel 1 (
+            set "PYTHON_CMD=py"
+        )
     )
+)
+
+if defined PYTHON_CMD (
+    for /f "tokens=*" %%i in ('!PYTHON_CMD! --version 2^>^&1') do echo !GREEN! %%i ^(command: !PYTHON_CMD!^)
+) else (
+    echo !RED! Python not installed
+    echo   Download: https://www.python.org/downloads/
+    echo   Note: Check "Add Python to PATH" during installation
+    exit /b 1
 )
 
 REM Java
 where java >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=3" %%i in ('java -version 2^>^&1 ^| findstr /i "version"') do echo %GREEN% Java: %%i
+if not errorlevel 1 (
+    set "JAVA_VER="
+    for /f "tokens=3" %%i in ('java -version 2^>^&1 ^| findstr /i "version"') do (
+        if not defined JAVA_VER set "JAVA_VER=%%i"
+    )
+    if defined JAVA_VER (
+        echo !GREEN! Java: !JAVA_VER!
+    ) else (
+        echo !GREEN! Java: installed ^(version parse failed^)
+    )
 ) else (
-    echo %YELLOW% 未安装 Java (仅 Agent 编排不需要)
+    echo !YELLOW! Java not installed ^(only needed for Agent orchestration^)
 )
 
 REM Docker
 where docker >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=*" %%i in ('docker --version') do echo %GREEN% %%i
+if not errorlevel 1 (
+    for /f "tokens=*" %%i in ('docker --version') do echo !GREEN! %%i
 ) else (
-    echo %YELLOW% 未安装 Docker
-    echo   下载: https://www.docker.com/products/docker-desktop
+    echo !YELLOW! Docker not installed
+    echo   Download: https://www.docker.com/products/docker-desktop
 )
 
-REM Make (Windows 通常没有)
+REM Make
 where make >nul 2>&1
-if %errorlevel% equ 0 (
-    echo %GREEN% Make: 已安装
+if not errorlevel 1 (
+    echo !GREEN! Make: installed
 ) else (
-    echo %YELLOW% 未安装 Make (可选)
-    echo   替代方案: 直接运行 scripts/ 目录下的脚本
+    echo !YELLOW! Make not installed ^(optional^)
+    echo   Alternative: run scripts directly from scripts/ directory
 )
 
 echo.
-echo === Python 工具 ===
+echo === Python Tools ===
 echo.
 
 REM pip
-where pip >nul 2>&1
-if %errorlevel% equ 0 (
-    echo %GREEN% pip: 已安装
-) else (
-    where pip3 >nul 2>&1
-    if %errorlevel% equ 0 (
-        echo %GREEN% pip3: 已安装
+if defined PYTHON_CMD (
+    !PYTHON_CMD! -m pip --version >nul 2>&1
+    if not errorlevel 1 (
+        echo !GREEN! pip: installed
     ) else (
-        echo %YELLOW% 未安装 pip
+        echo !YELLOW! pip not installed
+        echo   Install: !PYTHON_CMD! -m ensurepip
     )
+) else (
+    echo !YELLOW! pip not installed
 )
 
 REM ruff
 where ruff >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=*" %%i in ('ruff --version') do echo %GREEN% ruff: %%i
+if not errorlevel 1 (
+    for /f "tokens=*" %%i in ('ruff --version') do echo !GREEN! ruff: %%i
 ) else (
-    echo %YELLOW% 未安装 ruff
-    echo   安装: pip install ruff
+    echo !YELLOW! ruff not installed
+    echo   Install: pip install ruff
 )
 
 REM pytest
 where pytest >nul 2>&1
-if %errorlevel% equ 0 (
-    echo %GREEN% pytest: 已安装
+if not errorlevel 1 (
+    echo !GREEN! pytest: installed
 ) else (
-    echo %YELLOW% 未安装 pytest
-    echo   安装: pip install pytest
+    echo !YELLOW! pytest not installed
+    echo   Install: pip install pytest
 )
 
 echo.
-echo === Proto 工具 ===
+echo === Proto Tools ===
 echo.
 
 REM buf
 where buf >nul 2>&1
-if %errorlevel% equ 0 (
-    for /f "tokens=*" %%i in ('buf --version') do echo %GREEN% buf: %%i
+if not errorlevel 1 (
+    for /f "tokens=*" %%i in ('buf --version') do echo !GREEN! buf: %%i
 ) else (
-    echo %YELLOW% 未安装 buf
-    echo   下载: https://github.com/bufbuild/buf/releases
-    echo   或使用: scoop install buf
+    echo !YELLOW! buf not installed
+    echo   Download: https://github.com/bufbuild/buf/releases
+    echo   Or use: scoop install buf
 )
 
 echo.
-echo === Claude Code 配置 ===
+echo === Claude Code Config ===
 echo.
 
 if exist "CLAUDE.md" (
-    echo %GREEN% CLAUDE.md 存在
+    echo !GREEN! CLAUDE.md exists
 ) else (
-    echo %RED% CLAUDE.md 不存在
+    echo !RED! CLAUDE.md not found
 )
 
 if exist ".claude" (
-    echo %GREEN% .claude\ 目录存在
+    echo !GREEN! .claude\ directory exists
 ) else (
-    echo %YELLOW% .claude\ 目录不存在
+    echo !YELLOW! .claude\ directory not found
 )
 
 if exist ".claude\settings.json" (
-    REM 验证 JSON (使用 Python)
-    python -m json.tool .claude\settings.json >nul 2>&1
-    if !errorlevel! equ 0 (
-        echo %GREEN% settings.json 格式正确
+    if defined PYTHON_CMD (
+        !PYTHON_CMD! -m json.tool ".claude\settings.json" >nul 2>&1
+        if not errorlevel 1 (
+            echo !GREEN! settings.json format OK
+        ) else (
+            echo !RED! settings.json format error
+        )
     ) else (
-        echo %RED% settings.json 格式错误
+        echo !GREEN! settings.json exists ^(no Python, skip validation^)
     )
 ) else (
-    echo %RED% settings.json 不存在
+    echo !RED! settings.json not found
 )
 
 echo.
-echo === 设置检查完成 ===
+echo === Setup Check Complete ===
 echo.
-echo 下一步:
-echo   1. 启动开发环境: scripts\dev.bat
-echo   2. 运行测试: scripts\test.bat
-echo   3. 开始开发!
+echo Next steps:
+echo   1. Start dev environment: scripts\dev.bat
+echo   2. Run tests: scripts\test.bat
+echo   3. Start coding!
 echo.
 
 endlocal

@@ -1,38 +1,50 @@
 @echo off
+setlocal
 REM ============================================================
 REM  Agent Platform - Lint Check (Windows)
 REM ============================================================
 
+cd /d "%~dp0.."
+
 echo.
-echo === 代码质量检查 ===
+echo === Code Quality Check ===
 echo.
 
 REM Python Lint
 if exist "services\orchestrator-python" (
     echo [orchestrator-python]
-    cd services\orchestrator-python
+    pushd services\orchestrator-python
     if exist "venv\Scripts\activate.bat" (
         call venv\Scripts\activate.bat
     )
-    python -m ruff check . 2>nul || pip install ruff && python -m ruff check .
-    cd ..\..
+    python -m ruff check . 2>nul
+    if errorlevel 1 (
+        pip install ruff && python -m ruff check .
+    )
+    popd
     echo.
 )
 
 if exist "services\model-gateway-python" (
     echo [model-gateway-python]
-    cd services\model-gateway-python
-    python -m ruff check . 2>nul || pip install ruff && python -m ruff check .
-    cd ..\..
+    pushd services\model-gateway-python
+    python -m ruff check . 2>nul
+    if errorlevel 1 (
+        pip install ruff && python -m ruff check .
+    )
+    popd
     echo.
 )
 
 REM Proto Lint
 where buf >nul 2>&1
-if %errorlevel% equ 0 (
+if not errorlevel 1 (
     echo [proto]
     buf lint contracts\proto
     echo.
 )
 
-echo [OK] Lint 检查完成
+echo [OK] Lint check complete
+echo.
+
+endlocal
