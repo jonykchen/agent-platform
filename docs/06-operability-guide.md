@@ -421,10 +421,13 @@ lint:python:
   stage: lint
   image: python:3.12-slim
   before_script:
-    - pip install ruff
+    - pip install uv
+    - uv tool install ruff
   script:
+    - cd services/orchestrator-python && uv sync --quiet
     - cd services/orchestrator-python && ruff check .
     - cd services/orchestrator-python && ruff format --check .
+    - cd services/model-gateway-python && uv sync --quiet
     - cd services/model-gateway-python && ruff check .
   only:
     - merge_request_event
@@ -443,10 +446,11 @@ type-check:python:
   stage: type-check
   image: python:3.12-slim
   before_script:
-    - pip install mypy pyright
+    - pip install uv
   script:
-    - cd services/orchestrator-python && mypy app/ --strict || true
-    - cd services/orchestrator-python && pyright app/ || true
+    - cd services/orchestrator-python && uv sync --quiet
+    - cd services/orchestrator-python && uv run mypy app/ --strict || true
+    - cd services/orchestrator-python && uv run pyright app/ || true
   allow_failure: true  # 初期允许类型错误，逐步修复
 
 # ====== Stage 3: Unit Test ======
@@ -472,7 +476,8 @@ test:python:
   stage: unit-test
   image: python:3.12-slim
   before_script:
-    - pip install pytest pytest-cov pytest-asyncio
+    - pip install uv
+    - cd services/orchestrator-python && uv sync --quiet --all-extras
   services:
     - postgres:16-alpine
     - redis:7-alpine
@@ -536,9 +541,9 @@ eval-regression:
   stage: eval-regression
   image: python:3.12-slim
   before_script:
-    - pip install openai requests pandas
+    - pip install uv
   script:
-    - python shared/evals/scripts/run_regression_eval.py \
+    - uv run --with openai --with requests --with pandas python shared/evals/scripts/run_regression_eval.py \
         --gold-set shared/evals/gold-set/ \
         --endpoint http://model-gateway:8001/v1/chat/completions \
         --output reports/eval_report.json \

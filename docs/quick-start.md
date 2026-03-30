@@ -11,10 +11,50 @@
 | Docker Desktop | 最新版 | 运行基础设施 |
 | JDK | 21+ | Java 服务编译运行 |
 | Python | 3.12+ | Python 服务 |
-| uv | 最新版 | Python 包管理器 (`pip install uv`) |
+| uv | 最新版 | Python 包管理器 + 版本管理 |
 | Node.js | 20+ | 前端开发 |
 | pnpm | 8+ | 前端包管理器 (`npm install -g pnpm`) |
 | Make | 任意 | 构建命令 (Windows 可用 Git Bash 运行) |
+
+---
+
+## 快速初始化
+
+### 一键安装 uv 和 Python 环境
+
+```powershell
+# Windows PowerShell
+./scripts/setup-uv.ps1
+
+# macOS / Linux / Git Bash
+./scripts/setup-uv.sh
+```
+
+脚本功能：
+- 自动安装 uv（如未安装）
+- 安装 Python 3.12（通过 uv 内置版本管理）
+- 为所有 Python 服务创建虚拟环境
+- 安装所有依赖（含开发依赖）
+
+**可选参数**：
+```powershell
+# 强制重建虚拟环境
+./scripts/setup-uv.ps1 -Force
+
+# 跳过 Python 安装（已有 Python 3.12）
+./scripts/setup-uv.ps1 -SkipPythonInstall
+```
+
+### 手动安装 uv
+
+如需手动安装：
+```powershell
+# Windows (PowerShell)
+irm https://astral.sh/uv/install.ps1 | iex
+
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 ---
 
@@ -202,10 +242,15 @@ taskkill /PID <PID> /F
 
 ### Q: Python 依赖安装失败？
 
-确保使用 Python 3.12+，并安装 uv：
+推荐使用一键初始化脚本：
+```powershell
+./scripts/setup-uv.ps1 -Force
+```
+
+或手动安装 uv 后执行：
 ```bash
 pip install uv
-uv sync
+uv sync --all-extras
 ```
 
 ### Q: Java 编译报错？
