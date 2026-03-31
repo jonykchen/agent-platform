@@ -208,6 +208,10 @@ class AppConfig(BaseSettings):
     # ReAct 模式的循环限制
     max_agent_steps: int = 10  # 最大推理步数，防止无限循环
 
+    # 上下文窗口限制 - 【S-AGENT-03】防止 token 超限
+    max_context_window_tokens: int = Field(default=128000, description="模型上下文窗口上限")
+    context_response_reserved_tokens: int = Field(default=8000, description="响应预留 token 数")
+
     # 总超时时间 - 包含所有步骤
     agent_total_timeout_s: int = 300  # 5 分钟
 
