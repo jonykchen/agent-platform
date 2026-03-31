@@ -36,12 +36,22 @@ Gateway (Java) → Orchestrator (Python) → Model Gateway (Python)
 services/orchestrator-python/app/
 ├── api/          # 路由层 (FastAPI endpoints)
 ├── core/         # 配置、异常、常量
+│   ├── token_counter.py      # [新增] Token 计数
+│   ├── context_manager.py    # [新增] 上下文截断
+│   ├── sensitive_filter.py   # [新增] 敏感信息脱敏
+│   └── resilience.py         # [优化] 熔断器（线程安全）
 ├── graph/        # LangGraph 状态机
 │   ├── nodes/    # 各节点实现
+│   │   ├── thinking.py       # [优化] 集成上下文截断
+│   │   └── tool_call.py      # [优化] 集成参数校验
 │   ├── state.py  # 状态定义
-│   └── builder.py # 图构建
+│   └── builder.py # [优化] 动态并发限制
 ├── memory/       # 对话记忆
+│   ├── long_term_memory.py   # [新增] 长时记忆（向量存储）
+│   └── summary_generator.py  # [新增] 对话摘要生成
 ├── tools/        # 工具客户端
+│   └── validators/
+│       └── json_schema_validator.py  # [新增] JSON Schema 校验
 ├── schemas/      # Pydantic 模型
 └── prompts/      # Prompt 模板
 ```
@@ -76,16 +86,20 @@ class AgentState(TypedDict):
     current_step: str
     risk_level: str       # low/medium/high/critical
     needs_approval: bool
-    errors: list[str]
+    consecutive_errors: int  # 连续失败计数 (S-AGENT-11)
 ```
 
 > 模式选择（ReAct/Plan-and-Execute/Multi-Agent）见 S-AGENT-09。节点模板见 `/langgraph-node`。
 
 ### 安全（项目特有）
 - **五层鉴权**：RBAC → 租户隔离 → ABAC → 频率限制 → 风险等级（S-AGENT-06）
-- **mTLS**：生产环境必须启用
+- **mTLS**：生产环境必须启用（配置见 `infra/k8s/istio-peer-authentication.yaml`）
 - **审计表触发器**：`audit_event` 有触发器阻断删改
-- **输入截断**：原始用户输入 > 500 字符截断
+- **输入截断**：用户输入限制 8000 tokens（MAX_USER_INPUT_TOKENS）
+- **输出泄露检测**：`output_guard.py` 实现 L4 层防御
+- **[新增] 上下文截断**：`context_manager.py` 实现滑动窗口策略，防止 token 超限
+- **[新增] 参数校验**：`json_schema_validator.py` 实现 JSON Schema 校验，防止恶意输入
+- **[新增] 日志脱敏**：`sensitive_filter.py` 自动脱敏手机号/身份证/API Key
 
 > 通用安全见 G-SEC-*，Prompt 注入防护见 S-AGENT-01~05。
 
@@ -120,7 +134,31 @@ MAX_AGENT_STEPS = 10           # S-AGENT-10 步数上限
 MODEL_CALL_TIMEOUT_S = 30      # Provider 超时
 TOOL_CALL_TIMEOUT_S = 15       # S-AGENT-08 工具超时
 MAX_USER_INPUT_TOKENS = 8000   # S-AGENT-03 输入限制
+MAX_CONTEXT_WINDOW_TOKENS = 128000  # 模型上下文窗口
+MAX_CONCURRENT_MODEL_CALLS = 20    # 并发模型调用上限
+MAX_CONCURRENT_TOOL_CALLS = 30    # 并发工具调用上限
 ```
+
+---
+
+## 生产级架构增强（2026-05-13）
+
+本次优化解决了以下生产级差距：
+
+| 维度 | 新增模块 | 解决问题 |
+|------|----------|----------|
+| **容错** | `resilience.py` 线程安全改造 | 多协程竞态导致熔断器状态混乱 |
+| **上下文** | `token_counter.py` + `context_manager.py` | Token 超限导致模型调用失败 |
+| **安全** | `json_schema_validator.py` | 恶意输入穿透到 ToolBus |
+| **合规** | `sensitive_filter.py` | 日志泄露敏感信息 |
+| **记忆** | `long_term_memory.py` + `summary_generator.py` | 无法支持跨会话对话 |
+| **配置** | `builder.py` + `qwen.py` | 硬编码值导致运维困难 |
+
+**关键变更**：
+- 熔断器添加 `asyncio.Lock` 保护状态转换
+- thinking 节点集成上下文截断策略
+- tool_call 节点集成 JSON Schema 参数校验
+- 并发限制从配置动态读取
 
 ---
 

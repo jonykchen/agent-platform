@@ -1,0 +1,234 @@
+"""输出泄露检测 (S-AGENT-04/05)
+
+检测 LLM 输出是否包含：
+- 系统提示原文
+- 工具定义
+- 其他用户数据
+- JSON 格式错误
+
+【设计原则】
+L4 层防御：在 LLM 输出返回给用户前，扫描是否存在敏感信息泄露。
+与 PromptInjectionGuard 形成闭环防护：
+- PromptInjectionGuard: 输入检测
+- OutputLeakageGuard: 输出检测
+"""
+
+import json
+import re
+from typing import Optional
+
+import structlog
+
+logger = structlog.get_logger()
+
+
+class OutputLeakageGuard:
+    """输出泄露检测器
+
+    检测 LLM 输出中可能存在的敏感信息泄露：
+    1. 系统提示泄露
+    2. 工具定义泄露
+    3. JSON 格式错误
+    4. 其他用户数据泄露
+    """
+
+    # 泄露模式 - 系统提示相关
+    SYSTEM_PROMPT_PATTERNS = [
+        r"system prompt[:：]",
+        r"you are (a|an) (ai|assistant|language model)",
+        r"your instructions (are|is)",
+        r"your task is to",
+        r"你是一个(ai|助手|语言模型)",
+        r"你的指令是",
+        r"你的任务是",
+    ]
+
+    # 泄露模式 - 工具定义相关
+    TOOL_DEFINITION_PATTERNS = [
+        r"tool[_-]?definition",
+        r"function[_-]?call",
+        r"action[_-]?input",
+        r"工具定义",
+        r"函数调用",
+        r"tool_calls?\s*:",
+        r"available tools",
+        r"可用工具",
+    ]
+
+    # JSON 格式错误模式
+    JSON_ERROR_PATTERNS = [
+        r'\{\s*"[^"]+"\s*:\s*[^}]*\}(?!\s*[,\]}])',  # 不完整 JSON
+        r'\[\s*\{[^}]*\}(?!\s*[,\]])',  # 不完整数组
+    ]
+
+    def __init__(
+        self,
+        json_validation_threshold: float = 0.995,
+        enable_json_validation: bool = True,
+    ):
+        self.json_validation_threshold = json_validation_threshold
+        self.enable_json_validation = enable_json_validation
+
+        # 预编译正则表达式
+        self._system_regexes = [
+            re.compile(p, re.IGNORECASE) for p in self.SYSTEM_PROMPT_PATTERNS
+        ]
+        self._tool_regexes = [
+            re.compile(p, re.IGNORECASE) for p in self.TOOL_DEFINITION_PATTERNS
+        ]
+
+    def scan(self, output: str, context: Optional[dict] = None) -> dict:
+        """扫描输出检测泄露
+
+        Args:
+            output: LLM 输出文本
+            context: 上下文信息（用于日志）
+
+        Returns:
+            {
+                "safe": bool,
+                "leakage_detected": bool,
+                "leakage_type": str | None,  # system_prompt / tool_definition / user_data
+                "matched_patterns": list[str],
+                "json_valid": bool,
+                "action": str  # allow / warn / sanitize
+            }
+        """
+        result = {
+            "safe": True,
+            "leakage_detected": False,
+            "leakage_type": None,
+            "matched_patterns": [],
+            "json_valid": True,
+            "action": "allow",
+        }
+
+        if not output:
+            return result
+
+        # 1. 检测系统提示泄露
+        for regex in self._system_regexes:
+            match = regex.search(output)
+            if match:
+                result["matched_patterns"].append(f"system_prompt:{match.group()}")
+                result["leakage_type"] = "system_prompt"
+
+        # 2. 检测工具定义泄露
+        for regex in self._tool_regexes:
+            match = regex.search(output)
+            if match:
+                result["matched_patterns"].append(f"tool_definition:{match.group()}")
+                result["leakage_type"] = "tool_definition"
+
+        # 3. JSON 格式校验
+        if self.enable_json_validation:
+            result["json_valid"] = self._validate_json_output(output)
+            if not result["json_valid"]:
+                result["matched_patterns"].append("json_format_error")
+
+        # 决策
+        if result["matched_patterns"]:
+            result["leakage_detected"] = True
+            result["safe"] = False
+
+            # 根据泄露类型决定动作
+            if result["leakage_type"] in ("system_prompt", "tool_definition"):
+                result["action"] = "sanitize"
+            elif not result["json_valid"]:
+                result["action"] = "warn"
+            else:
+                result["action"] = "warn"
+
+            logger.warning(
+                "Output leakage detected",
+                leakage_type=result["leakage_type"],
+                matched_patterns=result["matched_patterns"],
+                action=result["action"],
+                context=context,
+            )
+
+        return result
+
+    def _validate_json_output(self, output: str) -> bool:
+        """校验 JSON 输出完整性
+
+        检查输出中是否包含有效的 JSON 结构。
+        如果输出预期是 JSON 格式，验证其合法性。
+        """
+        # 尝试提取 JSON 块
+        json_patterns = [
+            r'\{[^{}]*\}',  # 单层 JSON 对象
+            r'\[[^\[\]]*\]',  # 单层 JSON 数组
+        ]
+
+        for pattern in json_patterns:
+            matches = re.findall(pattern, output, re.DOTALL)
+            for match in matches:
+                try:
+                    json.loads(match)
+                except json.JSONDecodeError:
+                    return False
+
+        return True
+
+    def sanitize(self, output: str, context: Optional[dict] = None) -> str:
+        """清理泄露内容
+
+        Args:
+            output: LLM 输出文本
+            context: 上下文信息
+
+        Returns:
+            清理后的文本
+        """
+        scan_result = self.scan(output, context)
+
+        if scan_result["action"] == "allow":
+            return output
+
+        if scan_result["action"] == "sanitize":
+            sanitized = output
+
+            # 移除匹配的泄露内容
+            for pattern in scan_result["matched_patterns"]:
+                if ":" in pattern:
+                    _, matched_text = pattern.split(":", 1)
+                    sanitized = sanitized.replace(matched_text, "[REDACTED]")
+
+            logger.info(
+                "Output sanitized",
+                original_length=len(output),
+                sanitized_length=len(sanitized),
+                context=context,
+            )
+            return sanitized
+
+        return output
+
+    def validate_json_strict(self, output: str) -> tuple[bool, Optional[str]]:
+        """严格 JSON 校验
+
+        尝试将整个输出解析为 JSON，返回校验结果和错误信息。
+
+        Returns:
+            (is_valid, error_message)
+        """
+        try:
+            json.loads(output)
+            return True, None
+        except json.JSONDecodeError as e:
+            return False, f"JSON parse error at line {e.lineno}, column {e.colno}: {e.msg}"
+
+
+class OutputLeakageError(Exception):
+    """输出泄露错误"""
+
+    def __init__(self, message: str, leakage_type: str, matched_patterns: list[str]):
+        self.message = message
+        self.leakage_type = leakage_type
+        self.matched_patterns = matched_patterns
+        super().__init__(message)
+
+
+# 全局实例
+output_guard = OutputLeakageGuard()

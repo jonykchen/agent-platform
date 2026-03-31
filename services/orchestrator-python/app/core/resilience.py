@@ -1,6 +1,10 @@
 """弹性模式模块 - 熔断器、重试、降级策略
 
 提供生产级弹性能力，防止下游服务故障时雪崩。
+
+【S-AGENT-14 更新】
+- 添加 asyncio.Lock 保护状态转换，确保多协程安全
+- 将状态更新方法改为异步
 """
 
 from __future__ import annotations
@@ -32,6 +36,10 @@ class ModelGatewayCircuitBreaker:
 
     当连续失败达到阈值时，熔断器打开，快速失败。
     经过恢复超时后，进入半开状态，尝试恢复。
+
+    【线程安全说明】
+    使用 asyncio.Lock 保护状态转换，确保多协程环境下的安全性。
+    所有状态更新方法都是异步的，需要通过锁保护。
     """
 
     def __init__(
@@ -49,22 +57,45 @@ class ModelGatewayCircuitBreaker:
             name=self.name,
         )
         self._state = "closed"  # closed, open, half-open
+        self._lock = asyncio.Lock()  # 保护状态转换的锁
 
     def __call__(self, func: F) -> F:
         """装饰器模式"""
 
         @functools.wraps(func)
         async def wrapper(*args, **kwargs):
+            # 先获取锁检查状态
+            async with self._lock:
+                if self._state == "open":
+                    logger.warning(
+                        "Circuit breaker is open",
+                        circuit_name=self.name,
+                        state=self._state,
+                    )
+                    raise CircuitBreakerOpenError(self.name)
+
             try:
                 # 使用 circuit breaker
                 @self._circuit
                 async def _execute():
                     return await func(*args, **kwargs)
 
-                return await _execute()
+                result = await _execute()
+                # 成功时重置状态
+                async with self._lock:
+                    if self._state != "closed":
+                        logger.info(
+                            "Circuit breaker recovered",
+                            circuit_name=self.name,
+                            previous_state=self._state,
+                        )
+                    self._state = "closed"
+                return result
             except CircuitBreakerError:
+                async with self._lock:
+                    self._state = "open"
                 logger.warning(
-                    "Circuit breaker is open",
+                    "Circuit breaker tripped",
                     circuit_name=self.name,
                     state=self._state,
                 )
@@ -74,12 +105,23 @@ class ModelGatewayCircuitBreaker:
 
     @property
     def state(self) -> str:
-        """获取当前状态"""
+        """获取当前状态（线程安全读取）"""
         return self._state
 
     def is_open(self) -> bool:
         """熔断器是否打开"""
-        return self._circuit._state == "open"
+        return self._state == "open"
+
+    async def get_state_async(self) -> str:
+        """异步获取当前状态（加锁）"""
+        async with self._lock:
+            return self._state
+
+    async def reset(self) -> None:
+        """手动重置熔断器状态"""
+        async with self._lock:
+            self._state = "closed"
+            logger.info("Circuit breaker manually reset", circuit_name=self.name)
 
 
 class CircuitBreakerOpenError(Exception):

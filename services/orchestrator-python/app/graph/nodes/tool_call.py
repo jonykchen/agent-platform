@@ -287,6 +287,8 @@ async def _execute_tool(tool_name: str, arguments: dict, state: AgentState) -> d
     优先使用 gRPC 客户端调用 ToolBus 服务，
     如果客户端未注入则使用 Mock 实现。
 
+    【S-AGENT-06】集成参数校验，防止恶意输入
+
     Args:
         tool_name: 工具名称
         arguments: 工具参数
@@ -302,6 +304,22 @@ async def _execute_tool(tool_name: str, arguments: dict, state: AgentState) -> d
         - risk_level: 风险等级
     """
 
+    # 【S-AGENT-06】参数校验
+    validation_result = _validate_tool_arguments(tool_name, arguments)
+    if not validation_result["valid"]:
+        logger.warning(
+            "tool_arguments_validation_failed",
+            tool_name=tool_name,
+            errors=validation_result["errors"],
+            request_id=state["request_id"],
+        )
+        return {
+            "call_id": "",
+            "status": "failed",
+            "error_code": "ERR_TOOL_VALIDATION_FAILED",
+            "error_message": f"参数校验失败: {', '.join(validation_result['errors'])}",
+        }
+
     if _tool_bus_client:
         # 真实 gRPC 调用
         logger.debug(
@@ -311,7 +329,7 @@ async def _execute_tool(tool_name: str, arguments: dict, state: AgentState) -> d
         )
         return await _tool_bus_client.execute_tool(
             tool_name=tool_name,
-            arguments=arguments,
+            arguments=validation_result["data"],  # 使用校验后的数据（可能填充了 defaults）
             context={
                 "request_id": state["request_id"],
                 "tenant_id": state["tenant_id"],
@@ -327,6 +345,86 @@ async def _execute_tool(tool_name: str, arguments: dict, state: AgentState) -> d
         request_id=state["request_id"],
     )
     return await _mock_execute_tool(tool_name, arguments)
+
+
+def _validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
+    """校验工具参数
+
+    【S-AGENT-06】工具调用鉴权链的一部分
+
+    Args:
+        tool_name: 工具名称
+        arguments: 工具参数
+
+    Returns:
+        {"valid": bool, "errors": list, "data": dict}
+    """
+    from app.tools.validators.json_schema_validator import validate_tool_arguments
+
+    # 获取工具的 JSON Schema
+    tool_schema = _get_tool_schema(tool_name)
+    if not tool_schema:
+        # 未找到 Schema，允许通过（开发阶段）
+        logger.debug("tool_schema_not_found", tool_name=tool_name)
+        return {"valid": True, "errors": [], "data": arguments}
+
+    result = validate_tool_arguments(tool_name, arguments, tool_schema)
+    return result.to_dict()
+
+
+def _get_tool_schema(tool_name: str) -> dict | None:
+    """获取工具的参数 Schema
+
+    Args:
+        tool_name: 工具名称
+
+    Returns:
+        JSON Schema 字典，未找到返回 None
+    """
+    # 工具 Schema 定义（可从 ToolBus 动态获取或配置文件加载）
+    TOOL_SCHEMAS = {
+        "query_order_status": {
+            "type": "object",
+            "properties": {
+                "order_id": {
+                    "type": "string",
+                    "description": "订单编号",
+                    "pattern": r"^ORD-[\w-]+$",
+                },
+            },
+            "required": ["order_id"],
+        },
+        "get_user_info": {
+            "type": "object",
+            "properties": {
+                "user_id": {
+                    "type": "string",
+                    "description": "用户唯一标识",
+                    "minLength": 1,
+                    "maxLength": 64,
+                },
+            },
+            "required": ["user_id"],
+        },
+        "create_payment": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number",
+                    "description": "支付金额（元）",
+                    "minimum": 0.01,
+                    "maximum": 1000000,
+                },
+                "user_id": {
+                    "type": "string",
+                    "description": "用户唯一标识",
+                },
+            },
+            "required": ["amount", "user_id"],
+        },
+    }
+
+    return TOOL_SCHEMAS.get(tool_name)
 
 
 async def _mock_execute_tool(tool_name: str, arguments: dict) -> dict:

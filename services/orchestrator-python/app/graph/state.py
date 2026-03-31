@@ -162,6 +162,12 @@ class AgentState(TypedDict):
     # 格式：ERR_<模块>_<错误类型>，如 ERR_AGENT_MAX_STEPS_EXCEEDED
     error_code: str | None
 
+    # 连续失败计数 - 用于 S-AGENT-11（连续失败 ≥ 3 次终止）
+    consecutive_errors: int
+
+    # 最大连续失败阈值 - 默认 3
+    max_consecutive_errors: int
+
     # ═══════════════════════════════════════════════════════════════════════════
     # 扩展元数据 - 灵活扩展字段
     # ═══════════════════════════════════════════════════════════════════════════
@@ -227,5 +233,7 @@ def create_initial_state(
         output="",
         error=None,
         error_code=None,
+        consecutive_errors=0,
+        max_consecutive_errors=3,
         metadata={},
     )

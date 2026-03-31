@@ -1,4 +1,4 @@
-"""真实工具接口"""
+// 真实工具接口
 
 package com.platform.toolbus.tools;
 

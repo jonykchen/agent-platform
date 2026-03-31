@@ -1,4 +1,4 @@
-"""真实工具实现 - 用户信息查询"""
+// 真实工具实现 - 用户信息查询
 
 package com.platform.toolbus.tools;
 

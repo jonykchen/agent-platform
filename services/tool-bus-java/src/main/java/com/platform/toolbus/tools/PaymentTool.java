@@ -1,4 +1,4 @@
-"""真实工具实现 - 支付工具（高风险）"""
+// 真实工具实现 - 支付工具（高风险）
 
 package com.platform.toolbus.tools;
 

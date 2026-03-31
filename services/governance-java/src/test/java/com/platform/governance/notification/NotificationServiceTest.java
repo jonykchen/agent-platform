@@ -1,6 +1,8 @@
 package com.platform.governance.notification;
 
 import com.platform.governance.approval.ApprovalTask;
+import com.platform.governance.config.MailConfig;
+import com.platform.governance.config.NotificationConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.mail.javamail.JavaMailSender;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -24,11 +27,23 @@ class NotificationServiceTest {
     @Mock
     private KafkaTemplate<String, String> kafkaTemplate;
 
+    @Mock
+    private NotificationConfig notificationConfig;
+
+    @Mock
+    private MailConfig mailConfig;
+
+    @Mock
+    private JavaMailSender mailSender;
+
     private NotificationService notificationService;
 
     @BeforeEach
     void setUp() {
-        notificationService = new NotificationService(kafkaTemplate);
+        lenient().when(notificationConfig.getWecomWebhook()).thenReturn(null);
+        lenient().when(notificationConfig.getDingtalkWebhook()).thenReturn(null);
+        lenient().when(notificationConfig.isEmailEnabled()).thenReturn(false);
+        notificationService = new NotificationService(kafkaTemplate, notificationConfig, mailConfig, mailSender);
     }
 
     @Test
@@ -241,6 +256,9 @@ class NotificationServiceTest {
         String[] statuses = {"approved", "rejected", "expired", "pending"};
 
         for (String status : statuses) {
+            // Reset mock for each iteration
+            reset(kafkaTemplate);
+
             ApprovalTask task = ApprovalTask.builder()
                     .id("approval_" + status)
                     .runId("run_test")

@@ -88,6 +88,7 @@ async def thinking_node(state: AgentState) -> dict:
     - tool_calls: 工具调用列表
     - thinking: 推理过程
     - step_count: 累加后的步骤数
+    - consecutive_errors: 连续失败计数（S-AGENT-11）
 
     Returns:
         更新状态字典
@@ -98,12 +99,14 @@ async def thinking_node(state: AgentState) -> dict:
     request_id = state["request_id"]
     step_count = state["step_count"]
     max_steps = state["max_steps"]
+    consecutive_errors = state.get("consecutive_errors", 0)
 
     logger.info(
         "node_started",
         node="thinking",
         step=step_count,
         max_steps=max_steps,
+        consecutive_errors=consecutive_errors,
         input_preview=state["input"][:100] if state.get("input") else "",
         request_id=request_id,
     )
@@ -149,12 +152,16 @@ async def thinking_node(state: AgentState) -> dict:
         # 解析模型响应
         result = _parse_model_response(model_response, step_count, request_id, duration_ms)
 
+        # S-AGENT-11: 成功时重置连续失败计数
+        result["consecutive_errors"] = 0
+
         logger.info(
             "node_completed",
             node="thinking",
             step=step_count,
             duration_ms=duration_ms,
             decision=result.get("current_step", "unknown"),
+            consecutive_errors_reset=True,
             request_id=request_id,
         )
 
@@ -162,6 +169,10 @@ async def thinking_node(state: AgentState) -> dict:
 
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
+
+        # S-AGENT-11: 增加连续失败计数
+        new_consecutive_errors = consecutive_errors + 1
+
         logger.error(
             "node_failed",
             node="thinking",
@@ -169,11 +180,14 @@ async def thinking_node(state: AgentState) -> dict:
             duration_ms=duration_ms,
             error=str(e),
             error_type=type(e).__name__,
+            consecutive_errors=new_consecutive_errors,
             request_id=request_id,
         )
 
         # 根据异常类型返回错误
-        return _handle_model_error(e, step_count, request_id)
+        result = _handle_model_error(e, step_count, request_id)
+        result["consecutive_errors"] = new_consecutive_errors
+        return result
 
 
 def _is_query_request(input: str) -> bool:
@@ -224,6 +238,8 @@ def _build_messages(state: AgentState) -> list[dict]:
     3. 工具结果（如果有）
     4. 当前用户输入
 
+    【S-AGENT-03】集成上下文管理器，自动截断超长对话
+
     Args:
         state: Agent 状态
 
@@ -249,6 +265,34 @@ def _build_messages(state: AgentState) -> list[dict]:
 
     # 添加当前输入
     messages.append({"role": "user", "content": state["input"]})
+
+    # 【S-AGENT-03】上下文截断：防止 token 超限
+    from app.core.context_manager import truncate_context
+    from app.core.config import config
+
+    max_context_tokens = getattr(config, "max_context_window_tokens", 128000)
+
+    # 检查是否需要截断
+    from app.core.token_counter import count_message_tokens
+    current_tokens = count_message_tokens(messages)
+
+    if current_tokens > max_context_tokens - 8000:  # 预留 8000 给响应
+        logger.warning(
+            "context_truncation_needed",
+            current_tokens=current_tokens,
+            max_tokens=max_context_tokens,
+            request_id=state.get("request_id"),
+        )
+        messages = truncate_context(messages[1:], SYSTEM_PROMPT)  # 排除已添加的 system
+        messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
+
+        logger.info(
+            "context_truncated",
+            original_tokens=current_tokens,
+            truncated_tokens=count_message_tokens(messages),
+            message_count=len(messages),
+            request_id=state.get("request_id"),
+        )
 
     return messages
 
@@ -342,6 +386,8 @@ def _parse_model_response(
     2. finish_reason == "stop": 直接回答
     3. 其他: 异常处理
 
+    S-AGENT-04/05: 输出泄露检测在解析后进行
+
     Args:
         response: 模型网关返回的响应
         step_count: 当前步骤数
@@ -398,9 +444,22 @@ def _parse_model_response(
             "step_count": step_count + 1,
         }
 
-    # 直接回答
+    # 直接回答 - S-AGENT-04/05 输出泄露检测
     content = message.get("content", "")
     if content:
+        # 输出泄露检测
+        from app.core.output_guard import output_guard
+
+        scan_result = output_guard.scan(content, {"request_id": request_id})
+
+        if scan_result["action"] == "sanitize":
+            content = output_guard.sanitize(content, {"request_id": request_id})
+            logger.warning(
+                "output_sanitized",
+                leakage_type=scan_result["leakage_type"],
+                request_id=request_id,
+            )
+
         return {
             "current_step": "final_answer",
             "output": content,

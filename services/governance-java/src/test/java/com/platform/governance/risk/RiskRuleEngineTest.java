@@ -42,7 +42,7 @@ class RiskRuleEngineTest {
     void assess_noRulesMatched_returnsLowRisk() {
         // Given
         when(mockRule1.matches(anyString(), anyMap(), anyString())).thenReturn(false);
-        when(mockRule2.matches(anyString(), anyString(), anyMap())).thenReturn(false);
+        when(mockRule2.matches(anyString(), anyMap(), anyString())).thenReturn(false);
 
         Map<String, Object> arguments = new HashMap<>();
         arguments.put("amount", 100.0);

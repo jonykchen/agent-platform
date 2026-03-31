@@ -194,13 +194,13 @@ class HighValueTransactionRuleTest {
     }
 
     @Test
-    @DisplayName("当金额为负数时应匹配")
-    void matches_negativeAmount_handlesCorrectly() {
+    @DisplayName("当金额为负数时应不匹配")
+    void matches_negativeAmount_returnsFalse() {
         Map<String, Object> arguments = new HashMap<>();
         arguments.put("amount", -15000.0);
 
-        // 负数的绝对值大于阈值，但在实际业务中可能需要额外处理
-        assertTrue(rule.matches("process_payment", arguments, "tenant_001"));
+        // 负数金额不应该匹配规则
+        assertFalse(rule.matches("process_payment", arguments, "tenant_001"));
     }
 
     @Test

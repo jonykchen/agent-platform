@@ -60,6 +60,7 @@ import asyncio
 import structlog
 from langgraph.graph import StateGraph, END
 
+from app.core.config import config
 from app.core.constants import (
     MAX_CONCURRENT_MODEL_CALLS,
     MAX_CONCURRENT_TOOL_CALLS,
@@ -75,20 +76,40 @@ from app.graph.nodes import (
 
 logger = structlog.get_logger()
 
-# 全局并发限制信号量
-_model_semaphore = asyncio.Semaphore(MAX_CONCURRENT_MODEL_CALLS)
-_tool_semaphore = asyncio.Semaphore(MAX_CONCURRENT_TOOL_CALLS)
+# 【P2-配置统一化】全局并发限制信号量（动态初始化）
+_model_semaphore: asyncio.Semaphore | None = None
+_tool_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_model_semaphore() -> asyncio.Semaphore:
+    """获取模型调用信号量（从配置读取）"""
+    global _model_semaphore
+    if _model_semaphore is None:
+        limit = getattr(config, "max_concurrent_model_calls", MAX_CONCURRENT_MODEL_CALLS)
+        _model_semaphore = asyncio.Semaphore(limit)
+        logger.info("model_semaphore_initialized", limit=limit)
+    return _model_semaphore
+
+
+def _get_tool_semaphore() -> asyncio.Semaphore:
+    """获取工具调用信号量（从配置读取）"""
+    global _tool_semaphore
+    if _tool_semaphore is None:
+        limit = getattr(config, "max_concurrent_tool_calls", MAX_CONCURRENT_TOOL_CALLS)
+        _tool_semaphore = asyncio.Semaphore(limit)
+        logger.info("tool_semaphore_initialized", limit=limit)
+    return _tool_semaphore
 
 
 async def _thinking_with_limit(state: AgentState) -> dict:
     """带并发限制的思考节点"""
-    async with _model_semaphore:
+    async with _get_model_semaphore():
         return await thinking_node(state)
 
 
 async def _tool_call_with_limit(state: AgentState) -> dict:
     """带并发限制的工具调用节点"""
-    async with _tool_semaphore:
+    async with _get_tool_semaphore():
         return await tool_call_node(state)
 
 
@@ -134,6 +155,7 @@ def build_agent_graph():
             "risk_check": "risk_check",
             "final_answer": "final_answer",
             "max_steps_exceeded": "final_answer",
+            "max_consecutive_errors": "final_answer",  # S-AGENT-11 连续失败终止
             "error": "final_answer",
         },
     )
@@ -179,8 +201,21 @@ def build_agent_graph():
     # 编译图
     # - checkpointer: 状态持久化，用于恢复中断的执行
     # - interrupt_before: 在 approval_wait 节点前暂停，等待审批
+    # 生产环境使用 Redis，开发环境使用 MemorySaver
+    from app.core.config import config
+
+    if hasattr(config, "environment") and config.environment == "production":
+        from app.graph.checkpointer import RedisSaver
+        checkpointer = RedisSaver(
+            redis_url=config.redis_url if hasattr(config, "redis_url") else "redis://localhost:6379",
+        )
+        logger.info("Using Redis checkpointer for production")
+    else:
+        checkpointer = MemorySaver()
+        logger.info("Using MemorySaver for development")
+
     compiled_graph = graph.compile(
-        checkpointer=MemorySaver(),
+        checkpointer=checkpointer,
         interrupt_before=["approval_wait"],
     )
 
@@ -201,16 +236,19 @@ def route_after_thinking(state: AgentState) -> str:
     决策优先级：
     1. 错误处理 - 有错误直接结束
     2. 步骤限制 - 超过最大步骤直接结束
-    3. 工具调用 - 需要工具时进入风控检查
-    4. RAG 检索 - 需要知识检索（暂未实现）
-    5. 直接回答 - 默认路径
+    3. 连续失败限制 - 连续失败 ≥ 3 次终止（S-AGENT-11）
+    4. 工具调用 - 需要工具时进入风控检查
+    5. RAG 检索 - 需要知识检索（暂未实现）
+    6. 直接回答 - 默认路径
 
     Returns:
-        目标节点名称: error | max_steps_exceeded | risk_check | final_answer
+        目标节点名称: error | max_steps_exceeded | max_consecutive_errors | risk_check | final_answer
     """
     current_step = state.get("current_step", "")
     step_count = state.get("step_count", 0)
     max_steps = state.get("max_steps", 10)
+    consecutive_errors = state.get("consecutive_errors", 0)
+    max_consecutive_errors = state.get("max_consecutive_errors", 3)
 
     # 错误处理 - 优先级最高
     if state.get("error"):
@@ -236,6 +274,19 @@ def route_after_thinking(state: AgentState) -> str:
             request_id=state.get("request_id"),
         )
         return "max_steps_exceeded"
+
+    # 连续失败限制 - S-AGENT-11
+    if consecutive_errors >= max_consecutive_errors:
+        logger.error(
+            "route_decision",
+            from_node="thinking",
+            to_node="final_answer",
+            reason="max_consecutive_errors",
+            consecutive_errors=consecutive_errors,
+            max_consecutive_errors=max_consecutive_errors,
+            request_id=state.get("request_id"),
+        )
+        return "max_consecutive_errors"
 
     # 工具调用 - 进入风控检查（安全检查在工具执行前）
     if current_step == "tool_call":

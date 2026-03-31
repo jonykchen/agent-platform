@@ -1,0 +1,61 @@
+# Istio PeerAuthentication - mTLS STRICT 模式
+# 生产环境服务间通信加密
+#
+# 部署方式：
+#   kubectl apply -f infra/k8s/istio-peer-authentication.yaml -n agent-platform
+#
+# 前置条件：
+#   1. 集群已安装 Istio
+#   2. namespace 已启用 Istio injection: kubectl label namespace agent-platform istio-injection=enabled
+#
+# 开发环境降级：
+#   在应用层配置中设置 istio_mtls_enabled: false
+
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: security
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# 目标规则 - 强制使用 mTLS
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: default
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: security
+spec:
+  host: "*.agent-platform.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+
+---
+# 授权策略 - 服务间访问控制
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: service-to-service
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: security
+spec:
+  rules:
+    # 允许同一 namespace 内的服务相互访问
+    - from:
+        - source:
+            namespaces: ["agent-platform"]
+    # 允许 Istio 系统组件访问
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]

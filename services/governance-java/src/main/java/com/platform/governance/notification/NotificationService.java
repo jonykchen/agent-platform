@@ -2,6 +2,7 @@ package com.platform.governance.notification;
 
 import com.platform.governance.approval.ApprovalTask;
 import com.platform.governance.config.MailConfig;
+import com.platform.governance.config.NotificationConfig;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;

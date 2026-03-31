@@ -1,4 +1,4 @@
-"""真实工具实现 - 替换 Mock"""
+// 真实工具实现 - 替换 Mock
 
 package com.platform.toolbus.tools;
 

@@ -4,6 +4,7 @@
 1. 汇总执行过程中的所有结果
 2. 处理错误情况，生成用户友好的消息
 3. 格式化工具调用结果
+4. S-AGENT-04/05: 输出泄露检测
 
 结果生成优先级：
 ┌─────────────────────────────────────────┐
@@ -27,6 +28,9 @@
 │            工具结果摘要  直接输出        │
 │                                     │
 │               ▼                         │
+│        输出泄露检测 (S-AGENT-04/05)     │
+│               │                         │
+│               ▼                         │
 │          用户友好响应                   │
 └─────────────────────────────────────────┘
 
@@ -36,6 +40,7 @@
 - ERR_APPROVAL_REJECTED: 审批拒绝
 - ERR_AGENT_TOOL_NOT_FOUND: 系统错误
 - ERR_TOOL_EXECUTION_FAILED: 执行失败
+- ERR_AGENT_MAX_CONSECUTIVE_ERRORS: 连续失败过多 (S-AGENT-11)
 
 输出字段：
 - output: 最终用户响应文本
@@ -57,6 +62,7 @@ async def final_answer_node(state: AgentState) -> dict:
     1. 处理工具结果
     2. 处理错误情况
     3. 生成用户友好的回复
+    4. S-AGENT-04/05: 输出泄露检测
 
     输入状态：
     - error: 错误信息（如有）
@@ -65,7 +71,7 @@ async def final_answer_node(state: AgentState) -> dict:
     - output: 直接输出（如有）
 
     输出状态：
-    - output: 最终用户响应
+    - output: 最终用户响应（已进行泄露检测）
     - current_step: "completed" 标记完成
 
     Returns:
@@ -92,6 +98,8 @@ async def final_answer_node(state: AgentState) -> dict:
 
     if error:
         output = _generate_error_response(error, error_code)
+        # S-AGENT-04/05: 输出泄露检测
+        output = _sanitize_output(output, request_id)
         duration_ms = int((time.time() - start_time) * 1000)
 
         logger.warning(
@@ -114,6 +122,8 @@ async def final_answer_node(state: AgentState) -> dict:
     tool_results = state.get("tool_results", [])
     if tool_results:
         output = _generate_tool_summary_response(tool_results)
+        # S-AGENT-04/05: 输出泄露检测
+        output = _sanitize_output(output, request_id)
         duration_ms = int((time.time() - start_time) * 1000)
 
         success_count = sum(1 for r in tool_results if r.get("status") == "success")
@@ -139,20 +149,22 @@ async def final_answer_node(state: AgentState) -> dict:
     # 检查是否有直接输出 - 使用已有输出
     direct_output = state.get("output")
     if direct_output:
+        # S-AGENT-04/05: 输出泄露检测
+        output = _sanitize_output(direct_output, request_id)
         duration_ms = int((time.time() - start_time) * 1000)
 
         logger.info(
             "node_completed",
             node="final_answer",
             status="direct_output",
-            output_preview=direct_output[:100],
+            output_preview=output[:100],
             duration_ms=duration_ms,
             request_id=request_id,
         )
 
         return {
             "current_step": "completed",
-            "output": direct_output,
+            "output": output,
         }
 
     # 默认响应 - 无法处理的情况
@@ -174,12 +186,32 @@ async def final_answer_node(state: AgentState) -> dict:
     }
 
 
+def _sanitize_output(output: str, request_id: str) -> str:
+    """S-AGENT-04/05: 输出泄露检测与清理"""
+    from app.core.output_guard import output_guard
+
+    scan_result = output_guard.scan(output, {"request_id": request_id})
+
+    if scan_result["action"] == "sanitize":
+        sanitized = output_guard.sanitize(output, {"request_id": request_id})
+        logger.warning(
+            "output_sanitized",
+            leakage_type=scan_result["leakage_type"],
+            matched_patterns=scan_result["matched_patterns"],
+            request_id=request_id,
+        )
+        return sanitized
+
+    return output
+
+
 def _generate_error_response(error: str, error_code: str | None) -> str:
     """生成错误响应"""
 
     # 用户友好的错误消息映射
     user_messages = {
         "ERR_AGENT_MAX_STEPS_EXCEEDED": "抱歉，这个任务比较复杂，处理时间较长。请尝试简化您的请求，或联系客服获取帮助。",
+        "ERR_AGENT_MAX_CONSECUTIVE_ERRORS": "抱歉，系统暂时无法处理您的请求，请稍后重试。",
         "ERR_TOOL_RISK_REJECTED": "抱歉，该操作被安全策略阻止。如需执行此操作，请联系管理员申请权限。",
         "ERR_APPROVAL_REJECTED": "您的申请已被审批拒绝。如有疑问，请联系审批人了解详情。",
         "ERR_AGENT_TOOL_NOT_FOUND": "系统内部错误，无法完成您的请求。请稍后重试。",
