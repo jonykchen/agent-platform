@@ -9,7 +9,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$ProjectRoot = (Get-Item $PSScriptRoot).Parent.Parent.FullName
 Set-Location $ProjectRoot
 
 # 颜色函数
@@ -317,7 +317,7 @@ function Invoke-DevUp {
         return
     }
 
-    if (Test-Path "Makefile") {
+    if ((Test-Path "Makefile") -and (Get-Command make -ErrorAction SilentlyContinue)) {
         make dev
     } else {
         docker compose -f infra/docker-compose.yml up -d
@@ -345,7 +345,7 @@ function Invoke-DevDown {
     Write-Host "=== 停止开发环境 ===" -ForegroundColor Blue
     Write-Host ""
 
-    if (Test-Path "Makefile") {
+    if ((Test-Path "Makefile") -and (Get-Command make -ErrorAction SilentlyContinue)) {
         make dev-down
     } else {
         docker compose -f infra/docker-compose.yml down
@@ -363,7 +363,7 @@ function Invoke-Lint {
     Write-Host "=== 代码检查 ===" -ForegroundColor Blue
     Write-Host ""
 
-    if (Test-Path "Makefile") {
+    if ((Test-Path "Makefile") -and (Get-Command make -ErrorAction SilentlyContinue)) {
         make lint
     } else {
         Write-Host "运行 ruff check..."
@@ -392,7 +392,7 @@ function Invoke-Format {
     Write-Host "=== 格式化代码 ===" -ForegroundColor Blue
     Write-Host ""
 
-    if (Test-Path "Makefile") {
+    if ((Test-Path "Makefile") -and (Get-Command make -ErrorAction SilentlyContinue)) {
         make fmt
     } else {
         if (Test-Path "services/orchestrator-python") {
@@ -418,7 +418,7 @@ function Invoke-Test {
     Write-Host "=== 运行单元测试 ===" -ForegroundColor Blue
     Write-Host ""
 
-    if (Test-Path "Makefile") {
+    if ((Test-Path "Makefile") -and (Get-Command make -ErrorAction SilentlyContinue)) {
         make test
     } else {
         if (Test-Path "services/orchestrator-python") {
@@ -476,7 +476,7 @@ function Invoke-CI {
     Write-Host "=== 完整 CI 流水线 ===" -ForegroundColor Blue
     Write-Host ""
 
-    if (Test-Path "Makefile") {
+    if ((Test-Path "Makefile") -and (Get-Command make -ErrorAction SilentlyContinue)) {
         make ci
     } else {
         Write-Host "[1/2] 代码检查..."
