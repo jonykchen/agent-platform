@@ -53,18 +53,23 @@ $script:DockerComposeCmd = $null
 function Get-DockerComposeCmd {
     if ($script:DockerComposeCmd) { return $script:DockerComposeCmd }
 
-    try {
+    # 优先检测 docker compose (V2 插件)
+    if (Test-ToolAvailable "docker") {
         $null = docker compose version 2>&1
-        $script:DockerComposeCmd = "docker compose"
-    } catch {
-        if (Test-ToolAvailable "docker-compose") {
-            $script:DockerComposeCmd = "docker-compose"
-        } else {
-            Write-Err "未找到 docker compose 或 docker-compose"
-            return $null
+        if ($LASTEXITCODE -eq 0) {
+            $script:DockerComposeCmd = "docker compose"
+            return $script:DockerComposeCmd
         }
     }
-    return $script:DockerComposeCmd
+
+    # 回退到 docker-compose (独立安装)
+    if (Test-ToolAvailable "docker-compose") {
+        $script:DockerComposeCmd = "docker-compose"
+        return $script:DockerComposeCmd
+    }
+
+    Write-Err "未找到 docker compose 或 docker-compose"
+    return $null
 }
 
 function Invoke-DockerCompose {
@@ -138,6 +143,278 @@ function Show-Menu {
 }
 
 # ============================================================
+#  管理员权限检测
+# ============================================================
+function Test-IsAdmin {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# ============================================================
+#  Chocolatey 安装函数
+# ============================================================
+function Install-Chocolatey {
+    Write-Host ""
+    Write-Host "=== 安装 Chocolatey ===" -ForegroundColor Blue
+
+    # 检查管理员权限
+    if (-not (Test-IsAdmin)) {
+        Write-Warn "Chocolatey 安装需要管理员权限"
+        Write-Host ""
+        Write-Host "  正在打开管理员窗口..." -ForegroundColor Yellow
+        Write-Host "  请在新窗口中完成安装，完成后可关闭该窗口。" -ForegroundColor Cyan
+        Write-Host ""
+        $scriptPath = $MyInvocation.PSCommandPath
+        if (-not $scriptPath) { $scriptPath = $PSCommandPath }
+        Start-Process pwsh -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" install-choco"
+        exit 0
+    }
+
+    Write-Info "正在安装 Chocolatey 包管理器..."
+    Write-Host "  [1/2] 正在下载安装脚本..."
+
+    try {
+        $chocoInstallTmp = Join-Path $env:TEMP "choco-install-$([guid]::NewGuid()).ps1"
+        Invoke-WebRequest -Uri "https://community.chocolatey.org/install.ps1" -OutFile $chocoInstallTmp -UseBasicParsing
+
+        Write-Host "  [2/2] 正在执行安装脚本..."
+
+        if ((Get-Item $chocoInstallTmp).Length -gt 0) {
+            & $chocoInstallTmp
+        } else {
+            Write-Err "Chocolatey 安装脚本下载失败 (空文件)"
+        }
+    } catch {
+        Write-Err "Chocolatey 安装失败: $_"
+    } finally {
+        Remove-Item $chocoInstallTmp -Force -ErrorAction SilentlyContinue
+    }
+
+    # 刷新 PATH
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $script:ToolCache.Remove("choco")
+
+    if (Test-ToolAvailable "choco") {
+        Write-Status "Chocolatey 安装成功"
+    } else {
+        Write-Err "Chocolatey 安装失败"
+        Write-Host "  手动安装: https://chocolatey.org/install"
+    }
+
+    Write-Host ""
+    Write-Host "  按任意键关闭此窗口..." -ForegroundColor Cyan
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    exit 0
+}
+
+# ============================================================
+#  通用 Chocolatey 安装函数
+# ============================================================
+function Install-ViaChoco {
+    param(
+        [string]$ToolName,
+        [string]$ChocoPackage,
+        [string]$InstallAction  # 权限提升时传递的参数
+    )
+
+    if (-not $ChocoPackage) { $ChocoPackage = $ToolName }
+    if (-not $InstallAction) { $InstallAction = "install-$ToolName" }
+
+    # 检查管理员权限
+    if (-not (Test-IsAdmin)) {
+        Write-Warn "Chocolatey 安装软件需要管理员权限"
+        Write-Host ""
+        Write-Host "  正在打开管理员窗口..." -ForegroundColor Yellow
+        Write-Host "  请在新窗口中完成安装，完成后可关闭该窗口。" -ForegroundColor Cyan
+        Write-Host ""
+        $scriptPath = $MyInvocation.PSCommandPath
+        if (-not $scriptPath) { $scriptPath = $PSCommandPath }
+        Start-Process pwsh -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" $InstallAction"
+        exit 0
+    }
+
+    # 确保 chocolatey 可用
+    if (-not (Test-ToolAvailable "choco")) {
+        Write-Warn "Chocolatey 未安装"
+        $installChoco = Read-Host "  是否安装 Chocolatey? [y/N]"
+        if ($installChoco -match "^[yY]") {
+            Install-Chocolatey
+        } else {
+            Write-Host "  手动安装: https://chocolatey.org/install"
+            return $false
+        }
+    }
+
+    if (-not (Test-ToolAvailable "choco")) {
+        Write-Err "Chocolatey 不可用，无法继续"
+        return $false
+    }
+
+    Write-Host "  [1/3] 正在下载 $ToolName..."
+
+    $process = Start-Process -FilePath "choco" -ArgumentList "install", $ChocoPackage, "-y" -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\choco-${ChocoPackage}-out.log" -RedirectStandardError "$env:TEMP\choco-${ChocoPackage}-err.log"
+
+    $spinner = @("|", "/", "-", "\")
+    $spinnerIdx = 0
+
+    while (-not $process.HasExited) {
+        Write-Host "`r  [$($spinner[$spinnerIdx])] 安装中...    " -NoNewline -ForegroundColor Yellow
+        $spinnerIdx = ($spinnerIdx + 1) % $spinner.Length
+        Start-Sleep -Milliseconds 200
+    }
+
+    Write-Host "`r  [2/3] 安装完成，正在验证...    " -ForegroundColor Cyan
+
+    # 输出日志
+    if (Test-Path "$env:TEMP\choco-${ChocoPackage}-out.log") {
+        $outContent = Get-Content "$env:TEMP\choco-${ChocoPackage}-out.log" -ErrorAction SilentlyContinue
+        if ($outContent) {
+            $outContent | Where-Object { $_ -match "installed|Chocolatey" } | ForEach-Object {
+                Write-Host "  $_" -ForegroundColor Gray
+            }
+        }
+        Remove-Item "$env:TEMP\choco-${ChocoPackage}-out.log" -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item "$env:TEMP\choco-${ChocoPackage}-err.log" -Force -ErrorAction SilentlyContinue
+
+    # 刷新 PATH
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    $script:ToolCache.Remove($ToolName)
+
+    if (Test-ToolAvailable $ToolName) {
+        Write-Host "  [3/3] 验证通过" -ForegroundColor Green
+        Write-Status "$ToolName 安装成功"
+        return $true
+    }
+
+    Write-Err "$ToolName 安装失败"
+    Write-Host "  手动安装: choco install $ChocoPackage -y"
+    return $false
+}
+
+# ============================================================
+#  Make 安装函数
+# ============================================================
+function Install-Make {
+    Write-Host ""
+    Write-Host "=== 安装 Make ===" -ForegroundColor Blue
+    $result = Install-ViaChoco -ToolName "make" -ChocoPackage "make" -InstallAction "install-make"
+
+    Write-Host ""
+    Write-Host "  按任意键关闭此窗口..." -ForegroundColor Cyan
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    exit 0
+}
+
+# ============================================================
+#  Buf 安装函数
+# ============================================================
+function Install-Buf {
+    Write-Host ""
+    Write-Host "=== 安装 Buf ===" -ForegroundColor Blue
+
+    # 检查是否已安装
+    if (Test-ToolAvailable "buf") {
+        $bufVersion = (buf --version 2>&1 | Out-String).Trim()
+        Write-Status "buf 已安装: $bufVersion"
+        Write-Host ""
+        Write-Host "  按任意键关闭此窗口..." -ForegroundColor Cyan
+        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        exit 0
+    }
+
+    # 方式 1: scoop (buf 在 scoop 仓库中)
+    if (Test-ToolAvailable "scoop") {
+        Write-Info "使用 scoop 安装 buf..."
+        scoop install buf
+        if ($LASTEXITCODE -eq 0) {
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+            $script:ToolCache.Remove("buf")
+            if (Test-ToolAvailable "buf") {
+                Write-Status "buf 安装成功"
+                Write-Host ""
+                Write-Host "  按任意键关闭此窗口..." -ForegroundColor Cyan
+                $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+                exit 0
+            }
+        }
+        Write-Warn "scoop 安装失败，尝试其他方式..."
+    }
+
+    # 方式 2: 从 GitHub releases 直接下载
+    Write-Info "从 GitHub releases 下载 buf..."
+    Write-Host "  [1/4] 获取最新版本号..."
+
+    $latestVersion = "1.47.2"  # 已知的最新版本，可后续更新
+    $downloadUrl = "https://github.com/bufbuild/buf/releases/download/v${latestVersion}/buf-Windows-x86_64.exe"
+    $installDir = Join-Path $env:LOCALAPPDATA "buf"
+    $bufExePath = Join-Path $installDir "buf.exe"
+
+    Write-Host "  [2/4] 创建安装目录..."
+    if (-not (Test-Path $installDir)) {
+        New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+    }
+
+    Write-Host "  [3/4] 下载 buf v${latestVersion}..."
+    try {
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $bufExePath -UseBasicParsing
+        $ProgressPreference = 'Continue'
+
+        if ((Get-Item $bufExePath).Length -lt 10000) {
+            Write-Err "下载文件太小，可能下载失败"
+            Remove-Item $bufExePath -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Err "下载失败: $_"
+        Write-Host ""
+        Write-Host "  手动安装方式:" -ForegroundColor Yellow
+        Write-Host "    1. scoop install buf (推荐)" -ForegroundColor Cyan
+        Write-Host "    2. 从 GitHub releases 下载: https://github.com/bufbuild/buf/releases" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "  按任意键关闭此窗口..." -ForegroundColor Cyan
+        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        exit 0
+    }
+
+    Write-Host "  [4/4] 添加到 PATH..."
+    $currentPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+    if ($currentPath -notlike "*$installDir*") {
+        [System.Environment]::SetEnvironmentVariable("Path", "$currentPath;$installDir", "User")
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "User") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    }
+
+    $script:ToolCache.Remove("buf")
+
+    if (Test-ToolAvailable "buf") {
+        Write-Status "buf 安装成功 (v${latestVersion})"
+    } else {
+        Write-Err "buf 安装失败"
+        Write-Host "  请手动刷新 PATH 或重启终端"
+    }
+
+    Write-Host ""
+    Write-Host "  按任意键关闭此窗口..." -ForegroundColor Cyan
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    exit 0
+}
+
+# ============================================================
+#  Ruff 安装函数
+# ============================================================
+function Install-Ruff {
+    Write-Host ""
+    Write-Host "=== 安装 Ruff ===" -ForegroundColor Blue
+    $result = Install-ViaChoco -ToolName "ruff" -ChocoPackage "ruff" -InstallAction "install-ruff"
+
+    Write-Host ""
+    Write-Host "  按任意键关闭此窗口..." -ForegroundColor Cyan
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    exit 0
+}
+
+# ============================================================
 #  [1] 环境检查
 # ============================================================
 function Invoke-Setup {
@@ -205,8 +482,14 @@ function Invoke-Setup {
     if (Test-ToolAvailable "make") {
         Write-Status "Make: 已安装"
     } else {
-        Write-Warn "Make 未安装"
-        Write-Host "  安装: scoop install make 或 choco install make"
+        Write-Warn "Make 未安装 (构建工具)"
+        Write-Host "  用途: 执行 Makefile 中的构建命令"
+        $installMake = Read-Host "  是否安装 make? [y/N]"
+        if ($installMake -match "^[yY]") {
+            Install-Make
+        } else {
+            Write-Host "  手动安装: choco install make -y 或 scoop install make"
+        }
     }
 
     # uv
@@ -231,21 +514,44 @@ function Invoke-Setup {
             Write-Status "ruff 已安装"
         }
     } else {
-        Write-Warn "ruff 未安装"
-        Write-Host "  安装: pip install ruff"
+        Write-Warn "ruff 未安装 (Python 代码检查工具)"
+        Write-Host "  用途: 代码 lint 和格式化"
+        $installRuff = Read-Host "  是否安装 ruff? [y/N]"
+        if ($installRuff -match "^[yY]") {
+            Install-Ruff
+        } else {
+            Write-Host "  手动安装: choco install ruff -y 或 pip install ruff"
+        }
     }
 
-    # buf
+    # buf (包含内置 protoc)
     if (Test-ToolAvailable "buf") {
         try {
             $bufVersion = (buf --version 2>&1 | Out-String).Trim()
             Write-Status "buf: $bufVersion"
+            Write-Info "buf 已内置 protoc，无需单独安装"
         } catch {
             Write-Status "buf 已安装"
         }
     } else {
-        Write-Warn "buf 未安装 (Proto 可选)"
-        Write-Host "  安装: scoop install buf"
+        Write-Warn "buf 未安装 (Proto 代码生成工具)"
+        Write-Host "  用途: 从 .proto 文件生成 gRPC Java/Python 代码"
+        $installBuf = Read-Host "  是否安装 buf? [y/N]"
+        if ($installBuf -match "^[yY]") {
+            Install-Buf
+        } else {
+            Write-Host "  手动安装: scoop install buf 或从 https://github.com/bufbuild/buf/releases 下载"
+        }
+    }
+
+    # protoc (原生编译器，仅当 buf 未安装时检测)
+    if (-not (Test-ToolAvailable "buf") -and (Test-ToolAvailable "protoc")) {
+        try {
+            $protocVersion = (protoc --version 2>&1 | Out-String).Trim()
+            Write-Status "protoc: $protocVersion"
+        } catch {
+            Write-Status "protoc 已安装"
+        }
     }
 
     Write-Host ""
@@ -460,7 +766,7 @@ function Invoke-DevUp {
     Write-Status "服务已启动"
     Write-Host ""
     Write-Host "=== 服务状态 ===" -ForegroundColor Blue
-    Invoke-DockerCompose @("ps") | Out-Null
+    $null = Invoke-DockerCompose @("ps")
     Write-Host ""
     Write-Host "=== 可用服务 ===" -ForegroundColor Blue
     Write-Host "  PostgreSQL:  localhost:5432"
@@ -477,6 +783,11 @@ function Invoke-DevDown {
     Write-Host ""
     Write-Host "=== 停止开发环境 ===" -ForegroundColor Blue
     Write-Host ""
+
+    if (-not (Test-ToolAvailable "docker")) {
+        Write-Warn "Docker 未安装，跳过停止"
+        return
+    }
 
     if ((Test-Path "Makefile") -and (Test-ToolAvailable "make")) {
         make dev-down
@@ -620,9 +931,17 @@ function Invoke-E2ETest {
     Write-Host "检查服务是否运行..."
     $servicesRunning = $false
     try {
-        $psOutput = Invoke-DockerCompose @("ps") 2>$null
-        if ($psOutput -match "running|Up") {
-            $servicesRunning = $true
+        $cmd = Get-DockerComposeCmd
+        if ($cmd) {
+            $fullArgs = @("-f", $script:DockerComposeFile, "ps")
+            $psOutput = if ($cmd -eq "docker compose") {
+                & docker compose @fullArgs 2>&1 | Out-String
+            } else {
+                & docker-compose @fullArgs 2>&1 | Out-String
+            }
+            if ($psOutput -match "running|Up") {
+                $servicesRunning = $true
+            }
         }
     } catch {
         # docker compose ps 失败，认为服务未运行
@@ -682,15 +1001,18 @@ function Invoke-CI {
         if ($LASTEXITCODE -ne 0) { $ciFailed = $true }
     } else {
         Write-Host "[1/3] 代码检查..."
-        try { Invoke-Lint } catch { $ciFailed = $true }
+        Invoke-Lint
+        if ($LASTEXITCODE -ne 0) { $ciFailed = $true }
 
         Write-Host ""
         Write-Host "[2/3] 运行测试..."
-        try { Invoke-Test } catch { $ciFailed = $true }
+        Invoke-Test
+        if ($LASTEXITCODE -ne 0) { $ciFailed = $true }
 
         Write-Host ""
         Write-Host "[3/3] 安全扫描..."
-        try { Invoke-Security } catch { $ciFailed = $true }
+        Invoke-Security
+        if ($LASTEXITCODE -ne 0) { $ciFailed = $true }
     }
 
     Write-Host ""
@@ -718,7 +1040,7 @@ function Invoke-Security {
         if ($LASTEXITCODE -ne 0) { $securityFailed = $true }
     } else {
         Write-Warn "trivy 未安装"
-        Write-Host "  安装: scoop install trivy"
+        Write-Host "  安装: choco install trivy -y 或 scoop install trivy"
     }
 
     if (Test-ToolAvailable "gitleaks") {
@@ -727,7 +1049,7 @@ function Invoke-Security {
         if ($LASTEXITCODE -ne 0) { $securityFailed = $true }
     } else {
         Write-Warn "gitleaks 未安装"
-        Write-Host "  安装: scoop install gitleaks"
+        Write-Host "  安装: choco install gitleaks -y 或 scoop install gitleaks"
     }
 
     Write-Host ""
@@ -746,19 +1068,24 @@ function Invoke-Security {
 # 如果带参数运行，直接执行对应功能
 if ($Action) {
     switch -Regex ($Action) {
-        "^(1|setup|env)$"     { Invoke-Setup; exit 0 }
-        "^(2|uv)$"            { Invoke-UvSetup; exit 0 }
-        "^(3|up)$"            { Invoke-DevUp; exit 0 }
-        "^(4|down)$"          { Invoke-DevDown; exit 0 }
-        "^(5|lint)$"          { Invoke-Lint; exit 0 }
-        "^(6|fmt|format)$"   { Invoke-Format; exit 0 }
-        "^(7|test)$"          { Invoke-Test; exit 0 }
-        "^(8|e2e)$"           { Invoke-E2ETest; exit 0 }
-        "^(9|ci)$"            { Invoke-CI; exit 0 }
-        "^(10|security)$"     { Invoke-Security; exit 0 }
-        "^(-h|--help)$"       {
+        "^(1|setup|env)$"      { Invoke-Setup; exit 0 }
+        "^(2|uv)$"             { Invoke-UvSetup; exit 0 }
+        "^(3|up)$"             { Invoke-DevUp; exit 0 }
+        "^(4|down)$"           { Invoke-DevDown; exit 0 }
+        "^(5|lint)$"           { Invoke-Lint; exit 0 }
+        "^(6|fmt|format)$"    { Invoke-Format; exit 0 }
+        "^(7|test)$"           { Invoke-Test; exit 0 }
+        "^(8|e2e)$"            { Invoke-E2ETest; exit 0 }
+        "^(9|ci)$"             { Invoke-CI; exit 0 }
+        "^(10|security)$"      { Invoke-Security; exit 0 }
+        "^install-make$"       { Install-Make; exit 0 }
+        "^install-buf$"        { Install-Buf; exit 0 }
+        "^install-ruff$"       { Install-Ruff; exit 0 }
+        "^install-choco$"      { Install-Chocolatey; exit 0 }
+        "^(-h|--help)$"        {
             Write-Host "用法: ./scripts/windows/dev.ps1 [操作]"
             Write-Host "操作: setup|uv|up|down|lint|fmt|test|e2e|ci|security"
+            Write-Host "      install-make|install-buf|install-ruff|install-choco"
             Write-Host "无参数时进入交互模式"
             exit 0
         }

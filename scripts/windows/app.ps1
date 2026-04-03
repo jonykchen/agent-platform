@@ -106,9 +106,9 @@ function Start-PythonService {
 
     # 检查是否已运行
     if (Test-Path $pidFile) {
-        $pid = Get-Content $pidFile -ErrorAction SilentlyContinue
-        if ($pid -and (Get-Process -Id $pid -ErrorAction SilentlyContinue)) {
-            Write-Warn "$name 已在运行 (PID: $pid)"
+        $procId = Get-Content $pidFile -ErrorAction SilentlyContinue
+        if ($procId -and (Get-Process -Id $procId -ErrorAction SilentlyContinue)) {
+            Write-Warn "$name 已在运行 (PID: $procId)"
             return $true
         }
         Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
@@ -127,12 +127,11 @@ function Start-PythonService {
 
     Set-Location $servicePath
 
-    # 启动服务
+    # 启动服务（继承当前环境，避免 Winsock 加载失败）
     $process = Start-Process -FilePath "uv" `
         -ArgumentList "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", $port `
         -RedirectStandardOutput $logFile `
         -RedirectStandardError (Join-Path $LogDir "$name.err.log") `
-        -UseNewEnvironment `
         -PassThru
 
     $process.Id | Out-File $pidFile -Encoding UTF8
@@ -163,16 +162,16 @@ function Stop-PythonService {
         return
     }
 
-    $pid = Get-Content $pidFile -ErrorAction SilentlyContinue
-    if (-not $pid) {
+    $procId = Get-Content $pidFile -ErrorAction SilentlyContinue
+    if (-not $procId) {
         Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
         Write-Warn "$name 未运行"
         return
     }
 
-    $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
+    $process = Get-Process -Id $procId -ErrorAction SilentlyContinue
     if ($process) {
-        Write-Info "停止 $name (PID: $pid)..."
+        Write-Info "停止 $name (PID: $procId)..."
         $process.Kill()
         $process.WaitForExit(5000)
         Write-Status "$name 已停止"
@@ -201,12 +200,12 @@ function Get-ServiceStatus {
         $pid = "-"
 
         if (Test-Path $pidFile) {
-            $pid = Get-Content $pidFile -ErrorAction SilentlyContinue
-            if ($pid -and (Get-Process -Id $pid -ErrorAction SilentlyContinue)) {
+            $procId = Get-Content $pidFile -ErrorAction SilentlyContinue
+            if ($procId -and (Get-Process -Id $procId -ErrorAction SilentlyContinue)) {
                 $status = "运行中"
                 $allStopped = $false
             } else {
-                $pid = "-"
+                $procId = "-"
             }
         }
 
@@ -222,7 +221,7 @@ function Get-ServiceStatus {
         $statusColor = if ($status -eq "运行中") { "Green" } else { "Yellow" }
 
         Write-Host "  $name" -NoNewline
-        Write-Host " [PID: $pid]" -ForegroundColor Gray -NoNewline
+        Write-Host " [PID: $procId]" -ForegroundColor Gray -NoNewline
         Write-Host " 端口: $port ($portStatus)" -ForegroundColor Gray -NoNewline
         Write-Host " - " -NoNewline
         Write-Host $status -ForegroundColor $statusColor
