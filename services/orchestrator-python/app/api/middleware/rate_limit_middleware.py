@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import structlog
 
 from app.core.exceptions import RateLimitedError
-from app.core.quota_manager import TenantQuotaManager, get_quota_manager
+from app.core.quota_manager import TenantQuotaManager
 
 logger = structlog.get_logger()
 

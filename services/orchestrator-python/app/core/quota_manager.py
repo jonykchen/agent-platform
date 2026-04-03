@@ -83,7 +83,7 @@ class TenantQuotaManager:
         # 获取总配额（从租户配置中）
         config_key = f"config:tenant:{tenant_id}"
         config = await self.redis.hgetall(config_key)
-        budget = int(config.get(b"daily_tokens"], 1_000_000))
+        budget = int(config.get("daily_tokens", 1_000_000))
 
         return {
             "budget": budget,
