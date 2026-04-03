@@ -13,7 +13,7 @@ class AppConfig(BaseSettings):
 
     environment: str = "local"
     debug: bool = False
-    port: int = 8002
+    port: int = 8003
 
     # 数据库配置
     database_url: str = Field(
@@ -25,8 +25,8 @@ class AppConfig(BaseSettings):
     # Redis
     redis_url: str = "redis://:dev_password@localhost:6379/2"
 
-    # Embedding 服务配置
-    embedding_service_url: str = "http://localhost:8001"
+    # Embedding 服务配置 - 指向 model-gateway
+    embedding_service_url: str = "http://localhost:8002"
     embedding_model: str = "text-embedding-ada-002"
     embedding_dimension: int = 1536
     embedding_batch_size: int = 100
