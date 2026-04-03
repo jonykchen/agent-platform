@@ -46,7 +46,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app, quota_manager: TenantQuotaManager | None = None):
         super().__init__(app)
-        self.quota_manager = quota_manager or get_quota_manager()
+        self._quota_manager = quota_manager
+
+    @property
+    def quota_manager(self) -> TenantQuotaManager:
+        """延迟获取配额管理器，避免初始化顺序问题"""
+        if self._quota_manager is None:
+            self._quota_manager = get_quota_manager()
+        return self._quota_manager
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # 排除健康检查等路径
