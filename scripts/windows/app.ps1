@@ -127,26 +127,47 @@ function Start-PythonService {
 
     Set-Location $servicePath
 
-    # 启动服务（继承当前环境，避免 Winsock 加载失败）
+    # 启动服务（后台运行，不创建新窗口）
     $process = Start-Process -FilePath "uv" `
         -ArgumentList "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", $port `
         -RedirectStandardOutput $logFile `
         -RedirectStandardError (Join-Path $LogDir "$name.err.log") `
+        -NoNewWindow `
         -PassThru
 
     $process.Id | Out-File $pidFile -Encoding UTF8
 
     Set-Location $ProjectRoot
 
-    # 等待启动
-    Start-Sleep -Milliseconds 500
+    # 等待启动并验证
+    Start-Sleep -Seconds 3
 
-    if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
+    # 检查进程是否存活
+    if (-not (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) {
+        Write-Err "$name 启动失败，查看日志: $logFile"
+        return $false
+    }
+
+    # 检查端口是否就绪
+    $portReady = $false
+    for ($i = 1; $i -le 10; $i++) {
+        try {
+            $tcp = New-Object System.Net.Sockets.TcpClient
+            $tcp.Connect("localhost", $port)
+            $tcp.Close()
+            $portReady = $true
+            break
+        } catch {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+
+    if ($portReady) {
         Write-Status "$name 启动成功 (PID: $($process.Id))"
         return $true
     } else {
-        Write-Err "$name 启动失败，查看日志: $logFile"
-        return $false
+        Write-Warn "$name 进程运行但端口未就绪，查看日志: $logFile"
+        return $true  # 进程存活，只是启动慢
     }
 }
 
