@@ -79,7 +79,7 @@ lint-python:
 	@if [ -f services/orchestrator-python/pyproject.toml ]; then cd services/orchestrator-python && uv run ruff format --check . 2>/dev/null || true; fi
 
 lint-proto:
-	@if command -v buf >/dev/null 2>&1; then buf lint contracts/proto 2>/dev/null || echo "buf not configured"; fi
+	@buf lint contracts/proto 2>/dev/null || echo "buf not installed"
 
 lint-frontend:
 	@if [ -f services/web-frontend/package.json ]; then \
@@ -89,7 +89,7 @@ lint-frontend:
 
 # ---- Proto 生成 ----
 proto:
-	@if command -v buf >/dev/null 2>&1; then buf generate 2>/dev/null || echo "buf generate failed"; fi
+	@buf generate 2>/dev/null || echo "buf generate failed"
 	@echo "✅ Proto code generated"
 
 # ---- 格式化 ----
@@ -103,12 +103,15 @@ fmt-python:
 	@if [ -f services/orchestrator-python/pyproject.toml ]; then cd services/orchestrator-python && uv run ruff format . 2>/dev/null || echo "ruff not installed"; fi
 
 # ---- 开发环境 ----
+# 检测 docker compose 命令（兼容 Windows）
+DOCKER_COMPOSE := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
+
 dev:
-	@if command -v docker-compose >/dev/null 2>&1; then docker-compose -f infra/docker-compose.yml up -d 2>/dev/null || docker compose -f infra/docker-compose.yml up -d; fi
+	@$(DOCKER_COMPOSE) -f infra/docker-compose.yml up -d
 	@echo "🚀 Dev environment started"
 
 dev-down:
-	@if command -v docker-compose >/dev/null 2>&1; then docker-compose -f infra/docker-compose.yml down 2>/dev/null || docker compose -f infra/docker-compose.yml down; fi
+	@$(DOCKER_COMPOSE) -f infra/docker-compose.yml down
 	@echo "🛑 Dev environment stopped"
 
 # ---- 清理 ----
@@ -136,5 +139,5 @@ ci: lint test
 
 security-scan:
 	@echo "Running security scans..."
-	@if command -v gitleaks >/dev/null 2>&1; then gitleaks detect --source . --verbose || true; fi
-	@if command -v trivy >/dev/null 2>&1; then trivy fs --severity HIGH,CRITICAL . || true; fi
+	@gitleaks detect --source . --verbose 2>/dev/null || echo "gitleaks not installed"
+	@trivy fs --severity HIGH,CRITICAL . 2>/dev/null || echo "trivy not installed"
