@@ -197,7 +197,7 @@ function Get-ServiceStatus {
         $logFile = Join-Path $LogDir "$name.log"
 
         $status = "未运行"
-        $pid = "-"
+        $procId = "-"
 
         if (Test-Path $pidFile) {
             $procId = Get-Content $pidFile -ErrorAction SilentlyContinue
