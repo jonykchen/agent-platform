@@ -158,7 +158,7 @@ class HealthChecker:
 
         try:
             import grpc
-            from grpc import health.v1 import health_pb2, health_pb2_grpc
+            from grpc.health.v1 import health_pb2, health_pb2_grpc
 
             channel = grpc.aio.insecure_channel(config.tool_bus_grpc_addr)
             stub = health_pb2_grpc.HealthStub(channel)
