@@ -387,11 +387,15 @@ function Install-Buf {
 
     $script:ToolCache.Remove("buf")
 
-    if (Test-ToolAvailable "buf") {
+    # 直接验证文件是否存在（PATH 可能未立即生效）
+    if ((Test-Path $bufExePath) -and (Get-Item $bufExePath).Length -gt 10000) {
         Write-Status "buf 安装成功 (v${latestVersion})"
+        Write-Host ""
+        Write-Host "  安装路径: $bufExePath" -ForegroundColor Gray
+        Write-Host "  注意: 新终端窗口可直接使用 buf 命令" -ForegroundColor Yellow
     } else {
         Write-Err "buf 安装失败"
-        Write-Host "  请手动刷新 PATH 或重启终端"
+        Write-Host "  请手动安装: https://github.com/bufbuild/buf/releases" -ForegroundColor Cyan
     }
 
     Write-Host ""
@@ -525,9 +529,12 @@ function Invoke-Setup {
     }
 
     # buf (包含内置 protoc)
-    if (Test-ToolAvailable "buf") {
+    $bufExePath = Join-Path $env:LOCALAPPDATA "buf\buf.exe"
+    $bufAvailable = Test-ToolAvailable "buf" -or (Test-Path $bufExePath)
+    if ($bufAvailable) {
         try {
-            $bufVersion = (buf --version 2>&1 | Out-String).Trim()
+            $bufCmd = if (Test-ToolAvailable "buf") { "buf" } else { $bufExePath }
+            $bufVersion = (& $bufCmd --version 2>&1 | Out-String).Trim()
             Write-Status "buf: $bufVersion"
             Write-Info "buf 已内置 protoc，无需单独安装"
         } catch {

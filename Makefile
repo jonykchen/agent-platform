@@ -88,8 +88,11 @@ lint-frontend:
 	fi
 
 # ---- Proto 生成 ----
+# 检测 buf 命令（兼容 Windows）
+BUF_CMD := $(shell buf version >/dev/null 2>&1 && echo "buf" || echo "$(LOCALAPPDATA)/buf/buf.exe")
+
 proto:
-	@buf generate 2>/dev/null || echo "buf generate failed"
+	@$(BUF_CMD) generate 2>/dev/null || echo "buf not installed or generate failed"
 	@echo "✅ Proto code generated"
 
 # ---- 格式化 ----
