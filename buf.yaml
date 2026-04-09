@@ -1,7 +1,11 @@
 # buf.yaml - Buf Proto 管理
-# https://buf.build/docs/configuration/v1/buf-yaml
+# https://buf.build/docs/configuration/v2/buf-yaml
 
-version: v1
+version: v2
+
+modules:
+  - path: contracts/proto
+    name: buf.build/platform/agent
 
 breaking:
   use:
@@ -13,6 +17,3 @@ lint:
   except:
     - PACKAGE_VERSION_SUFFIX
     - SERVICE_SUFFIX
-  enum_zero_value_suffix: _UNKNOWN
-  rpc_allow_googleapi_http: true
-  service_allow_googleapi_http: true

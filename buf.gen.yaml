@@ -1,85 +1,37 @@
 # buf.gen.yaml - Proto 多语言代码生成配置
-# https://buf.build/docs/configuration/v1/buf-gen-yaml
+# 使用 buf 远程插件，无需本地安装 protoc-gen-*
 
-version: v1
-
-managed:
-  enabled: true
-  override:
-    - file_option: java_multiple_files
-      value: true
-    - file_option: java_package_prefix
-      value: com.platform
+version: v2
 
 plugins:
-  # Java gRPC + Protobuf
-  - name: java
+  # Java Protobuf
+  - remote: buf.build/protocolbuffers/java
     out: services/gateway-java/src/main/java/gen
-    opt:
-      - source_relative
-  - name: grpc-java
+  - remote: buf.build/grpc/java
     out: services/gateway-java/src/main/java/gen
-    opt:
-      - source_relative
-  - name: java
+
+  - remote: buf.build/protocolbuffers/java
     out: services/tool-bus-java/src/main/java/gen
-    opt:
-      - source_relative
-  - name: grpc-java
+  - remote: buf.build/grpc/java
     out: services/tool-bus-java/src/main/java/gen
-    opt:
-      - source_relative
-  - name: java
+
+  - remote: buf.build/protocolbuffers/java
     out: services/governance-java/src/main/java/gen
-    opt:
-      - source_relative
-  - name: grpc-java
+  - remote: buf.build/grpc/java
     out: services/governance-java/src/main/java/gen
-    opt:
-      - source_relative
 
-  # Python gRPC + Protobuf
-  - name: python
+  # Python Protobuf
+  - remote: buf.build/protocolbuffers/python
     out: services/orchestrator-python/app/gen
-    opt:
-      - source_relative
-  - name: pyi
+  - remote: buf.build/grpc/python
     out: services/orchestrator-python/app/gen
-    opt:
-      - source_relative
-  - name: grpc-python
-    out: services/orchestrator-python/app/gen
-    opt:
-      - source_relative
 
-  - name: python
+  - remote: buf.build/protocolbuffers/python
     out: services/model-gateway-python/app/gen
-    opt:
-      - source_relative
-  - name: pyi
+  - remote: buf.build/grpc/python
     out: services/model-gateway-python/app/gen
-    opt:
-      - source_relative
-  - name: grpc-python
-    out: services/model-gateway-python/app/gen
-    opt:
-      - source_relative
 
-  - name: python
+  - remote: buf.build/protocolbuffers/python
     out: services/knowledge-python/app/gen
-    opt:
-      - source_relative
-  - name: pyi
+  - remote: buf.build/grpc/python
     out: services/knowledge-python/app/gen
-    opt:
-      - source_relative
-  - name: grpc-python
-    out: services/knowledge-python/app/gen
-    opt:
-      - source_relative
-
-  # OpenAPI (用于 REST 接口文档)
-  - name: openapiv2
-    out: contracts/openapi/gen
-    opt:
-      - output_mode=default
