@@ -114,7 +114,10 @@ class AppConfig(BaseSettings):
 
     # 模型网关地址 - 提供 LLM API 调用的统一入口
     # 模型网关负责：多提供商路由、熔断、成本追踪
-    model_gateway_url: str = "http://localhost:8001"
+    model_gateway_url: str = "http://localhost:8002"
+
+    # 知识库服务地址 - 提供 RAG 检索
+    knowledge_service_url: str = "http://localhost:8003"
 
     # ToolBus gRPC 地址 - 工具执行服务
     # 使用 gRPC 而非 HTTP 的原因：更高效的二进制传输、强类型约束

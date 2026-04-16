@@ -16,7 +16,6 @@ def setup_logging(environment: str = "production", debug: bool = False) -> None:
 
     shared_processors = [
         structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         _SensitiveDataProcessor(),  # 敏感信息脱敏

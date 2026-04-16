@@ -48,6 +48,14 @@ logger = structlog.get_logger()
 # 全局 gRPC Channel
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ToolBus 可用性标记（开发环境允许降级）
+_tool_bus_available = False
+
+
+def is_tool_bus_available() -> bool:
+    """检查 ToolBus 是否可用"""
+    return _tool_bus_available
+
 _channel: aio.Channel | None = None
 _stub_cache: dict[str, Any] = {}
 
@@ -112,22 +120,27 @@ async def init_grpc_client() -> aio.Channel:
             target=config.tool_bus_grpc_addr,
         )
 
+        global _tool_bus_available
+        _tool_bus_available = True
+
         return _channel
 
     except asyncio.TimeoutError:
-        logger.error(
+        logger.warning(
             "grpc_client_init_timeout",
             target=config.tool_bus_grpc_addr,
+            message="ToolBus 不可用，工具调用功能将被禁用",
         )
-        raise ToolBusUnavailableError("gRPC 连接超时")
+        return None
 
     except Exception as e:
-        logger.error(
+        logger.warning(
             "grpc_client_init_failed",
             target=config.tool_bus_grpc_addr,
             error=str(e),
+            message="ToolBus 不可用，工具调用功能将被禁用",
         )
-        raise ToolBusUnavailableError(f"gRPC 连接失败: {e}")
+        return None
 
 
 async def close_grpc_client() -> None:

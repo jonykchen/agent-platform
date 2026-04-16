@@ -25,7 +25,6 @@ def setup_logging(
 
     shared_processors = [
         structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         _SensitiveDataProcessor(),
@@ -36,7 +35,7 @@ def setup_logging(
         structlog.configure(
             processors=[
                 *shared_processors,
-                structlog.processors.format_json_info,
+                structlog.processors.format_exc_info,
                 structlog.processors.JSONRenderer(sort_keys=True),
             ],
             wrapper_class=structlog.make_filtering_bound_logger(log_level),

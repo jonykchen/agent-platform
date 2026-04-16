@@ -3,6 +3,8 @@
 
 # Log files
 *.log
+logs/
+*.pid
 
 # Package Files
 *.jar

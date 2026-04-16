@@ -15,11 +15,38 @@
 │  ✓ TypedDict       │  类型安全、IDE 支持      │                        │
 └─────────────────────────────────────────────────────────────────────────┘
 
-【技术选型】为什么使用 TypedDict + Annotated？
-- TypedDict: Python 3.8+ 原生支持，提供类型提示但不影响运行时性能
-- Annotated[list, add_messages]: LangGraph 的魔法，自动累积消息历史
-  - 每次返回 {"messages": [...]} 会追加而非覆盖
-  - 类似 Redux 的 reducer 模式，支持不可变更新
+【技术选型】TypedDict vs dataclass vs Pydantic Model
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌────────────────────┬─────────────────────────────┬─────────────────────────────┐
+│ 方案               │ 优点                        │ 缺点                        │
+├────────────────────┼─────────────────────────────┼─────────────────────────────┤
+│ TypedDict (选择)   │ • Python 3.8+ 原生支持      │ • 无运行时验证              │
+│                    │ • 零运行时开销              │ • IDE 类型推断依赖插件      │
+│                    │ • LangGraph 原生支持        │                              │
+│                    │ • JSON 序列化简单           │                              │
+├────────────────────┼─────────────────────────────┼─────────────────────────────┤
+│ dataclass          │ • OOP 友好                  │ • 序列化需自定义            │
+│                    │ • 运行时类型检查            │ • 不可变更新繁琐            │
+│                    │ • 默认值支持                │ • LangGraph 需适配          │
+├────────────────────┼─────────────────────────────┼─────────────────────────────┤
+│ Pydantic Model     │ • 完整的验证机制            │ • 与 LangGraph 集成不紧密   │
+│                    │ • JSON 自动序列化           │ • 运行时开销                │
+│                    │ • 错误信息友好              │ • 需额外的依赖              │
+└────────────────────┴─────────────────────────────┴─────────────────────────────┘
+
+【选择 TypedDict 的原因】
+1. LangGraph 的 Annotated[list, add_messages] reducer 只支持 TypedDict
+2. Agent 状态需要序列化到 Redis/MemorySaver，TypedDict 直接是 dict
+3. 零运行时开销：Python Agent 追求性能，不需要额外验证层
+4. 类型安全：mypy/Pyright 能检查类型错误，开发阶段已足够
+
+【Annotated[list, add_messages] 的魔法原理】
+这是 LangGraph 的核心特性，实现了类似 Redux reducer 的不可变更新：
+- 当节点返回 {"messages": [new_msg]} 时，LangGraph 自动执行：
+  new_state["messages"] = old_state["messages"] + [new_msg]
+- 如果返回 {"messages": [{"id": "x", ...}]，add_messages 会删除指定 ID
+- 这避免了手动管理消息列表的复杂性
 
 【设计原则】状态字段分类
 1. 会话元数据：session_id, tenant_id, user_id, request_id
@@ -30,8 +57,9 @@
    - Agent 与外部系统交互的数据
 4. 风控审批：risk_level, approval_id, approval_status
    - 高风险操作的人工审批机制
-5. 错误处理：error, error_code
+5. 错误处理：error, error_code, consecutive_errors
    - 统一错误码体系，便于前端处理
+   - S-AGENT-11: 连续失败计数，防止无限错误循环
 
 【参考】
 - LangGraph 状态管理: https://langchain-ah.readthedocs.io/en/latest/concepts/state.html
