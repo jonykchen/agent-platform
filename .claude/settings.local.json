@@ -19,7 +19,8 @@
       "Bash(gh pr list:*)",
       "Bash(mvn compile:*)",
       "Bash(mvn test:*)",
-      "Bash(buf lint:*)"
+      "Bash(buf lint:*)",
+      "mcp__langchain-docs__query_docs_filesystem_docs_by_lang_chain"
     ]
   },
   "extends": "./settings.json"
