@@ -22,10 +22,10 @@ public class ApprovalService {
     /**
      * 创建审批任务
      */
-    public ApprovalTask createApprovalTask(String runId, String toolInvocationId,
+    public ApprovalTask createApprovalTask(UUID runId, UUID toolInvocationId,
             String tenantId, String userId, String reason) {
 
-        String approvalId = UUID.randomUUID().toString();
+        UUID approvalId = UUID.randomUUID();
 
         ApprovalTask task = ApprovalTask.builder()
                 .id(approvalId)
@@ -51,7 +51,7 @@ public class ApprovalService {
     /**
      * 处理审批决策
      */
-    public ApprovalTask processDecision(String approvalId, String reviewerId,
+    public ApprovalTask processDecision(UUID approvalId, String reviewerId,
             String decision, String comment) {
 
         ApprovalTask task = approvalRepository.findById(approvalId)

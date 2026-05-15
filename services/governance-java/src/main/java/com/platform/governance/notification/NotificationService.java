@@ -120,7 +120,7 @@ public class NotificationService {
                 task.getStatus(), task.getId(), task.getRunId(), task.getTenantId()
         );
 
-        kafkaTemplate.send(APPROVAL_TOPIC, task.getId(), event);
+        kafkaTemplate.send(APPROVAL_TOPIC, task.getId().toString(), event);
 
         log.info("Published approval result: approvalId={}, status={}",
                 task.getId(), task.getStatus());
