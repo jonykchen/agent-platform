@@ -20,7 +20,8 @@
       "Bash(mvn compile:*)",
       "Bash(mvn test:*)",
       "Bash(buf lint:*)",
-      "mcp__langchain-docs__query_docs_filesystem_docs_by_lang_chain"
+      "mcp__langchain-docs__query_docs_filesystem_docs_by_lang_chain",
+      "Bash(DB_PASSWORD=dev_password mvn spring-boot:run -Dspring-boot.run.arguments=\"--spring.profiles.active=local\")"
     ]
   },
   "extends": "./settings.json"
