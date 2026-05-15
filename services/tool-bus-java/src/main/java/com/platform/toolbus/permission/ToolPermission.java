@@ -9,6 +9,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -40,12 +41,12 @@ public class ToolPermission {
     @Builder.Default
     private String allowedActions = "execute";  // execute / read_only / approve
 
-    @JdbcTypeCode(SqlTypes.JSONB)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     @Builder.Default
-    private Map<String, Object> conditions = Map.of();
+    private Map<String, Object> conditions = new HashMap<>();
 
-    @JdbcTypeCode(SqlTypes.JSONB)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "conditions_schema", columnDefinition = "jsonb")
     private Map<String, Object> conditionsSchema;
 

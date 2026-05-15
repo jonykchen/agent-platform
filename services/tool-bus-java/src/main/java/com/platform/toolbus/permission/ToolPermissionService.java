@@ -166,7 +166,7 @@ public class ToolPermissionService {
         }
 
         // 使用安全的 SimpleEvaluationContext（禁止反射、类加载等危险操作）
-        SimpleEvaluationContext context = SimpleEvaluationContext.builder()
+        SimpleEvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding()
             .withRootObject(params)
             .build();
 

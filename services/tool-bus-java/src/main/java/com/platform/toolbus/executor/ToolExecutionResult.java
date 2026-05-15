@@ -14,6 +14,7 @@ public class ToolExecutionResult {
     private String status;          // pending / success / failed / rejected / pending_approval / timeout
     private String resultJson;
     private String approvalId;
+    private String approvalReason;  // 审批原因
     private String riskLevel;
     private boolean wasCached;
     private int durationMs;

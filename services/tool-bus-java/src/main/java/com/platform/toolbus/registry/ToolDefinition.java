@@ -18,5 +18,6 @@ public class ToolDefinition {
     private String outputSchema;     // JSON Schema
     private String riskLevel;       // low / medium / high / critical
     private boolean requiresApproval;
+    private boolean deprecated;      // 是否废弃
     private String approvalCondition;  // JSON 条件表达式
 }
