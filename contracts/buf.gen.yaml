@@ -1,0 +1,21 @@
+version: v2
+clean: true
+plugins:
+  # Java protobuf messages for gateway-java
+  - remote: buf.build/protocolbuffers/java:v28.3
+    out: ../services/gateway-java/target/generated-sources/proto
+  # Java gRPC service stubs for gateway-java
+  - remote: buf.build/grpc/java:v1.68.1
+    out: ../services/gateway-java/target/generated-sources/proto
+  # Java protobuf messages for tool-bus-java
+  - remote: buf.build/protocolbuffers/java:v28.3
+    out: ../services/tool-bus-java/target/generated-sources/proto
+  # Java gRPC service stubs for tool-bus-java
+  - remote: buf.build/grpc/java:v1.68.1
+    out: ../services/tool-bus-java/target/generated-sources/proto
+  # Java protobuf messages for governance-java
+  - remote: buf.build/protocolbuffers/java:v28.3
+    out: ../services/governance-java/target/generated-sources/proto
+  # Java gRPC service stubs for governance-java
+  - remote: buf.build/grpc/java:v1.68.1
+    out: ../services/governance-java/target/generated-sources/proto
