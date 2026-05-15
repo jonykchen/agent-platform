@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -39,8 +40,8 @@ class ApprovalServiceTest {
     @DisplayName("创建审批任务应成功")
     void createApprovalTask_success() {
         // Given
-        String runId = "run_123";
-        String toolInvocationId = "tool_inv_456";
+        UUID runId = UUID.randomUUID();
+        UUID toolInvocationId = UUID.randomUUID();
         String tenantId = "tenant_001";
         String userId = "user_001";
         String reason = "High risk operation";
@@ -72,7 +73,7 @@ class ApprovalServiceTest {
 
         // When
         ApprovalTask result = approvalService.createApprovalTask(
-                "run_123", "tool_inv_456", "tenant_001", "user_001", "reason");
+                UUID.randomUUID(), UUID.randomUUID(), "tenant_001", "user_001", "reason");
 
         Instant afterCreate = Instant.now();
 
@@ -88,12 +89,13 @@ class ApprovalServiceTest {
     @DisplayName("处理审批决策-批准应成功")
     void processDecision_approved_success() {
         // Given
-        String approvalId = "approval_123";
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
         String reviewerId = "reviewer_001";
 
         ApprovalTask existingTask = ApprovalTask.builder()
                 .id(approvalId)
-                .runId("run_123")
+                .runId(runId)
                 .status("pending")
                 .tenantId("tenant_001")
                 .build();
@@ -118,12 +120,13 @@ class ApprovalServiceTest {
     @DisplayName("处理审批决策-拒绝应成功")
     void processDecision_rejected_success() {
         // Given
-        String approvalId = "approval_123";
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
         String reviewerId = "reviewer_001";
 
         ApprovalTask existingTask = ApprovalTask.builder()
                 .id(approvalId)
-                .runId("run_123")
+                .runId(runId)
                 .status("pending")
                 .tenantId("tenant_001")
                 .build();
@@ -145,7 +148,7 @@ class ApprovalServiceTest {
     @DisplayName("处理审批决策-审批不存在应抛出异常")
     void processDecision_approvalNotFound_throwsException() {
         // Given
-        String approvalId = "non_existent";
+        UUID approvalId = UUID.randomUUID();
         when(approvalRepository.findById(approvalId)).thenReturn(Optional.empty());
 
         // When & Then
@@ -161,11 +164,12 @@ class ApprovalServiceTest {
     @DisplayName("处理审批决策-已处理的审批应抛出异常")
     void processDecision_alreadyProcessed_throwsException() {
         // Given
-        String approvalId = "approval_123";
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
 
         ApprovalTask alreadyApprovedTask = ApprovalTask.builder()
                 .id(approvalId)
-                .runId("run_123")
+                .runId(runId)
                 .status("approved")
                 .tenantId("tenant_001")
                 .build();
@@ -185,11 +189,12 @@ class ApprovalServiceTest {
     @DisplayName("处理审批决策-已拒绝的审批不能再处理")
     void processDecision_alreadyRejected_throwsException() {
         // Given
-        String approvalId = "approval_123";
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
 
         ApprovalTask alreadyRejectedTask = ApprovalTask.builder()
                 .id(approvalId)
-                .runId("run_123")
+                .runId(runId)
                 .status("rejected")
                 .tenantId("tenant_001")
                 .build();
@@ -205,15 +210,16 @@ class ApprovalServiceTest {
     @DisplayName("创建审批任务应发送通知")
     void createApprovalTask_sendsNotification() {
         // Given
+        UUID runId = UUID.randomUUID();
         ArgumentCaptor<ApprovalTask> taskCaptor = ArgumentCaptor.forClass(ApprovalTask.class);
 
         // When
-        approvalService.createApprovalTask("run_123", "tool_inv_456", "tenant_001", "user_001", "reason");
+        approvalService.createApprovalTask(runId, UUID.randomUUID(), "tenant_001", "user_001", "reason");
 
         // Then
         verify(notificationService).sendApprovalRequest(taskCaptor.capture());
         ApprovalTask capturedTask = taskCaptor.getValue();
-        assertEquals("run_123", capturedTask.getRunId());
+        assertEquals(runId, capturedTask.getRunId());
         assertEquals("tenant_001", capturedTask.getTenantId());
     }
 
@@ -221,19 +227,21 @@ class ApprovalServiceTest {
     @DisplayName("批准审批任务应发布结果事件")
     void processDecision_publishesResultEvent() {
         // Given
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
         ApprovalTask existingTask = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_123")
+                .id(approvalId)
+                .runId(runId)
                 .status("pending")
                 .tenantId("tenant_001")
                 .build();
 
-        when(approvalRepository.findById("approval_123")).thenReturn(Optional.of(existingTask));
+        when(approvalRepository.findById(approvalId)).thenReturn(Optional.of(existingTask));
 
         ArgumentCaptor<ApprovalTask> taskCaptor = ArgumentCaptor.forClass(ApprovalTask.class);
 
         // When
-        approvalService.processDecision("approval_123", "reviewer_001", "approved", "comment");
+        approvalService.processDecision(approvalId, "reviewer_001", "approved", "comment");
 
         // Then
         verify(notificationService).publishApprovalResult(taskCaptor.capture());
@@ -245,9 +253,9 @@ class ApprovalServiceTest {
     void createApprovalTask_generatesUuidId() {
         // When
         ApprovalTask result1 = approvalService.createApprovalTask(
-                "run_1", "tool_1", "tenant_001", "user_001", "reason");
+                UUID.randomUUID(), UUID.randomUUID(), "tenant_001", "user_001", "reason");
         ApprovalTask result2 = approvalService.createApprovalTask(
-                "run_2", "tool_2", "tenant_001", "user_001", "reason");
+                UUID.randomUUID(), UUID.randomUUID(), "tenant_001", "user_001", "reason");
 
         // Then
         assertNotNull(result1.getId());
@@ -259,8 +267,8 @@ class ApprovalServiceTest {
     @DisplayName("创建审批任务应保留所有参数")
     void createApprovalTask_preservesAllParameters() {
         // Given
-        String runId = "run_test";
-        String toolInvocationId = "tool_inv_test";
+        UUID runId = UUID.randomUUID();
+        UUID toolInvocationId = UUID.randomUUID();
         String tenantId = "tenant_test";
         String userId = "user_test";
         String reason = "Test reason for approval";
@@ -281,18 +289,20 @@ class ApprovalServiceTest {
     @DisplayName("处理审批决策应记录审核人ID")
     void processDecision_recordsReviewerId() {
         // Given
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
         ApprovalTask existingTask = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_123")
+                .id(approvalId)
+                .runId(runId)
                 .status("pending")
                 .tenantId("tenant_001")
                 .build();
 
-        when(approvalRepository.findById("approval_123")).thenReturn(Optional.of(existingTask));
+        when(approvalRepository.findById(approvalId)).thenReturn(Optional.of(existingTask));
 
         // When
         ApprovalTask result = approvalService.processDecision(
-                "approval_123", "reviewer_xyz", "approved", "comment");
+                approvalId, "reviewer_xyz", "approved", "comment");
 
         // Then
         assertEquals("reviewer_xyz", result.getReviewerId());
@@ -302,20 +312,22 @@ class ApprovalServiceTest {
     @DisplayName("处理审批决策应记录审核时间")
     void processDecision_recordsReviewedAt() {
         // Given
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
         ApprovalTask existingTask = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_123")
+                .id(approvalId)
+                .runId(runId)
                 .status("pending")
                 .tenantId("tenant_001")
                 .build();
 
-        when(approvalRepository.findById("approval_123")).thenReturn(Optional.of(existingTask));
+        when(approvalRepository.findById(approvalId)).thenReturn(Optional.of(existingTask));
 
         Instant beforeProcess = Instant.now();
 
         // When
         ApprovalTask result = approvalService.processDecision(
-                "approval_123", "reviewer_001", "approved", "comment");
+                approvalId, "reviewer_001", "approved", "comment");
 
         Instant afterProcess = Instant.now();
 

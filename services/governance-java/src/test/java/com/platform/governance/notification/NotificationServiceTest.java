@@ -13,6 +13,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.mail.javamail.JavaMailSender;
 
+import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -51,7 +53,7 @@ class NotificationServiceTest {
     void sendApprovalRequest_logsRequest() {
         // Given
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_123")
+                .id(UUID.randomUUID())
                 .requesterId("user_001")
                 .build();
 
@@ -66,9 +68,11 @@ class NotificationServiceTest {
     @DisplayName("发布审批结果-批准应发送Kafka消息")
     void publishApprovalResult_approved_sendsKafkaMessage() {
         // Given
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_456")
+                .id(approvalId)
+                .runId(runId)
                 .tenantId("tenant_001")
                 .status("approved")
                 .build();
@@ -81,13 +85,13 @@ class NotificationServiceTest {
         // Then
         verify(kafkaTemplate).send(
                 eq("agent-platform.approval"),
-                eq("approval_123"),
+                eq(approvalId.toString()),
                 messageCaptor.capture());
 
         String message = messageCaptor.getValue();
         assertTrue(message.contains("\"event_type\":\"approval.approved\""));
-        assertTrue(message.contains("\"approval_id\":\"approval_123\""));
-        assertTrue(message.contains("\"run_id\":\"run_456\""));
+        assertTrue(message.contains("\"approval_id\":\"" + approvalId + "\""));
+        assertTrue(message.contains("\"run_id\":\"" + runId + "\""));
         assertTrue(message.contains("\"tenant_id\":\"tenant_001\""));
     }
 
@@ -95,9 +99,11 @@ class NotificationServiceTest {
     @DisplayName("发布审批结果-拒绝应发送Kafka消息")
     void publishApprovalResult_rejected_sendsKafkaMessage() {
         // Given
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_456")
-                .runId("run_789")
+                .id(approvalId)
+                .runId(runId)
                 .tenantId("tenant_002")
                 .status("rejected")
                 .build();
@@ -110,13 +116,13 @@ class NotificationServiceTest {
         // Then
         verify(kafkaTemplate).send(
                 eq("agent-platform.approval"),
-                eq("approval_456"),
+                eq(approvalId.toString()),
                 messageCaptor.capture());
 
         String message = messageCaptor.getValue();
         assertTrue(message.contains("\"event_type\":\"approval.rejected\""));
-        assertTrue(message.contains("\"approval_id\":\"approval_456\""));
-        assertTrue(message.contains("\"run_id\":\"run_789\""));
+        assertTrue(message.contains("\"approval_id\":\"" + approvalId + "\""));
+        assertTrue(message.contains("\"run_id\":\"" + runId + "\""));
         assertTrue(message.contains("\"tenant_id\":\"tenant_002\""));
     }
 
@@ -125,8 +131,8 @@ class NotificationServiceTest {
     void publishApprovalResult_usesCorrectTopic() {
         // Given
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_456")
+                .id(UUID.randomUUID())
+                .runId(UUID.randomUUID())
                 .tenantId("tenant_001")
                 .status("approved")
                 .build();
@@ -145,9 +151,10 @@ class NotificationServiceTest {
     @DisplayName("发布审批结果应使用审批ID作为消息Key")
     void publishApprovalResult_usesApprovalIdAsKey() {
         // Given
+        UUID approvalId = UUID.randomUUID();
         ApprovalTask task = ApprovalTask.builder()
-                .id("my_approval_id")
-                .runId("run_456")
+                .id(approvalId)
+                .runId(UUID.randomUUID())
                 .tenantId("tenant_001")
                 .status("approved")
                 .build();
@@ -158,7 +165,7 @@ class NotificationServiceTest {
         // Then
         verify(kafkaTemplate).send(
                 anyString(),
-                eq("my_approval_id"),
+                eq(approvalId.toString()),
                 anyString());
     }
 
@@ -167,8 +174,8 @@ class NotificationServiceTest {
     void publishApprovalResult_messageIsValidJson() {
         // Given
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_456")
+                .id(UUID.randomUUID())
+                .runId(UUID.randomUUID())
                 .tenantId("tenant_001")
                 .status("approved")
                 .build();
@@ -207,8 +214,8 @@ class NotificationServiceTest {
     void publishApprovalResult_handlesExpiredTask() {
         // Given
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_456")
+                .id(UUID.randomUUID())
+                .runId(UUID.randomUUID())
                 .tenantId("tenant_001")
                 .status("expired")
                 .build();
@@ -228,15 +235,15 @@ class NotificationServiceTest {
     void publishApprovalResult_multipleCalls_sendsMultipleMessages() {
         // Given
         ApprovalTask task1 = ApprovalTask.builder()
-                .id("approval_1")
-                .runId("run_1")
+                .id(UUID.randomUUID())
+                .runId(UUID.randomUUID())
                 .tenantId("tenant_001")
                 .status("approved")
                 .build();
 
         ApprovalTask task2 = ApprovalTask.builder()
-                .id("approval_2")
-                .runId("run_2")
+                .id(UUID.randomUUID())
+                .runId(UUID.randomUUID())
                 .tenantId("tenant_001")
                 .status("rejected")
                 .build();
@@ -260,8 +267,8 @@ class NotificationServiceTest {
             reset(kafkaTemplate);
 
             ApprovalTask task = ApprovalTask.builder()
-                    .id("approval_" + status)
-                    .runId("run_test")
+                    .id(UUID.randomUUID())
+                    .runId(UUID.randomUUID())
                     .tenantId("tenant_001")
                     .status(status)
                     .build();

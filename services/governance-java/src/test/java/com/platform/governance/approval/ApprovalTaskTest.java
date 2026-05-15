@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,14 +18,17 @@ class ApprovalTaskTest {
     @DisplayName("should_build_task_with_all_fields")
     void builder_shouldCreateCompleteTask() {
         // Given
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        UUID toolInvocationId = UUID.randomUUID();
         Instant now = Instant.now();
         Instant expiresAt = now.plus(2, ChronoUnit.HOURS);
 
         // When
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_456")
-                .toolInvocationId("tool_inv_789")
+                .id(approvalId)
+                .runId(runId)
+                .toolInvocationId(toolInvocationId)
                 .tenantId("tenant_001")
                 .requesterId("user_001")
                 .assigneeId("approver_001")
@@ -38,9 +42,9 @@ class ApprovalTaskTest {
                 .build();
 
         // Then
-        assertEquals("approval_123", task.getId());
-        assertEquals("run_456", task.getRunId());
-        assertEquals("tool_inv_789", task.getToolInvocationId());
+        assertEquals(approvalId, task.getId());
+        assertEquals(runId, task.getRunId());
+        assertEquals(toolInvocationId, task.getToolInvocationId());
         assertEquals("tenant_001", task.getTenantId());
         assertEquals("user_001", task.getRequesterId());
         assertEquals("approver_001", task.getAssigneeId());
@@ -55,10 +59,14 @@ class ApprovalTaskTest {
     @Test
     @DisplayName("should_allow_null_optional_fields")
     void builder_withNullFields_shouldSucceed() {
+        // Given
+        UUID approvalId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+
         // When
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_123")
-                .runId("run_456")
+                .id(approvalId)
+                .runId(runId)
                 .status("pending")
                 .build();
 
@@ -79,12 +87,15 @@ class ApprovalTaskTest {
     void setters_shouldModifyFields() {
         // Given
         ApprovalTask task = ApprovalTask.builder().build();
+        UUID newId = UUID.randomUUID();
+        UUID newRunId = UUID.randomUUID();
+        UUID newToolInvId = UUID.randomUUID();
         Instant now = Instant.now();
 
         // When
-        task.setId("new_id");
-        task.setRunId("new_run");
-        task.setToolInvocationId("new_tool_inv");
+        task.setId(newId);
+        task.setRunId(newRunId);
+        task.setToolInvocationId(newToolInvId);
         task.setTenantId("new_tenant");
         task.setRequesterId("new_user");
         task.setAssigneeId("new_assignee");
@@ -97,9 +108,9 @@ class ApprovalTaskTest {
         task.setReviewedAt(now.plusSeconds(1800));
 
         // Then
-        assertEquals("new_id", task.getId());
-        assertEquals("new_run", task.getRunId());
-        assertEquals("new_tool_inv", task.getToolInvocationId());
+        assertEquals(newId, task.getId());
+        assertEquals(newRunId, task.getRunId());
+        assertEquals(newToolInvId, task.getToolInvocationId());
         assertEquals("new_tenant", task.getTenantId());
         assertEquals("new_user", task.getRequesterId());
         assertEquals("new_assignee", task.getAssigneeId());
@@ -126,23 +137,24 @@ class ApprovalTaskTest {
     }
 
     @Test
-    @DisplayName("should_build_empty_task")
-    void emptyBuilder_shouldCreateEmptyTask() {
+    @DisplayName("should_build_empty_task_with_defaults")
+    void emptyBuilder_shouldCreateEmptyTaskWithDefaults() {
         // When
         ApprovalTask task = ApprovalTask.builder().build();
 
         // Then
         assertNull(task.getId());
-        assertNull(task.getStatus());
+        assertEquals("pending", task.getStatus()); // Default value from @Builder.Default
     }
 
     @Test
     @DisplayName("should_handle_equality_correctly")
     void equality_shouldWorkCorrectly() {
         // Given
-        ApprovalTask task1 = ApprovalTask.builder().id("approval_123").build();
-        ApprovalTask task2 = ApprovalTask.builder().id("approval_123").build();
-        ApprovalTask task3 = ApprovalTask.builder().id("approval_456").build();
+        UUID approvalId = UUID.randomUUID();
+        ApprovalTask task1 = ApprovalTask.builder().id(approvalId).build();
+        ApprovalTask task2 = ApprovalTask.builder().id(approvalId).build();
+        ApprovalTask task3 = ApprovalTask.builder().id(UUID.randomUUID()).build();
 
         // When & Then
         assertEquals(task1, task2);
@@ -154,8 +166,9 @@ class ApprovalTaskTest {
     @DisplayName("should_generate_string_representation")
     void toString_shouldContainFields() {
         // Given
+        UUID approvalId = UUID.randomUUID();
         ApprovalTask task = ApprovalTask.builder()
-                .id("approval_123")
+                .id(approvalId)
                 .status("pending")
                 .build();
 
@@ -163,7 +176,7 @@ class ApprovalTaskTest {
         String str = task.toString();
 
         // Then
-        assertTrue(str.contains("approval_123"));
+        assertTrue(str.contains(approvalId.toString()));
         assertTrue(str.contains("pending"));
     }
 }
