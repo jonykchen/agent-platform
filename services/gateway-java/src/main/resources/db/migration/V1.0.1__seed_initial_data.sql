@@ -15,5 +15,4 @@ INSERT INTO tenant_user (tenant_id, user_id, username, email, password, role, qu
 ('tenant_001', 'user_001', 'admin', 'admin@example.com', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOa4u4y4Y4Y4Y', 'admin', 100000, 0, 'active', 0, 0, NOW(), NOW()),
 ('tenant_001', 'user_002', 'operator', 'operator@example.com', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOa4u4y4Y4Y4Y', 'operator', 50000, 0, 'active', 0, 0, NOW(), NOW()),
 ('tenant_001', 'user_003', 'viewer', 'viewer@example.com', '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOa4u4y4Y4Y4Y', 'viewer', 20000, 0, 'active', 0, 0, NOW(), NOW())
-ON CONFLICT (tenant_id, user_id) DO NOTHING
-ON CONFLICT (tenant_id, username) DO NOTHING;
+ON CONFLICT ON CONSTRAINT uk_tenant_user DO NOTHING;

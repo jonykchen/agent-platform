@@ -150,7 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_session_created ON agent_session(created_at DESC)
 CREATE INDEX IF NOT EXISTS idx_session_status ON agent_session(status) WHERE status = 'active';
 
 -- agent_run 索引
-CREATE INDEX IF NOT EXISTS idx_run_tenant_created ON agent_run(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_run_tenant_created ON agent_run(tenant_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_run_user ON agent_run(user_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_run_session ON agent_run(session_id);
 CREATE INDEX IF NOT EXISTS idx_run_status ON agent_run(status);
@@ -174,4 +174,4 @@ CREATE INDEX IF NOT EXISTS idx_approval_status ON approval_task(status);
 CREATE INDEX IF NOT EXISTS idx_approval_tenant ON approval_task(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_approval_assignee ON approval_task(assignee_id, status) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_approval_requester ON approval_task(requester_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_approval_expires ON approval_task(expires_at) WHERE status = 'pending' AND expires_at > NOW();
+CREATE INDEX IF NOT EXISTS idx_approval_expires ON approval_task(expires_at) WHERE status = 'pending';

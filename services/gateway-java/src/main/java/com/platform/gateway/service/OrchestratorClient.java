@@ -4,8 +4,13 @@ import com.platform.gateway.dto.request.ChatRequest;
 import com.platform.gateway.dto.response.ChatResponse;
 import com.platform.gateway.exception.BusinessException;
 import com.platform.gateway.exception.ErrorCode;
-import com.platform.gateway.grpc.OrchestratorGrpc;
-import com.platform.gateway.grpc.OrchestratorOuterClass;
+import com.platform.gateway.OrchestratorServiceGrpc;
+import com.platform.gateway.OrchestratorServiceGrpc.OrchestratorServiceBlockingStub;
+import com.platform.gateway.RequestContext;
+import com.platform.gateway.Message;
+import com.platform.gateway.ToolCall;
+// Note: ChatRequest and ChatResponse from proto are used with fully qualified names
+import com.platform.common.ErrorDetail;
 import com.platform.gateway.security.UserPrincipal;
 import com.platform.gateway.util.RequestIdGenerator;
 import io.grpc.ManagedChannel;
@@ -60,7 +65,7 @@ public class OrchestratorClient {
     private int keepaliveTimeMs;
 
     private ManagedChannel channel;
-    private OrchestratorGrpc.OrchestratorServiceBlockingStub stub;
+    private OrchestratorServiceBlockingStub stub;
 
     /**
      * 初始化 gRPC Channel
@@ -75,7 +80,7 @@ public class OrchestratorClient {
                     .enableRetry()
                     .build();
 
-            stub = OrchestratorGrpc.newBlockingStub(channel);
+            stub = OrchestratorServiceGrpc.newBlockingStub(channel);
 
             log.info("gRPC channel initialized: {}:{}", orchestratorHost, orchestratorPort);
         }
@@ -95,7 +100,7 @@ public class OrchestratorClient {
                 requestId, tenantId, userId);
 
         // 构建请求上下文
-        OrchestratorOuterClass.RequestContext context = OrchestratorOuterClass.RequestContext.newBuilder()
+        RequestContext context = RequestContext.newBuilder()
                 .setRequestId(requestId)
                 .setTenantId(tenantId)
                 .setUserId(userId)
@@ -103,21 +108,21 @@ public class OrchestratorClient {
                 .build();
 
         // 转换历史消息
-        List<OrchestratorOuterClass.Message> historyProto = request.getHistory()
+        List<Message> historyProto = request.getHistory()
                 .stream()
-                .map(h -> OrchestratorOuterClass.Message.newBuilder()
+                .map(h -> Message.newBuilder()
                         .setRole(h.getRole())
                         .setContent(h.getContent())
                         .build())
                 .collect(Collectors.toList());
 
-        // 构建请求
-        OrchestratorOuterClass.ChatRequest grpcRequest = OrchestratorOuterClass.ChatRequest.newBuilder()
+        // 构建请求 - 使用完全限定名避免歧义
+        com.platform.gateway.ChatRequest grpcRequest = com.platform.gateway.ChatRequest.newBuilder()
                 .setContext(context)
                 .setMessage(request.getMessage())
                 .addAllHistory(historyProto)
                 .setModel(request.getModel() != null ? request.getModel() : "")
-                .setTemperature(request.getTemperature() != null ? request.getTemperature() : 0.7f)
+                .setTemperature(request.getTemperature() != null ? request.getTemperature().floatValue() : 0.7f)
                 .setMaxTokens(request.getMaxTokens() != null ? request.getMaxTokens() : 2000)
                 .setEnableTools(true)
                 .setEnableRag(false)
@@ -125,7 +130,7 @@ public class OrchestratorClient {
 
         try {
             // 发送请求
-            OrchestratorOuterClass.ChatResponse grpcResponse = stub
+            com.platform.gateway.ChatResponse grpcResponse = stub
                     .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)
                     .chatCompletion(grpcRequest);
 
@@ -137,7 +142,7 @@ public class OrchestratorClient {
                     .promptTokens(grpcResponse.getPromptTokens())
                     .completionTokens(grpcResponse.getCompletionTokens())
                     .totalTokens(grpcResponse.getTotalTokens())
-                    .costUsd(grpcResponse.getCostUsd())
+                    .costUsd((double) grpcResponse.getCostUsd())
                     .createdAt(grpcResponse.getCreatedAt())
                     .latencyMs(grpcResponse.getLatencyMs())
                     .finishReason(grpcResponse.getFinishReason())
@@ -169,11 +174,11 @@ public class OrchestratorClient {
         }
 
         if (code == Status.Code.INTERNAL) {
-            throw new BusinessException(ErrorCode.ERR_INTERNAL_ERROR,
+            throw new BusinessException(ErrorCode.ERR_UNKNOWN,
                 "内部服务错误");
         }
 
-        throw new BusinessException(ErrorCode.ERR_INTERNAL_ERROR,
+        throw new BusinessException(ErrorCode.ERR_UNKNOWN,
             "未知错误: " + e.getStatus().getDescription());
     }
 

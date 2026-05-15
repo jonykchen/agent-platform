@@ -142,7 +142,7 @@ public class AuditAspect {
 
         // Request ID 和 Trace ID
         builder.requestId(tenantContextService.getCurrentRequestId());
-        builder.traceId(tenantContextService.getCurrentTraceId());
+        builder.traceId(tenantContextService.getCurrentRequestId()); // Use requestId as traceId
 
         // HTTP 请求信息
         ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();

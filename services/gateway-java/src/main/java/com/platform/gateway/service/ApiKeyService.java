@@ -6,6 +6,7 @@ import com.platform.gateway.repository.ApiKeyRepository;
 import com.platform.gateway.security.ApiKeyPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,9 +87,9 @@ public class ApiKeyService {
         updateLastUsedAsync(key.getId());
 
         // 构建权限
-        var authorities = key.getScopes().stream()
+        List<GrantedAuthority> authorities = key.getScopes().stream()
             .map(scope -> new SimpleGrantedAuthority("ROLE_" + scope.toUpperCase()))
-            .toList();
+            .collect(java.util.stream.Collectors.toList());
 
         return new ApiKeyPrincipal(
             key.getId().toString(),
