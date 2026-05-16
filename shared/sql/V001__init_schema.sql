@@ -7,7 +7,7 @@
 
 -- 启用必要扩展
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgvector";
+CREATE EXTENSION IF NOT EXISTS "vector";
 
 -- ============================================================
 --  1. agent_session - 会话表
@@ -82,7 +82,7 @@ COMMENT ON TABLE agent_run IS 'Agent 运行实例表';
 COMMENT ON COLUMN agent_run.status IS '运行状态: running/completed/failed/cancelled/pending_approval';
 
 -- ============================================================
---  3. agent_step - 执行步骤表（分区表）
+--  3. agent_step - 执行步骤表
 -- ============================================================
 CREATE TABLE agent_step (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -103,13 +103,7 @@ CREATE TABLE agent_step (
 
     metadata        JSONB DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-) PARTITION BY RANGE (created_at);
-
--- 月度分区
-CREATE TABLE agent_step_2026_05 PARTITION OF agent_step
-    FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
-CREATE TABLE agent_step_2026_06 PARTITION OF agent_step
-    FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
+);
 
 CREATE INDEX idx_step_run ON agent_step(run_id, step_order);
 CREATE INDEX idx_step_tenant ON agent_step(tenant_id, created_at DESC);
@@ -189,7 +183,7 @@ CREATE TABLE approval_task (
 
 CREATE INDEX idx_approval_status ON approval_task(status);
 CREATE INDEX idx_approval_assignee ON approval_task(assignee_id, status) WHERE status = 'pending';
-CREATE INDEX idx_approval_expires ON approval_task(expires_at) WHERE status = 'pending' AND expires_at > NOW();
+CREATE INDEX idx_approval_expires ON approval_task(expires_at) WHERE status = 'pending';
 CREATE INDEX idx_approval_tenant ON approval_task(tenant_id);
 CREATE INDEX idx_approval_requester ON approval_task(requester_id, created_at DESC);
 
@@ -230,11 +224,7 @@ CREATE TABLE audit_event (
 
     -- 时间戳
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-) PARTITION BY RANGE (created_at);
-
--- 分区定义
-CREATE TABLE audit_event_2026_05 PARTITION OF audit_event
-    FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
+);
 
 -- 索引
 CREATE INDEX idx_audit_tenant_time ON audit_event(tenant_id, created_at DESC);

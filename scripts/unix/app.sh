@@ -4,7 +4,7 @@
 #  用法: ./scripts/unix/app.sh [操作]
 # ============================================================
 
-set -euo pipefail
+set -e
 
 # 颜色定义
 RED='\033[0;31m'
@@ -19,12 +19,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Python 服务配置
-declare -A SERVICES=(
-    ["orchestrator"]="8001:services/orchestrator-python"
-    ["model-gateway"]="8002:services/model-gateway-python"
-    ["knowledge"]="8003:services/knowledge-python"
-)
+# Python 服务配置 (兼容性写法)
+ORCHESTRATOR_PORT=8001
+ORCHESTRATOR_PATH="services/orchestrator-python"
+MODEL_GATEWAY_PORT=8002
+MODEL_GATEWAY_PATH="services/model-gateway-python"
+KNOWLEDGE_PORT=8003
+KNOWLEDGE_PATH="services/knowledge-python"
 
 SERVICE_ORDER=("orchestrator" "model-gateway" "knowledge")
 
@@ -103,12 +104,31 @@ check_infrastructure() {
     return 0
 }
 
+# 获取服务端口
+get_service_port() {
+    local name="$1"
+    case "$name" in
+        orchestrator) echo "$ORCHESTRATOR_PORT" ;;
+        model-gateway) echo "$MODEL_GATEWAY_PORT" ;;
+        knowledge) echo "$KNOWLEDGE_PORT" ;;
+    esac
+}
+
+# 获取服务路径
+get_service_path() {
+    local name="$1"
+    case "$name" in
+        orchestrator) echo "$ORCHESTRATOR_PATH" ;;
+        model-gateway) echo "$MODEL_GATEWAY_PATH" ;;
+        knowledge) echo "$KNOWLEDGE_PATH" ;;
+    esac
+}
+
 # 启动单个服务
 start_service() {
     local name="$1"
-    local config="${SERVICES[$name]}"
-    local port="${config%%:*}"
-    local path="${config#*:}"
+    local port=$(get_service_port "$name")
+    local path=$(get_service_path "$name")
 
     local service_path="$PROJECT_ROOT/$path"
     local pid_file="$PID_DIR/$name.pid"
@@ -204,8 +224,7 @@ get_status() {
     local all_stopped=true
 
     for name in "${SERVICE_ORDER[@]}"; do
-        local config="${SERVICES[$name]}"
-        local port="${config%%:*}"
+        local port=$(get_service_port "$name")
         local pid_file="$PID_DIR/$name.pid"
 
         local status="未运行"
@@ -264,8 +283,7 @@ start_all() {
         printf "\n"
         echo -e "${GREEN}服务地址:${NC}"
         for name in "${SERVICE_ORDER[@]}"; do
-            local config="${SERVICES[$name]}"
-            local port="${config%%:*}"
+            local port=$(get_service_port "$name")
             printf "  http://localhost:%s (%s)\n" "$port" "$name"
         done
         printf "\n"

@@ -57,8 +57,13 @@ CREATE POLICY tenant_isolation_kd_chunk ON knowledge_chunk
     FOR ALL TO app_user
     USING (tenant_id = current_tenant_id());
 
--- 创建应用角色
-CREATE ROLE app_user NOLOGIN;
+-- 创建应用角色（如果不存在）
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        CREATE ROLE app_user NOLOGIN;
+    END IF;
+END $$;
 GRANT USAGE ON SCHEMA public TO app_user;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_user;
 

@@ -72,9 +72,12 @@ CREATE TABLE tool_usage_daily (
     avg_latency_ms  DECIMAL(10,2),
     p95_latency_ms  DECIMAL(10,2),
 
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
-    UNIQUE(stat_date, tenant_id, COALESCE(user_id, ''), tool_name)
+-- 使用唯一索引替代约束（支持表达式）
+CREATE UNIQUE INDEX idx_usage_daily_unique ON tool_usage_daily(
+    stat_date, tenant_id, COALESCE(user_id, ''), tool_name
 );
 
 CREATE INDEX idx_usage_daily_date ON tool_usage_daily(stat_date DESC);
