@@ -29,6 +29,73 @@ import java.util.List;
 
 /**
  * 用户管理服务
+ *
+ * <p>负责租户内用户的 CRUD 操作、角色权限管理和安全策略。
+ * 是 Gateway 用户管理的核心服务。
+ *
+ * <h3>核心概念：多租户用户隔离</h3>
+ *
+ * <p>每个用户属于一个租户，不同租户的用户完全隔离：
+ * <ul>
+ *   <li><b>数据隔离</b>：查询和操作都带 tenantId 条件</li>
+ *   <li><b>用户名隔离</b>：用户名在租户内唯一，不同租户可同名</li>
+ *   <li><b>权限隔离</b>：用户只能管理本租户的用户</li>
+ * </ul>
+ *
+ * <h3>依赖关系</h3>
+ * <pre>
+ * ┌─────────────────────────────────────────────────────────────────────────────┐
+ * │                          服务依赖关系                                        │
+ * │                                                                             │
+ * │   UserController                                                            │
+ * │       │                                                                     │
+ * │       ▼                                                                     │
+ * │   UserService ◄────────────────────────────────────────────────────────────│
+ * │       │                                                                     │
+ * │       ├──► TenantUserRepository (用户数据持久化)                            │
+ * │       │                                                                     │
+ * │       ├──► PasswordEncoder (密码加密)                                        │
+ * │       │                                                                     │
+ * │       └──► AuthService (登录信息更新回调)                                    │
+ * │                                                                             │
+ * └─────────────────────────────────────────────────────────────────────────────┘
+ * </pre>
+ *
+ * <h3>技术选型：事务处理</h3>
+ * <ul>
+ *   <li><b>读操作</b>：无事务，支持脏读优化</li>
+ *   <li><b>写操作</b>：{@code @Transactional}，保证原子性</li>
+ *   <li><b>乐观锁</b>：通过 updatedAt 字段防止并发冲突</li>
+ * </ul>
+ *
+ * <h3>角色权限模型</h3>
+ *
+ * <p>采用 RBAC（Role-Based Access Control）模型：
+ * <pre>
+ *   ┌──────────┬───────────────────────────────────────────────────────────────┐
+ *   │ Role     │ Description                    │ Permissions                  │
+ *   ├──────────┼────────────────────────────────┼──────────────────────────────┤
+ *   │ admin    │ 系统管理员，拥有全部权限         │ *                            │
+ *   │ operator │ 操作员，可执行工具和审批         │ chat:*, approval:*, tools:*  │
+ *   │ viewer   │ 观察者，只读权限                 │ chat:read, approval:read     │
+ *   └──────────┴────────────────────────────────┴──────────────────────────────┘
+ * </pre>
+ *
+ * <h3>设计模式：工厂方法</h3>
+ *
+ * <p>{@link #createUser} 和 {@link #generateUserId} 采用工厂方法模式，
+ * 封装用户实体的创建逻辑和 ID 生成策略。
+ *
+ * <h3>安全策略</h3>
+ * <ul>
+ *   <li><b>密码存储</b>：BCrypt 单向加密，不可逆</li>
+ *   <li><b>临时密码</b>：重置密码生成 12 位随机字符串</li>
+ *   <li><b>登录失败</b>：记录失败次数，支持锁定策略</li>
+ * </ul>
+ *
+ * @see TenantUser 用户实体
+ * @see TenantUserRepository 用户仓库
+ * @since 1.0.0
  */
 @Slf4j
 @Service
@@ -67,7 +134,27 @@ public class UserService {
     );
 
     /**
-     * 获取用户列表
+     * 获取用户列表（分页）
+     *
+     * <p>查询租户内所有用户，支持条件筛选和排序。
+     *
+     * <h4>查询条件</h4>
+     * <ul>
+     *   <li><b>status</b>：用户状态（active/inactive）</li>
+     *   <li><b>role</b>：角色（admin/operator/viewer）</li>
+     * </ul>
+     *
+     * <h4>业务规则</h4>
+     * <ul>
+     *   <li>租户隔离：只能查询本租户用户</li>
+     *   <li>权限控制：需要 user:read 权限</li>
+     *   <li>默认排序：按创建时间降序</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID，用于租户隔离
+     * @param params 查询参数，包含分页、排序和筛选条件
+     * @return 分页的用户详情响应
+     * @since 1.0.0
      */
     public PageResponse<UserDetailResponse> getUsers(String tenantId, UserQueryParams params) {
         String requestId = RequestIdGenerator.getCurrent();
@@ -101,6 +188,20 @@ public class UserService {
 
     /**
      * 获取单个用户详情
+     *
+     * <p>查询指定用户的完整信息，包括角色和权限列表。
+     *
+     * <h4>业务规则</h4>
+     * <ul>
+     *   <li>租户隔离：只能查询本租户用户</li>
+     *   <li>权限控制：需要 user:read 权限</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID，用于租户隔离
+     * @param userId 用户ID（格式：user_xxxxxxxx）
+     * @return 用户详情响应
+     * @throws BusinessException ERR_USER_NOT_FOUND 用户不存在
+     * @since 1.0.0
      */
     public UserDetailResponse getUser(String tenantId, String userId) {
         String requestId = RequestIdGenerator.getCurrent();
@@ -114,6 +215,31 @@ public class UserService {
 
     /**
      * 创建用户
+     *
+     * <p>在租户内创建新用户，自动生成用户ID并加密密码。
+     *
+     * <h4>处理流程</h4>
+     * <ol>
+     *   <li>检查用户名唯一性（租户内）</li>
+     *   <li>生成用户ID（格式：user_xxxxxxxx）</li>
+     *   <li>加密密码（BCrypt）</li>
+     *   <li>设置默认配额和初始状态</li>
+     *   <li>持久化用户实体</li>
+     * </ol>
+     *
+     * <h4>业务规则</h4>
+     * <ul>
+     *   <li>用户名在租户内必须唯一</li>
+     *   <li>默认状态为 active</li>
+     *   <li>默认日配额为 100000 tokens</li>
+     *   <li>主角色取 roles 数组第一个元素</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID
+     * @param request 创建用户请求，包含用户名、密码、邮箱、角色
+     * @return 创建后的用户详情
+     * @throws BusinessException ERR_USER_ALREADY_EXISTS 用户名已存在
+     * @since 1.0.0
      */
     @Transactional
     public UserDetailResponse createUser(String tenantId, CreateUserRequest request) {
@@ -152,6 +278,31 @@ public class UserService {
 
     /**
      * 更新用户
+     *
+     * <p>更新用户的基本信息和角色。支持部分更新。
+     *
+     * <h4>可更新字段</h4>
+     * <ul>
+     *   <li><b>username</b>：用户名（需检查唯一性）</li>
+     *   <li><b>email</b>：邮箱</li>
+     *   <li><b>roles</b>：角色（主角色取第一个元素）</li>
+     *   <li><b>status</b>：状态</li>
+     * </ul>
+     *
+     * <h4>业务规则</h4>
+     * <ul>
+     *   <li>更新用户名需检查唯一性</li>
+     *   <li>租户隔离：只能更新本租户用户</li>
+     *   <li>权限控制：需要 user:write 权限</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID
+     * @param userId 用户ID
+     * @param request 更新用户请求
+     * @return 更新后的用户详情
+     * @throws BusinessException ERR_USER_NOT_FOUND 用户不存在
+     * @throws BusinessException ERR_USER_ALREADY_EXISTS 用户名已存在
+     * @since 1.0.0
      */
     @Transactional
     public UserDetailResponse updateUser(String tenantId, String userId, UpdateUserRequest request) {
@@ -192,6 +343,21 @@ public class UserService {
 
     /**
      * 禁用用户
+     *
+     * <p>将用户状态设置为 inactive，禁止用户登录和使用系统。
+     * 已登录用户的 Access Token 在过期前仍有效。
+     *
+     * <h4>业务规则</h4>
+     * <ul>
+     *   <li>状态变为 inactive</li>
+     *   <li>租户隔离：只能禁用本租户用户</li>
+     *   <li>权限控制：需要 user:write 权限</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID
+     * @param userId 用户ID
+     * @throws BusinessException ERR_USER_NOT_FOUND 用户不存在
+     * @since 1.0.0
      */
     @Transactional
     public void disableUser(String tenantId, String userId) {
@@ -209,6 +375,20 @@ public class UserService {
 
     /**
      * 启用用户
+     *
+     * <p>将用户状态设置为 active，允许用户登录和使用系统。
+     *
+     * <h4>业务规则</h4>
+     * <ul>
+     *   <li>状态变为 active</li>
+     *   <li>租户隔离：只能启用本租户用户</li>
+     *   <li>权限控制：需要 user:write 权限</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID
+     * @param userId 用户ID
+     * @throws BusinessException ERR_USER_NOT_FOUND 用户不存在
+     * @since 1.0.0
      */
     @Transactional
     public void enableUser(String tenantId, String userId) {
@@ -226,6 +406,35 @@ public class UserService {
 
     /**
      * 重置密码
+     *
+     * <p>生成临时密码并重置用户密码。临时密码需要用户尽快修改。
+     *
+     * <h4>处理流程</h4>
+     * <ol>
+     *   <li>查找用户</li>
+     *   <li>生成 12 位随机临时密码（包含大小写字母、数字和特殊字符）</li>
+     *   <li>加密并存储新密码</li>
+     *   <li>返回临时密码（明文，仅此一次）</li>
+     * </ol>
+     *
+     * <h4>安全措施</h4>
+     * <ul>
+     *   <li><b>随机性</b>：使用 {@link SecureRandom} 生成密码</li>
+     *   <li><b>复杂度</b>：12 位，包含大小写、数字、特殊字符</li>
+     *   <li><b>审计日志</b>：记录密码重置事件</li>
+     * </ul>
+     *
+     * <h4>业务规则</h4>
+     * <ul>
+     *   <li>租户隔离：只能重置本租户用户密码</li>
+     *   <li>权限控制：需要 user:write 权限</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID
+     * @param userId 用户ID
+     * @return 重置密码响应，包含临时密码
+     * @throws BusinessException ERR_USER_NOT_FOUND 用户不存在
+     * @since 1.0.0
      */
     @Transactional
     public ResetPasswordResponse resetPassword(String tenantId, String userId) {
@@ -249,7 +458,23 @@ public class UserService {
     }
 
     /**
-     * 更新用户登录信息
+     * 更新用户登录信息（内部方法）
+     *
+     * <p>登录成功后更新用户的登录统计信息。
+     * 由 {@link AuthService#login} 调用。
+     *
+     * <h4>更新内容</h4>
+     * <ul>
+     *   <li>lastLoginAt：最后登录时间</li>
+     *   <li>lastLoginIp：最后登录IP</li>
+     *   <li>loginCount：登录次数 +1</li>
+     *   <li>failedLoginCount：失败计数清零</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID
+     * @param userId 用户ID
+     * @param loginIp 登录IP地址
+     * @since 1.0.0
      */
     @Transactional
     public void updateLoginInfo(String tenantId, String userId, String loginIp) {
@@ -265,7 +490,20 @@ public class UserService {
     }
 
     /**
-     * 增加登录失败计数
+     * 增加登录失败计数（内部方法）
+     *
+     * <p>登录失败后增加失败计数。
+     * 由 {@link AuthService#login} 调用。
+     *
+     * <h4>安全策略</h4>
+     * <ul>
+     *   <li>记录失败次数用于暴力破解检测</li>
+     *   <li>达到阈值可触发账户锁定（MVP 未实现）</li>
+     * </ul>
+     *
+     * @param tenantId 租户ID
+     * @param userId 用户ID
+     * @since 1.0.0
      */
     @Transactional
     public void incrementFailedLoginCount(String tenantId, String userId) {
@@ -278,6 +516,19 @@ public class UserService {
 
     /**
      * 获取角色列表
+     *
+     * <p>返回系统支持的所有角色及其权限配置。
+     * 用于前端角色选择器展示。
+     *
+     * <h4>预定义角色</h4>
+     * <ul>
+     *   <li><b>admin</b>：系统管理员，拥有全部权限</li>
+     *   <li><b>operator</b>：操作员，可执行工具和审批</li>
+     *   <li><b>viewer</b>：观察者，只读权限</li>
+     * </ul>
+     *
+     * @return 角色响应列表
+     * @since 1.0.0
      */
     public List<RoleResponse> getRoles() {
         return ROLE_PERMISSIONS.entrySet().stream()
@@ -291,6 +542,22 @@ public class UserService {
 
     /**
      * 获取权限列表
+     *
+     * <p>返回系统支持的所有权限及其分类。
+     * 用于前端权限展示和配置。
+     *
+     * <h4>权限分类</h4>
+     * <ul>
+     *   <li><b>chat</b>：对话相关（chat:read, chat:write）</li>
+     *   <li><b>approval</b>：审批相关（approval:read, approval:approve）</li>
+     *   <li><b>tools</b>：工具执行（tools:execute）</li>
+     *   <li><b>user</b>：用户管理（user:read, user:write）</li>
+     *   <li><b>tenant</b>：租户管理（tenant:read, tenant:write）</li>
+     *   <li><b>system</b>：系统权限（* = 全部权限）</li>
+     * </ul>
+     *
+     * @return 权限响应列表
+     * @since 1.0.0
      */
     public List<PermissionResponse> getPermissions() {
         return PERMISSIONS.stream()

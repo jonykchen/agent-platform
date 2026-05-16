@@ -22,6 +22,77 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 认证服务
+ *
+ * <p>负责用户登录、Token 管理和权限验证，是 Gateway 的安全入口。
+ *
+ * <h3>核心概念：JWT 双 Token 机制</h3>
+ *
+ * <p>采用 Access Token + Refresh Token 双 Token 机制：
+ * <ul>
+ *   <li><b>Access Token</b>：短期有效（默认 1 小时），用于 API 认证</li>
+ *   <li><b>Refresh Token</b>：长期有效（默认 7 天），用于刷新 Access Token</li>
+ * </ul>
+ *
+ * <p>这种机制既保证了安全性（短 token 减少泄露风险），又提升了用户体验（无需频繁登录）。
+ *
+ * <h3>依赖关系</h3>
+ * <pre>
+ * ┌─────────────────────────────────────────────────────────────────────────────┐
+ * │                          服务依赖关系                                        │
+ * │                                                                             │
+ * │   AuthController                                                            │
+ * │       │                                                                     │
+ * │       ▼                                                                     │
+ * │   AuthService ◄────────────────────────────────────────────────────────────│
+ * │       │                                                                     │
+ * │       ├──► JwtUtil (Token 生成和验证)                                       │
+ * │       │                                                                     │
+ * │       ├──► TenantUserRepository (用户数据查询)                              │
+ * │       │                                                                     │
+ * │       ├──► UserService (用户状态管理、登录信息更新)                         │
+ * │       │                                                                     │
+ * │       └──► PasswordEncoder (密码加密验证)                                    │
+ * │                                                                             │
+ * └─────────────────────────────────────────────────────────────────────────────┘
+ * </pre>
+ *
+ * <h3>技术选型：状态管理</h3>
+ * <ul>
+ *   <li><b>无状态 JWT</b>：Access Token 无状态，支持水平扩展</li>
+ *   <li><b>有状态 Refresh Token</b>：存储在内存 Map 中，支持主动撤销</li>
+ *   <li><b>ConcurrentHashMap</b>：MVP 阶段使用内存存储，生产环境应替换为 Redis</li>
+ * </ul>
+ *
+ * <h3>安全策略（S-AGENT-06 合规）</h3>
+ * <ul>
+ *   <li><b>密码加密</b>：BCrypt 单向加密，不可逆</li>
+ *   <li><b>登录失败计数</b>：连续失败可触发账户锁定</li>
+ *   <li><b>Token 撤销</b>：登出时从存储中移除 Refresh Token</li>
+ *   <li><b>租户隔离</b>：Token 中包含租户信息，防止跨租户访问</li>
+ * </ul>
+ *
+ * <h3>权限模型：RBAC</h3>
+ *
+ * <p>采用基于角色的访问控制（Role-Based Access Control）：
+ * <pre>
+ *   ┌──────────┬───────────────────────────────────────────────────┐
+ *   │ Role     │ Permissions                                        │
+ *   ├──────────┼───────────────────────────────────────────────────┤
+ *   │ admin    │ * (全部权限)                                       │
+ *   │ operator │ chat:read, chat:write, approval:read,             │
+ *   │          │ approval:approve, tools:execute                   │
+ *   │ viewer   │ chat:read, approval:read                          │
+ *   └──────────┴───────────────────────────────────────────────────┘
+ * </pre>
+ *
+ * <h3>设计模式：策略模式</h3>
+ *
+ * <p>权限验证采用策略模式，不同角色的权限集合由 {@link #ROLE_PERMISSIONS} 定义，
+ * 便于后续扩展新的角色和权限组合。
+ *
+ * @see JwtUtil JWT 工具类
+ * @see UserService 用户服务
+ * @since 1.0.0
  */
 @Slf4j
 @Service
@@ -56,6 +127,41 @@ public class AuthService {
 
     /**
      * 用户登录
+     *
+     * <p>验证用户凭证，生成 JWT Token 并返回用户信息。
+     * 这是 Gateway 的主入口点，所有需要认证的 API 调用都需要先登录获取 Token。
+     *
+     * <h4>处理流程</h4>
+     * <ol>
+     *   <li>查询用户（基于租户ID和用户名）</li>
+     *   <li>验证用户存在性和状态</li>
+     *   <li>验证密码（BCrypt 比对）</li>
+     *   <li>生成 Access Token 和 Refresh Token</li>
+     *   <li>存储 Refresh Token（支持撤销）</li>
+     *   <li>更新用户登录信息（登录次数、最后登录时间）</li>
+     *   <li>返回登录响应</li>
+     * </ol>
+     *
+     * <h4>安全措施</h4>
+     * <ul>
+     *   <li><b>防暴力破解</b>：密码错误增加失败计数，可触发账户锁定</li>
+     *   <li><b>防枚举攻击</b>：用户不存在和密码错误返回相同错误信息</li>
+     *   <li><b>审计日志</b>：记录登录成功和失败事件</li>
+     * </ul>
+     *
+     * <h4>业务规则</h4>
+     * <ul>
+     *   <li>用户状态必须为 active</li>
+     *   <li>默认租户为 tenant_001（MVP 阶段）</li>
+     *   <li>Access Token 有效期：{@link #accessTokenTtlSeconds}</li>
+     *   <li>Refresh Token 有效期：{@link #refreshTokenTtlSeconds}</li>
+     * </ul>
+     *
+     * @param request 登录请求，包含用户名、密码和可选的租户ID
+     * @return 登录响应，包含用户信息、租户信息和 Token 信息
+     * @throws BusinessException ERR_UNAUTHORIZED 用户名或密码错误
+     * @throws BusinessException ERR_USER_DISABLED 用户已禁用
+     * @since 1.0.0
      */
     @Transactional
     public LoginResponse login(LoginRequest request) {
@@ -135,6 +241,33 @@ public class AuthService {
 
     /**
      * 刷新 Token
+     *
+     * <p>使用 Refresh Token 换取新的 Access Token 和 Refresh Token。
+     * 这是 Token 续期的标准机制，避免用户频繁登录。
+     *
+     * <h4>处理流程</h4>
+     * <ol>
+     *   <li>验证 Refresh Token 格式有效性</li>
+     *   <li>验证 Refresh Token 在存储中存在（未被撤销）</li>
+     *   <li>解析 Token 获取用户信息</li>
+     *   <li>验证用户状态</li>
+     *   <li>使旧的 Refresh Token 失效</li>
+     *   <li>生成新的 Access Token 和 Refresh Token</li>
+     *   <li>返回新 Token</li>
+     * </ol>
+     *
+     * <h4>安全措施</h4>
+     * <ul>
+     *   <li><b>单次使用</b>：每次刷新生成新的 Refresh Token，旧的立即失效</li>
+     *   <li><b>主动撤销</b>：登出后 Refresh Token 从存储移除，无法刷新</li>
+     *   <li><b>状态校验</b>：刷新时检查用户状态，禁用用户无法刷新</li>
+     * </ul>
+     *
+     * @param request 刷新请求，包含有效的 Refresh Token
+     * @return 刷新响应，包含新的 Access Token 和 Refresh Token
+     * @throws BusinessException ERR_UNAUTHORIZED Refresh Token 无效或已撤销
+     * @throws BusinessException ERR_USER_DISABLED 用户已禁用
+     * @since 1.0.0
      */
     public RefreshTokenResponse refreshToken(RefreshTokenRequest request) {
         String refreshToken = request.getRefreshToken();
@@ -187,6 +320,23 @@ public class AuthService {
 
     /**
      * 登出
+     *
+     * <p>撤销用户的 Refresh Token，使其无法继续刷新 Access Token。
+     * Access Token 会在过期前继续有效（JWT 无状态特性）。
+     *
+     * <h4>安全措施</h4>
+     * <ul>
+     *   <li><b>立即撤销</b>：Refresh Token 从存储中移除，无法刷新</li>
+     *   <li><b>幂等性</b>：重复登出不报错</li>
+     *   <li><b>审计日志</b>：记录登出事件</li>
+     * </ul>
+     *
+     * <h4>注意事项</h4>
+     * <p>登出后，Access Token 在过期前（默认 1 小时）仍然有效。
+     * 如需立即失效，可考虑引入 Token 黑名单机制（需 Redis 支持）。
+     *
+     * @param refreshToken 要撤销的 Refresh Token
+     * @since 1.0.0
      */
     public void logout(String refreshToken) {
         if (refreshToken != null && refreshTokenStore.containsKey(refreshToken)) {
