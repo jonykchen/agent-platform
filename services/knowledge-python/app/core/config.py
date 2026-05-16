@@ -31,6 +31,10 @@ class AppConfig(BaseSettings):
     embedding_dimension: int = 1536
     embedding_batch_size: int = 100
 
+    # 模型网关配置 - 用于 Query 改写
+    model_gateway_url: str = "http://localhost:8002"
+    default_model: str = "qwen-plus"
+
     # 文档处理配置
     chunk_size: int = 500  # 每个块的字符数
     chunk_overlap: int = 50  # 块之间的重叠字符数
