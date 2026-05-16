@@ -194,6 +194,35 @@ CREATE INDEX idx_approval_tenant ON approval_task(tenant_id);
 CREATE INDEX idx_approval_requester ON approval_task(requester_id, created_at DESC);
 ```
 
+#### approval_task 实体类说明
+
+> **⚠️ 当前实现差异**
+> 
+> 由于 `gateway-java` 和 `governance-java` 服务对审批任务有不同的职责划分，
+> 两个服务中的 `ApprovalTask` 实体类字段存在差异：
+> 
+> | 字段 | gateway-java | governance-java | 说明 |
+> |------|:------------:|:---------------:|------|
+> | `title` | ✅ | ❌ | 审批标题（gateway 创建时设置） |
+> | `description` | ✅ | ❌ | 审批描述（gateway 创建时设置） |
+> | `request_context` | ✅ | ❌ | 请求上下文快照（JSONB） |
+> | `priority` | ✅ | ❌ | 优先级（normal/high/urgent） |
+> | `tool_name` | ❌ | ✅ | 关联的工具名称 |
+> | `approver_id` | ❌ | ✅ | 审批人 ID |
+> | `approver_email` | ❌ | ✅ | 审批人邮箱 |
+> | `reason` | ❌ | ✅ | 审批原因 |
+> | `approval_reason` | ❌ | ✅ | 审批结果原因 |
+> | `processed_at` | ❌ | ✅ | 处理时间 |
+> 
+> **设计意图**：
+> - `gateway-java`：负责审批任务的创建、查询、基础管理，存储完整的请求上下文
+> - `governance-java`：负责审批流程执行、通知、结果回调，关注审批流转信息
+> 
+> **后续优化方向**：
+> 计划创建 `shared/java-entities` 模块，定义 `BaseApprovalTask` 基类，
+> 包含公共字段（id, runId, tenantId, status, expiresAt 等），
+> 各服务继承基类并添加特有字段。
+
 ### 1.6 audit_event（审计事件表 — **增强版**）
 
 ```sql

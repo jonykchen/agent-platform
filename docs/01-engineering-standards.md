@@ -16,7 +16,7 @@ agent-platform/
 ├── buf.yaml                   # ← Buf Proto 管理
 ├── buf.gen.yaml               # ← Proto 多语言代码生成
 ├── .python-version            # ← Python 版本锁定 (3.12)
-├── .java-version              # ← Java 版本锁定 (21)
+├── .java-version              # ← Java 版本锁定 (21，gateway 使用 17)
 ├── tools/
 │   └── .tool-versions         # ← asdf/mise 开发工具版本锁定
 ├── docs/                      # 文档（本目录）

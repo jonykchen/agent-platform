@@ -365,6 +365,14 @@ stateDiagram-v2
 
 ### 熔断器 Python 实现
 
+> **✅ 已实现**
+> 
+> 熔断器模块已在 `orchestrator-python/app/core/resilience.py` 中实现，包含：
+> - 三状态机：Closed → Open → Half-Open
+> - `asyncio.Lock` 线程安全保护
+> - 配置化阈值和恢复超时
+> - 与 Model Gateway Client 集成
+
 ```python
 # model-gateway-python/app/core/circuit_breaker.py
 """熔断器实现。支持三种状态：Closed/Open/HalfOpen"""
@@ -514,6 +522,26 @@ FALLBACK_RESPONSE_TEMPLATE = {
 ---
 
 ## 3. RAG Pipeline 并行化优化（P-03 补充）
+
+> **⚠️ 实现状态说明**
+> 
+> 本节描述的 RAG Pipeline 并行化是**规划中的功能**，当前代码实现状态：
+> 
+> | 功能 | 状态 | 说明 |
+> |------|------|------|
+> | BM25 检索 | 🔴 规划中 | 代码中返回 `rag_not_implemented` |
+> | 向量检索 | 🔴 规划中 | 依赖 knowledge-python 服务 |
+> | 并行执行 | 🔴 规划中 | `asyncio.gather` 框架已设计 |
+> | Embedding 缓存 | 🔴 规划中 | Redis 缓存层已预留 |
+> | Rerank | 🔴 规划中 | 分层 Rerank 设计已定义 |
+> 
+> 当前 Orchestrator 的 `thinking.py` 节点中，`rag_retrieve` 步骤直接返回：
+> ```python
+> if current_step == "rag_retrieve":
+>     return {"output": "rag_not_implemented", ...}
+> ```
+> 
+> 后续需要完成 knowledge-python 服务的集成。
 
 ### 性能瓶颈分析
 

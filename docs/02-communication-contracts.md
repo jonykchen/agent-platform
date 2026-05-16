@@ -11,72 +11,82 @@
 ```protobuf
 // contracts/proto/common/error_code.proto
 syntax = "proto3";
-package platform.common;
+package common;
 
-option java_package = "com.platform.common.proto";
+option java_package = "com.platform.common";
 option java_multiple_files = true;
 
-// ====== 统一错误码枚举 ======
-enum ErrorCode {
-  // 保留值，表示未知错误
-  ERR_UNKNOWN = 0;
+// ============================================================
+//  统一错误码定义 (C-04)
+//  对应文档: 02-communication-contracts.md §1
+// ============================================================
 
+// ErrorCode 枚举 - 全平台统一错误码
+enum ErrorCode {
   // ====== 通用错误 (10xxx) ======
-  ERR_INVALID_REQUEST = 10001;    // 请求参数无效
-  ERR_UNAUTHORIZED = 10002;      // 未认证
-  ERR_FORBIDDEN = 10003;         // 无权限
-  ERR_RATE_LIMITED = 10004;      // 请求过于频繁
-  ERR_TIMEOUT = 10005;           // 请求超时
-  ERR_SERVICE_UNAVAILABLE = 10006; // 服务暂不可用
-  ERR_METHOD_NOT_ALLOWED = 10007; // 方法不允许
-  ERR_RESOURCE_NOT_FOUND = 10008; // 资源不存在
-  ERR_CONFLICT = 10009;          // 冲突（如重复创建）
+  ERR_UNKNOWN = 0;
+  ERR_INVALID_REQUEST = 10001;      // 请求参数有误
+  ERR_UNAUTHORIZED = 10002;         // 未授权
+  ERR_FORBIDDEN = 10003;            // 无权限
+  ERR_NOT_FOUND = 10004;            // 资源不存在
+  ERR_RATE_LIMITED = 10005;         // 请求过于频繁
+  ERR_TIMEOUT = 10006;              // 请求超时
+  ERR_SERVICE_UNAVAILABLE = 10007;  // 服务不可用
+  ERR_INTERNAL = 10008;             // 内部错误
+  ERR_VERSION_MISMATCH = 10009;     // 版本不匹配
 
   // ====== Agent 编排错误 (20xxx) ======
-  ERR_AGENT_MAX_STEPS_EXCEEDED = 20001;  // 超过最大循环步数
-  ERR_AGENT_CONTEXT_TOO_LONG = 20002;     // 上下文窗口溢出
-  ERR_AGENT_TOOL_NOT_FOUND = 20003;        // 工具不存在
-  ERR_AGENT_RUN_CANCELLED = 20004;         // 运行被取消
-  ERR_AGENT_RUN_PAUSED = 20005;            // 运行暂停（等待审批）
+  ERR_AGENT_MAX_STEPS_EXCEEDED = 20001;     // 超过最大步骤数
+  ERR_AGENT_CONTEXT_TOO_LONG = 20002;       // 上下文过长
+  ERR_AGENT_TOOL_NOT_FOUND = 20003;         // 工具不存在
+  ERR_AGENT_TASK_CANCELLED = 20004;         // 任务被取消
+  ERR_AGENT_SESSION_CLOSED = 20005;         // 会话已关闭
 
   // ====== 模型网关错误 (30xxx) ======
-  ERR_MODEL_ALL_PROVIDERS_DOWN = 30001;   // 所有模型提供商不可用
-  ERR_MODEL_TOKEN_LIMIT = 30002;           // Token 超过上限
-  ERR_MODEL_CONTENT_FILTERED = 30003;      // 内容被安全过滤
-  ERR_MODEL_UNSUPPORTED_OPERATION = 30004; // 不支持的操作
-  ERR_MODEL_QUOTA_EXCEEDED = 30005;        // 配额超限
+  ERR_MODEL_ALL_PROVIDERS_DOWN = 30001;     // 所有模型提供商不可用
+  ERR_MODEL_CONTENT_FILTERED = 30002;       // 内容被安全过滤
+  ERR_MODEL_RATE_LIMITED = 30003;           // 模型调用限流
+  ERR_MODEL_TIMEOUT = 30004;                // 模型调用超时
+  ERR_MODEL_TOKEN_LIMIT_EXCEEDED = 30005;   // Token 限制超出
+  ERR_MODEL_RESPONSE_INVALID = 30006;       // 模型响应格式无效
+  ERR_MODEL_PROVIDER_ERROR = 30007;         // 模型提供商错误
 
   // ====== 工具总线错误 (40xxx) ======
-  ERR_TOOL_VALIDATION_FAILED = 40001;      // 工具参数校验失败
-  ERR_TOOL_EXECUTION_FAILED = 40002;       // 工具执行失败
-  ERR_TOOL_RISK_REJECTED = 40003;          // 风控拒绝
-  ERR_TOOL_APPROVAL_REQUIRED = 40004;      // 需要人工审批
-  ERR_TOOL_TIMEOUT = 40005;                // 工具调用超时
-  ERR_TOOL_DISABLED = 40006;               // 工具已禁用
+  ERR_TOOL_VALIDATION_FAILED = 40001;       // 工具参数校验失败
+  ERR_TOOL_EXECUTION_FAILED = 40002;        // 工具执行失败
+  ERR_TOOL_RISK_REJECTED = 40003;           // 操作被风控拒绝
+  ERR_TOOL_APPROVAL_REQUIRED = 40004;       // 需要人工审批
+  ERR_TOOL_TIMEOUT = 40005;                 // 工具调用超时
+  ERR_TOOL_NOT_AVAILABLE = 40006;           // 工具不可用
 
-  // ====== 风控错误 (50xxx) ======
-  ERR_RISK_BLOCKED = 50001;                // 风控拦截
-  ERR_RISK_SUSPICIOUS_BEHAVIOR = 50002;    // 可疑行为检测
+  // ====== 风控审批错误 (50xxx) ======
+  ERR_APPROVAL_PENDING = 50001;             // 审批进行中
+  ERR_APPROVAL_REJECTED = 50002;            // 审批被拒绝
+  ERR_APPROVAL_EXPIRED = 50003;             // 审批已过期
+  ERR_APPROVAL_NOT_FOUND = 50004;           // 审批任务不存在
+  ERR_RISK_CHECK_FAILED = 50005;            // 风控检查失败
 
-  // ====== 审批错误 (60xxx) ======
-  ERR_APPROVAL_EXPIRED = 60001;            // 审批过期
-  ERR_APPROVAL_ALREADY_REVIEWED = 60002;   // 已审批（不能重复审批）
-  ERR_APPROVAL_NOT_ASSIGNEE = 60003;      // 非指定审批人
+  // ====== 知识库错误 (60xxx) ======
+  ERR_KNOWLEDGE_NOT_FOUND = 60001;          // 知识不存在
+  ERR_KNOWLEDGE_INDEXING_FAILED = 60002;    // 索引失败
+  ERR_KNOWLEDGE_QUERY_FAILED = 60003;       // 查询失败
 
-  // ====== 知识库错误 (70xxx) ======
-  ERR_KNOWLEDGE_DOCUMENT_NOT_FOUND = 70001;
-  ERR_KNOWLEDGE_INDEX_FAILED = 70002;
+  // ====== 租户配额错误 (70xxx) ======
+  ERR_TENANT_QUOTA_EXCEEDED = 70001;        // 租户配额超出
+  ERR_USER_QUOTA_EXCEEDED = 70002;          // 用户配额超出
+  ERR_SESSION_QUOTA_EXCEEDED = 70003;       // 会话配额超出
 }
 
 // ====== 错误详情消息 ======
 message ErrorDetail {
-  ErrorCode code = 1;                          // 错误码（必须）
-  string message = 2;                          // 面向开发者的详细信息
-  string user_message = 3;                     // 面向用户的友好提示
-  map<string, string> details = 4;            // 补充上下文
-  string request_id = 5;                      // 关联的请求ID
-  string trace_id = 6;                       // 关联的链路ID
-  int32 retry_after_seconds = 7;             // 建议重试等待秒数（可选）
+  ErrorCode code = 1;                  // 错误码
+  string message = 2;                  // 内部错误消息（面向开发者）
+  string user_message = 3;             // 用户友好消息（面向终端用户）
+  map<string, string> details = 4;     // 额外详情
+  string request_id = 5;               // 请求追踪 ID
+  string trace_id = 6;                 // OpenTelemetry Trace ID
+  int64 timestamp = 7;                 // 错误发生时间戳
+  string service = 8;                  // 来源服务
 }
 
 // ====== 通用响应包装 ======

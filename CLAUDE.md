@@ -14,10 +14,15 @@
 |------|------|
 | Agent 编排 | Python 3.12 + FastAPI + LangGraph + Pydantic V2 |
 | 模型网关 | Python 3.12 + FastAPI + httpx |
-| API 入口/工具 | Java 21 + Spring Boot 3.2 |
+| API 入口/工具 | Java 17/21 + Spring Boot 3.2 |
 | 数据库 | PostgreSQL 16 + pgvector |
 | 缓存/消息 | Redis 7 + Kafka 3.6 |
 | 观测 | OpenTelemetry + Prometheus + Grafana |
+
+> **Java 版本说明**：
+> - gateway-java: Java 17（稳定版本，无虚拟线程需求）
+> - tool-bus-java: Java 21（使用虚拟线程优化批量工具执行）
+> - governance-java: Java 21
 
 ### 服务拓扑
 ```
@@ -27,6 +32,17 @@ Gateway (Java) → Orchestrator (Python) → Model Gateway (Python)
                       ↓
                Knowledge (Python)
 ```
+
+### 服务端口
+
+| 服务 | HTTP 端口 | gRPC 端口 | 说明 |
+|------|----------|----------|------|
+| Gateway | 8080 | 9091 | API 入口 |
+| Orchestrator | 8001 | 50051 | Agent 编排 |
+| Model Gateway | 8002 | - | 模型统一网关 |
+| Knowledge | 8003 | - | 知识库服务 |
+| Tool Bus | 8083 | 40051 | 工具执行 |
+| Governance | 8082 | - | 风控审批 |
 
 ---
 
@@ -130,13 +146,47 @@ BasePlatformException
 ## 关键配置值
 
 ```python
+# Agent 执行配置
 MAX_AGENT_STEPS = 10           # S-AGENT-10 步数上限
+AGENT_TOTAL_TIMEOUT_S = 300    # Agent 总超时（5分钟）
 MODEL_CALL_TIMEOUT_S = 30      # Provider 超时
 TOOL_CALL_TIMEOUT_S = 15       # S-AGENT-08 工具超时
+APPROVAL_WAIT_TIMEOUT_S = 7200 # 审批等待超时（2小时）
+
+# Token 限制
 MAX_USER_INPUT_TOKENS = 8000   # S-AGENT-03 输入限制
 MAX_CONTEXT_WINDOW_TOKENS = 128000  # 模型上下文窗口
-MAX_CONCURRENT_MODEL_CALLS = 20    # 并发模型调用上限
+MAX_SYSTEM_PROMPT_TOKENS = 4000    # 系统提示词上限
+CONTEXT_RESPONSE_RESERVED_TOKENS = 8000  # 响应预留 token
+
+# 并发限制
+MAX_CONCURRENT_REQUESTS = 50      # 最大并发请求数
+MAX_CONCURRENT_MODEL_CALLS = 20   # 并发模型调用上限
 MAX_CONCURRENT_TOOL_CALLS = 30    # 并发工具调用上限
+
+# 熔断器配置
+CIRCUIT_FAILURE_THRESHOLD = 5     # 熔断器失败阈值
+CIRCUIT_RECOVERY_TIMEOUT = 30     # 熔断器恢复超时（秒）
+
+# 重试配置
+RETRY_MAX_ATTEMPTS = 3            # 最大重试次数
+RETRY_MIN_WAIT = 1.0              # 最小等待时间（秒）
+RETRY_MAX_WAIT = 10.0             # 最大等待时间（秒）
+
+# 缓存配置
+CACHE_LOCAL_MAXSIZE = 1000        # 本地缓存最大条数
+CACHE_DEFAULT_TTL = 600           # 默认缓存 TTL（秒）
+CACHE_RAG_TTL = 600               # RAG 结果缓存 TTL
+CACHE_TOOL_SCHEMA_TTL = 3600      # 工具 Schema 缓存 TTL
+
+# HTTP 连接池
+HTTP_MAX_CONNECTIONS = 100        # HTTP 最大连接数
+HTTP_MAX_KEEPALIVE = 20           # HTTP 最大 keepalive 连接数
+HTTP_KEEPALIVE_EXPIRY = 30.0      # HTTP keepalive 过期时间（秒）
+
+# OpenTelemetry
+OTEL_ENABLED = True               # 是否启用 OTel
+OTLP_ENDPOINT = "http://localhost:4317"  # OTLP gRPC 端点
 ```
 
 ---
