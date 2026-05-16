@@ -52,6 +52,11 @@ server:
   port: ${PORT:8080}
   shutdown: graceful
 
+# ====== 优雅关闭配置 ======
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
 # ====== Actuator 配置 ======
 management:
   endpoints:
@@ -70,7 +75,13 @@ management:
 gateway:
   fast-path:
     enabled: true
-    max-length: 100
+    max-length: 10  # 安全阈值：从 100 降为 10，减少攻击面
+
+# ====== Model Gateway 配置 ======
+model-gateway:
+  url: ${MODEL_GATEWAY_URL:http://localhost:8002}
+  connect-timeout: 10
+  read-timeout: 60
 
 # ====== JWT 认证配置 ======
 auth:
@@ -84,7 +95,13 @@ orchestrator:
   grpc:
     host: ${ORCHESTRATOR_HOST:localhost}
     port: ${ORCHESTRATOR_GRPC_PORT:50051}
-    timeout-ms: 30000
+    timeout-ms: ${ORCHESTRATOR_TIMEOUT_MS:30000}
+    keepalive-time-ms: ${ORCHESTRATOR_KEEPALIVE_TIME_MS:30000}
+    keepalive-timeout-ms: ${ORCHESTRATOR_KEEPALIVE_TIMEOUT_MS:10000}
+    max-inbound-message-size: ${ORCHESTRATOR_MAX_MESSAGE_SIZE:16777216}  # 16MB
+    idle-timeout-ms: ${ORCHESTRATOR_IDLE_TIMEOUT_MS:300000}
+    enable-retry: ${ORCHESTRATOR_ENABLE_RETRY:true}
+    max-retry-attempts: ${ORCHESTRATOR_MAX_RETRY_ATTEMPTS:3}
 
 # ====== gRPC 配置 ======
 grpc:
@@ -95,15 +112,51 @@ grpc:
       address: static://${orchestrator.grpc.host}:${orchestrator.grpc.port}
       negotiation-type: plaintext
 
+# ====== Rate Limiting 配置 ======
+rate-limit:
+  enabled: ${RATE_LIMIT_ENABLED:true}
+  user:
+    rpm: ${RATE_LIMIT_USER_RPM:60}  # 每用户每分钟请求数限制
+  tenant:
+    tpm: ${RATE_LIMIT_TENANT_TPM:100000}  # 每租户每分钟 token 数限制
+
+# ====== WebClient 配置 (SSE Streaming) ======
+webclient:
+  pool:
+    max-connections: ${WEBCLIENT_POOL_MAX_CONNECTIONS:500}
+    idle-timeout-ms: ${WEBCLIENT_POOL_IDLE_TIMEOUT_MS:20000}
+    max-life-time-ms: ${WEBCLIENT_POOL_MAX_LIFE_TIME_MS:60000}
+    pending-acquire-timeout-ms: ${WEBCLIENT_POOL_PENDING_ACQUIRE_TIMEOUT_MS:60000}
+  connect-timeout-ms: ${WEBCLIENT_CONNECT_TIMEOUT_MS:10000}
+  read-timeout-ms: ${WEBCLIENT_READ_TIMEOUT_MS:300000}  # SSE 需要长超时
+  write-timeout-ms: ${WEBCLIENT_WRITE_TIMEOUT_MS:30000}
+
 # ====== OpenTelemetry 配置 ======
 otel:
   exporter:
     otlp:
       endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+  service:
+    name: ${OTEL_SERVICE_NAME:gateway-java}
+    version: ${OTEL_SERVICE_VERSION:1.0.0}
   traces:
-    exporter: otlp
-  metrics:
-    exporter: otlp
+    sampler: parentbased_traceidratio
+    sampler-arg: ${OTEL_SAMPLER_RATIO:1.0}  # 采样率 100%
+  exporter:
+    batch:
+      schedule-delay-ms: ${OTEL_BATCH_DELAY_MS:5000}
+      max-queue-size: ${OTEL_MAX_QUEUE_SIZE:2048}
+      max-export-batch-size: ${OTEL_MAX_EXPORT_BATCH_SIZE:512}
+      export-timeout-ms: ${OTEL_EXPORT_TIMEOUT_MS:30000}
+
+# ====== Redis 配置 (分布式限流) ======
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 5000ms
 
 # ====== 日志配置 ======
 logging:
