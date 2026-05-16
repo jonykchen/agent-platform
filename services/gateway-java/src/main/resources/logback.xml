@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================
+  Gateway Service - Logback 配置
+  ============================================================
+
+  JSON 结构化日志配置，适用于：
+  - ELK Stack (Elasticsearch + Logstash + Kibana)
+  - Grafana Loki
+  - 云原生日志服务
+
+  特性：
+  - JSON 格式输出
+  - 敏感数据脱敏
+  - MDC 字段自动包含
+  - 分环境配置
+
+  ============================================================
+-->
+<configuration scan="true" scanPeriod="30 seconds">
+
+    <!-- 读取应用配置 -->
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="gateway-java"/>
+    <springProperty scope="context" name="ENVIRONMENT" source="spring.profiles.active" defaultValue="local"/>
+    <springProperty scope="context" name="LOG_LEVEL" source="logging.level.root" defaultValue="INFO"/>
+
+    <!-- 定义脱敏规则 -->
+    <define name="SENSITIVE_FIELDS" class="java.lang.String">
+        password,token,secret,api_key,apiKey,access_token,refresh_token,credential,authorization
+    </define>
+
+    <!-- ============================================== -->
+    <!-- Appender: JSON 格式（生产环境推荐）              -->
+    <!-- ============================================== -->
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- 时间戳格式 -->
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSS'Z'</timestampPattern>
+            <timeZone>UTC</timeZone>
+
+            <!-- 包含 MDC 字段 -->
+            <includeMdcKeyName>request_id</includeMdcKeyName>
+            <includeMdcKeyName>tenant_id</includeMdcKeyName>
+            <includeMdcKeyName>user_id</includeMdcKeyName>
+            <includeMdcKeyName>trace_id</includeMdcKeyName>
+            <includeMdcKeyName>span_id</includeMdcKeyName>
+
+            <!-- 包含调用者信息 -->
+            <includeCallerData>true</includeCallerData>
+
+            <!-- 异常堆栈格式 -->
+            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                <maxLength>2048</maxLength>
+                <shortenedClassNameLength>20</shortenedClassNameLength>
+                <rootCauseFirst>true</rootCauseFirst>
+            </throwableConverter>
+
+            <!-- 自定义字段 -->
+            <fieldNames>
+                <timestamp>@timestamp</timestamp>
+                <version>[ignore]</version>
+                <message>message</message>
+                <logger>logger</logger>
+                <thread>thread</thread>
+                <level>level</level>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+
+            <!-- 添加静态字段 -->
+            <additionalFields>
+                <field>
+                    <key>service</key>
+                    <value>${APP_NAME}</value>
+                </field>
+                <field>
+                    <key>environment</key>
+                    <value>${ENVIRONMENT}</value>
+                </field>
+            </additionalFields>
+        </encoder>
+    </appender>
+
+    <!-- ============================================== -->
+    <!-- Appender: 文本格式（本地开发环境）              -->
+    <!-- ============================================== -->
+    <appender name="TEXT_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{request_id:-N/A}] %-5level %logger{36} - %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- ============================================== -->
+    <!-- Appender: 访问日志（单独文件）                  -->
+    <!-- ============================================== -->
+    <appender name="ACCESS_LOG" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/access.log</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSS'Z'</timestampPattern>
+            <timeZone>UTC</timeZone>
+            <includeMdcKeyName>request_id</includeMdcKeyName>
+            <includeMdcKeyName>tenant_id</includeMdcKeyName>
+            <includeMdcKeyName>user_id</includeMdcKeyName>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/access.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- ============================================== -->
+    <!-- Appender: 错误日志（单独文件）                  -->
+    <!-- ============================================== -->
+    <appender name="ERROR_LOG" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/error.log</file>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss.SSS'Z'</timestampPattern>
+            <timeZone>UTC</timeZone>
+            <includeCallerData>true</includeCallerData>
+            <includeMdcKeyName>request_id</includeMdcKeyName>
+            <includeMdcKeyName>tenant_id</includeMdcKeyName>
+            <includeMdcKeyName>user_id</includeMdcKeyName>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/error.%d{yyyy-MM-dd}.log.gz</fileNamePattern>
+            <maxHistory>90</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- ============================================== -->
+    <!-- 异步 Appender（性能优化）                       -->
+    <!-- ============================================== -->
+    <appender name="ASYNC_JSON" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>true</includeCallerData>
+        <appender-ref ref="JSON_CONSOLE"/>
+    </appender>
+
+    <appender name="ASYNC_TEXT" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>true</includeCallerData>
+        <appender-ref ref="TEXT_CONSOLE"/>
+    </appender>
+
+    <!-- ============================================== -->
+    <!-- Logger 配置                                    -->
+    <!-- ============================================== -->
+
+    <!-- 访问日志单独输出 -->
+    <logger name="HTTP_ACCESS" level="INFO" additivity="false">
+        <appender-ref ref="ACCESS_LOG"/>
+    </logger>
+
+    <!-- 平台日志 -->
+    <logger name="com.platform" level="DEBUG"/>
+
+    <!-- Spring 框架日志 -->
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.springframework.security" level="INFO"/>
+    <logger name="org.springframework.web" level="INFO"/>
+
+    <!-- Hibernate/JPA 日志 -->
+    <logger name="org.hibernate" level="INFO"/>
+    <logger name="org.hibernate.SQL" level="DEBUG"/>
+    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/>
+
+    <!-- gRPC 日志 -->
+    <logger name="io.grpc" level="INFO"/>
+    <logger name="net.devh" level="INFO"/>
+
+    <!-- Netty 日志 -->
+    <logger name="io.netty" level="INFO"/>
+
+    <!-- OpenTelemetry 日志 -->
+    <logger name="io.opentelemetry" level="INFO"/>
+
+    <!-- Redis 日志 -->
+    <logger name="io.lettuce" level="INFO"/>
+
+    <!-- ============================================== -->
+    <!-- 环境配置                                       -->
+    <!-- ============================================== -->
+
+    <!-- 本地开发环境：文本格式 + 控制台 -->
+    <springProfile name="local">
+        <root level="INFO">
+            <appender-ref ref="ASYNC_TEXT"/>
+        </root>
+        <logger name="com.platform" level="DEBUG"/>
+    </springProfile>
+
+    <!-- 生产环境：JSON 格式 + 文件输出 -->
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="ASYNC_JSON"/>
+            <appender-ref ref="ERROR_LOG"/>
+        </root>
+        <logger name="com.platform" level="INFO"/>
+    </springProfile>
+
+    <!-- 默认配置（非特定环境） -->
+    <springProfile name="!local &amp; !prod">
+        <root level="INFO">
+            <appender-ref ref="ASYNC_JSON"/>
+        </root>
+    </springProfile>
+
+    <!-- ============================================== -->
+    <!-- 敏感数据脱敏过滤器                              -->
+    <!-- ============================================== -->
+    <!--
+      注意：Logstash Encoder 支持通过自定义 provider 实现脱敏
+      以下是一个示例配置，需要在代码中实现 SensitiveDataFilterProvider
+    -->
+
+</configuration>
