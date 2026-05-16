@@ -26,13 +26,17 @@ FastAPI 的优势：
 
 【中间件顺序】重要！执行顺序从下到上
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  请求流 → CORS → Metrics → ErrorHandler → RequestContext → 路由处理器  │
+│  请求流 → CORS → Otel → ErrorHandler → Tracing → RateLimit → Metrics  │
+│           → RequestContext → 路由处理器                                 │
 │                                                                         │
 │  注册顺序（代码中）：                                                    │
 │  1. CORSMiddleware（最后添加，最先执行）                                 │
-│  2. RequestMetricsMiddleware                                            │
-│  3. ErrorHandlerMiddleware                                              │
-│  4. RequestContextMiddleware（最先添加，最后执行）                       │
+│  2. OtelMiddleware（OpenTelemetry 追踪）                                │
+│  3. ErrorHandlerMiddleware                                             │
+│  4. TracingMiddleware（兼容旧实现，可逐步移除）                          │
+│  5. RateLimitMiddleware                                                │
+│  6. RequestMetricsMiddleware                                           │
+│  7. RequestContextMiddleware（最先添加，最后执行）                       │
 └─────────────────────────────────────────────────────────────────────────┘
 
 【依赖注入模式】
@@ -54,10 +58,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 from redis.asyncio import Redis
 
-from app.api.v1 import chat, health
+from app.api.v1 import agent, chat, health, session
 from app.api.middleware.error_handler import ErrorHandlerMiddleware
-from app.api.middleware.request_context import RequestContextMiddleware
+from app.api.middleware.otel_middleware import OtelMiddleware
 from app.api.middleware.rate_limit_middleware import RateLimitMiddleware
+from app.api.middleware.request_context import RequestContextMiddleware
 from app.api.middleware.tracing_middleware import TracingMiddleware
 from app.core.config import config
 from app.core.feature_flags import FeatureFlagClient
@@ -208,9 +213,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # OpenTelemetry 追踪中间件 - ASGI 原生实现
+    # 功能：自动创建 Span、提取/注入 trace context、记录请求属性
+    app.add_middleware(OtelMiddleware, service_name="orchestrator-python")
+
     # 自定义中间件（顺序重要：后添加的先执行）
     app.add_middleware(ErrorHandlerMiddleware)  # 统一异常响应格式
-    app.add_middleware(TracingMiddleware)  # 追踪信息注入
+    app.add_middleware(TracingMiddleware)  # 追踪信息注入（兼容旧实现）
     app.add_middleware(RateLimitMiddleware)  # 速率限制
     app.add_middleware(RequestMetricsMiddleware)  # Prometheus 指标采集
     app.add_middleware(RequestContextMiddleware)  # 提取 request_id、tenant_id
@@ -224,6 +233,8 @@ def create_app() -> FastAPI:
 
     # API v1 路由
     app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+    app.include_router(agent.router, prefix="/api/v1", tags=["agent"])
+    app.include_router(session.router, prefix="/api/v1", tags=["session"])
 
     # ─────────────────────────────────────────────────────────────────────
     # Prometheus Metrics 端点
