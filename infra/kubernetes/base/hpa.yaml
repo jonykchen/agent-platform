@@ -1,0 +1,259 @@
+# ============================================================
+#  HorizontalPodAutoscaler - Orchestrator 服务
+#  自动伸缩配置
+#  对应文档: 07-scalability-patterns.md §2
+# ============================================================
+#
+# 部署方式：
+#   kubectl apply -f infra/kubernetes/base/hpa.yaml -n agent-platform
+#
+# 前置条件：
+#   1. 集群已安装 Metrics Server
+#      kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+#   2. 对应的 Deployment 已存在
+#   3. Pod 资源请求已正确配置
+#
+# 伸缩策略：
+#   - 基于 CPU 和内存双指标触发
+#   - 支持横向扩展和缩容
+#   - 缩容冷却期避免抖动
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orchestrator
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: orchestrator
+spec:
+  # 目标 Deployment
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orchestrator
+
+  # 副本数范围
+  minReplicas: 2      # 最小副本数：保证高可用
+  maxReplicas: 10     # 最大副本数：防止资源过度消耗
+
+  # 伸缩指标
+  metrics:
+    # CPU 利用率指标
+    # 当 CPU 使用率超过 70% 时触发扩容
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # 内存利用率指标
+    # 当内存使用率超过 80% 时触发扩容
+    # 内存指标相对滞后，作为辅助指标
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+  # 伸缩行为 - 控制扩缩容速率，防止抖动
+  behavior:
+    # 扩容行为
+    scaleUp:
+      # 扩容策略：优先选择增加更多 Pod
+      policies:
+        # 策略 1：每次最多增加 4 个 Pod
+        - type: Pods
+          value: 4
+          periodSeconds: 60     # 每 60 秒评估一次
+        # 策略 2：每次最多增加当前副本数的 100%
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+      # 选择策略：取两者中较大的（更激进的扩容）
+      selectPolicy: Max
+      # 稳定期：扩容后多久不考虑缩容
+      stabilizationWindowSeconds: 120
+
+    # 缩容行为
+    scaleDown:
+      # 缩容策略：保守缩容，避免抖动
+      policies:
+        # 策略 1：每 120 秒最多移除 1 个 Pod
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+        # 策略 2：每 120 秒最多移除当前副本数的 10%
+        - type: Percent
+          value: 10
+          periodSeconds: 120
+      # 选择策略：取两者中较小的（更保守的缩容）
+      selectPolicy: Min
+      # 缩容冷却期：避免负载波动时的频繁缩容
+      stabilizationWindowSeconds: 300
+
+---
+# ============================================================
+#  其他服务的 HPA 配置（按需启用）
+# ============================================================
+
+# Gateway HPA - 入口网关，流量高峰时需要快速扩容
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      policies:
+        - type: Pods
+          value: 4
+          periodSeconds: 30   # Gateway 需要更快响应
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+      selectPolicy: Max
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 120
+        - type: Percent
+          value: 25
+          periodSeconds: 120
+      selectPolicy: Min
+      stabilizationWindowSeconds: 300
+
+---
+# Model Gateway HPA - 模型网关，IO 密集型
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: model-gateway
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: model-gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: model-gateway
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+      selectPolicy: Max
+      stabilizationWindowSeconds: 120
+    scaleDown:
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 180
+        - type: Percent
+          value: 10
+          periodSeconds: 180
+      selectPolicy: Min
+      stabilizationWindowSeconds: 300
+
+---
+# Tool Bus HPA - 工具服务
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tool-bus
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: autoscaling
+    app.kubernetes.io/part-of: tool-bus
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tool-bus
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+      selectPolicy: Max
+      stabilizationWindowSeconds: 120
+    scaleDown:
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 180
+        - type: Percent
+          value: 10
+          periodSeconds: 180
+      selectPolicy: Min
+      stabilizationWindowSeconds: 300

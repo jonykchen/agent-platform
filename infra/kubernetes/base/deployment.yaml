@@ -37,18 +37,35 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          # 存活探针 - 检测死锁/僵死状态，失败则重启 Pod
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8080
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # 就绪探针 - 检测服务是否可接收流量
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # 启动探针 - 给慢启动应用足够时间，避免被 livenessProbe 杀死
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30   # 最多等待 150s (30 * 5s)
 ---
 # Orchestrator Service
 apiVersion: apps/v1
@@ -89,18 +106,35 @@ spec:
             limits:
               cpu: "1000m"
               memory: "1Gi"
+          # 存活探针 - 检测死锁/僵死状态，失败则重启 Pod
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # 就绪探针 - 检测服务是否可接收流量
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: 8000
             initialDelaySeconds: 5
             periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # 启动探针 - Orchestrator 可能需要较长时间初始化
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 60   # 最多等待 300s (60 * 5s)
 ---
 # Model Gateway Service
 apiVersion: apps/v1
@@ -137,12 +171,35 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          # 存活探针
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8001
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # 就绪探针
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # 启动探针
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
 ---
 # Tool Bus Service
 apiVersion: apps/v1
@@ -183,12 +240,35 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          # 存活探针
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8082
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # 就绪探针
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # 启动探针
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8082
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
 ---
 # Governance Service
 apiVersion: apps/v1
@@ -225,12 +305,35 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          # 存活探针
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8083
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # 就绪探针
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8083
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # 启动探针
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8083
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30
 ---
 # Knowledge Service
 apiVersion: apps/v1
@@ -267,9 +370,32 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+          # 存活探针
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 8002
             initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # 就绪探针
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8002
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # 启动探针
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8002
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 30

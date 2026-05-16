@@ -1,0 +1,115 @@
+# ============================================================
+#  Istio DestinationRule - Orchestrator 服务
+#  配置一致性哈希、连接池和熔断策略
+#  对应文档: 07-scalability-patterns.md §3
+# ============================================================
+#
+# 部署方式：
+#   kubectl apply -f infra/k8s/istio-destination-rule.yaml -n agent-platform
+#
+# 前置条件：
+#   1. 集群已安装 Istio
+#   2. namespace 已启用 Istio injection
+#
+# 说明：
+#   - 一致性哈希确保同一会话的请求路由到同一 Pod（会话亲和性）
+#   - 连接池限制防止单个服务过载
+#   - 熔断策略保护服务免受级联故障影响
+
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: orchestrator
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: traffic-management
+    app.kubernetes.io/part-of: orchestrator
+spec:
+  # 目标服务
+  host: orchestrator.agent-platform.svc.cluster.local
+
+  # 流量策略
+  trafficPolicy:
+    # 连接池配置 - 限制并发连接数，防止资源耗尽
+    connectionPool:
+      # TCP 连接池设置
+      tcp:
+        maxConnections: 100          # 最大连接数
+        connectTimeout: 10s          # 连接超时
+        # 连接保活：长时间空闲连接可能被负载均衡器关闭
+        # tcpKeepalive:
+        #   time: 7200s              # 保活探测间隔
+        #   interval: 75s            # 探测发送间隔
+        #   probes: 9                 # 探测失败次数阈值
+
+      # HTTP 连接池设置
+      http:
+        h2UpgradePolicy: UPGRADE      # 升级 HTTP/1.1 到 HTTP/2
+        http1MaxPendingRequests: 100  # HTTP/1.1 待处理请求队列
+        http2MaxRequests: 1000        # HTTP/2 最大并发请求数
+        maxRequestsPerConnection: 10  # 每连接最大请求数（复用后重建）
+        maxRetries: 3                 # 最大重试次数
+        idleTimeout: 60s              # 空闲连接超时
+
+    # 熔断器配置 - 基于异常检测自动剔除不健康实例
+    outlierDetection:
+      # 连续错误数达到阈值时剔除实例
+      consecutive5xxErrors: 5
+      # 连续网关错误数达到阈值时剔除实例
+      consecutiveGatewayErrors: 3
+      # 检测间隔
+      interval: 30s
+      # 实例被剔除后的休眠时间（恢复观察期）
+      baseEjectionTime: 60s
+      # 最大剔除比例（保留部分实例以避免全部剔除）
+      maxEjectionPercent: 50
+      # 最小健康实例数（确保服务可用性）
+      minHealthPercent: 25
+
+    # TLS 设置（继承全局 mTLS 配置）
+    tls:
+      mode: ISTIO_MUTUAL
+
+    # 负载均衡策略
+    loadBalancer:
+      # 一致性哈希 - 基于会话 ID 的会话亲和性
+      # 确保同一用户的对话请求路由到同一 Pod
+      # 适用于有状态对话场景，减少跨 Pod 状态同步开销
+      consistentHash:
+        httpHeaderName: x-session-id   # 基于请求头中的 x-session-id
+        # 备选：基于 Cookie
+        # httpCookie:
+        #   name: session-id
+        #   ttl: 3600s
+        # 备选：基于源 IP
+        # useSourceIp: true
+        # 最小环大小（哈希环虚拟节点数）
+        minimumRingSize: 1024
+
+    # 重试策略
+    retries:
+      attempts: 3                     # 重试次数
+      perTryTimeout: 10s              # 每次重试超时
+      retryOn: gateway-error,connect-failure,refused-stream,reset,resource-exhausted,retriable-status-codes
+      retriableStatusCodes: [503, 504]  # 触发重试的状态码
+
+  # 子集定义 - 支持金丝雀/蓝绿部署
+  subsets:
+    # 稳定版本
+    - name: stable
+      labels:
+        version: v1
+      trafficPolicy:
+        loadBalancer:
+          consistentHash:
+            httpHeaderName: x-session-id
+
+    # 金丝雀版本（用于灰度发布）
+    - name: canary
+      labels:
+        version: v2
+      trafficPolicy:
+        loadBalancer:
+          consistentHash:
+            httpHeaderName: x-session-id
