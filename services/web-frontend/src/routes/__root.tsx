@@ -1,15 +1,15 @@
-import { Outlet, redirect } from '@tanstack/react-router';
+import { createRootRoute, Outlet, redirect } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/authStore';
 import { PageLayout } from '@/components/layout/PageLayout';
 
-export const Route = {
+export const Route = createRootRoute({
   component: RootComponent,
   beforeLoad: async ({ location }) => {
     const { isAuthenticated, accessToken } = useAuthStore.getState();
 
     // 未登录且不在登录页，重定向到登录
     if (!isAuthenticated && !accessToken) {
-      if (location.pathname !== '/login') {
+      if (location.pathname !== '/login' && location.pathname !== '/forbidden') {
         throw redirect({
           to: '/login',
           search: { redirect: location.href },
@@ -22,7 +22,7 @@ export const Route = {
       throw redirect({ to: '/' });
     }
   },
-};
+});
 
 function RootComponent() {
   return (

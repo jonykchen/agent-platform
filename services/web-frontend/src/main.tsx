@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
-import App from './App';
+import { routeTree } from './routeTree.gen';
 import './styles/global.css';
 
 // Query Client 配置
@@ -22,10 +22,21 @@ const queryClient = new QueryClient({
   },
 });
 
-// 路由配置（Phase 1 会完善）
+// 路由配置
 const router = createRouter({
-  routeTree: App,
+  routeTree,
+  defaultPreload: 'intent',
+  context: {
+    queryClient,
+  },
 });
+
+// 类型声明
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router;
+  }
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
