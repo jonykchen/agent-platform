@@ -148,9 +148,11 @@ public class RateLimitConfig {
         public Bucket getUserBucket(String userId, BucketConfiguration configuration) {
             String key = "user:" + userId;
             return buckets.computeIfAbsent(key, k -> {
+                Bandwidth[] bandwidths = configuration.getBandwidths();
+                long capacity = bandwidths.length > 0 ? bandwidths[0].getCapacity() : 60L;
                 Bandwidth bandwidth = Bandwidth.builder()
-                        .capacity(configuration.getBandwidths().get(0).getCapacity())
-                        .refillIntervally(configuration.getBandwidths().get(0).getCapacity(), Duration.ofMinutes(1))
+                        .capacity(capacity)
+                        .refillIntervally(capacity, Duration.ofMinutes(1))
                         .build();
                 return Bucket.builder()
                         .addLimit(bandwidth)
@@ -168,9 +170,11 @@ public class RateLimitConfig {
         public Bucket getTenantBucket(String tenantId, BucketConfiguration configuration) {
             String key = "tenant:" + tenantId;
             return buckets.computeIfAbsent(key, k -> {
+                Bandwidth[] bandwidths = configuration.getBandwidths();
+                long capacity = bandwidths.length > 0 ? bandwidths[0].getCapacity() : 100000L;
                 Bandwidth bandwidth = Bandwidth.builder()
-                        .capacity(configuration.getBandwidths().get(0).getCapacity())
-                        .refillIntervally(configuration.getBandwidths().get(0).getCapacity(), Duration.ofMinutes(1))
+                        .capacity(capacity)
+                        .refillIntervally(capacity, Duration.ofMinutes(1))
                         .build();
                 return Bucket.builder()
                         .addLimit(bandwidth)
