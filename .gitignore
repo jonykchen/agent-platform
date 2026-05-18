@@ -15,8 +15,15 @@ logs/
 *.tar.gz
 *.rar
 
-# Maven
-target/
+# Maven - 排除 target 但保留 proto 生成代码
+# 方案：精确排除 target/classes 和 target/test-classes
+target/classes/
+target/test-classes/
+target/site/
+target/maven-*
+target/surefire-*
+target/invoker-*
+target/archive-classes/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
@@ -99,12 +106,11 @@ Thumbs.db
 *.crt
 secrets/
 
-# Generated code
+# Generated code - OpenAPI 不提交，Proto 生成代码需要提交
 contracts/openapi/gen/
-**/gen/
-**/*_pb2.py
-**/*_pb2_grpc.py
-**/*.pb.go
+
+# Python gen 目录（非 proto）仍然排除，但 app/gen 下 proto 文件保留
+# 注意：不使用 **/gen/ 因为会误杀 app/gen/
 
 # Test outputs
 test-results/

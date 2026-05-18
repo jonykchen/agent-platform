@@ -6,19 +6,19 @@ version: v2
 plugins:
   # Java Protobuf
   - remote: buf.build/protocolbuffers/java
-    out: services/gateway-java/src/main/java/gen
+    out: services/gateway-java/target/generated-sources/proto
   - remote: buf.build/grpc/java
-    out: services/gateway-java/src/main/java/gen
+    out: services/gateway-java/target/generated-sources/proto
 
   - remote: buf.build/protocolbuffers/java
-    out: services/tool-bus-java/src/main/java/gen
+    out: services/tool-bus-java/target/generated-sources/proto
   - remote: buf.build/grpc/java
-    out: services/tool-bus-java/src/main/java/gen
+    out: services/tool-bus-java/target/generated-sources/proto
 
   - remote: buf.build/protocolbuffers/java
-    out: services/governance-java/src/main/java/gen
+    out: services/governance-java/target/generated-sources/proto
   - remote: buf.build/grpc/java
-    out: services/governance-java/src/main/java/gen
+    out: services/governance-java/target/generated-sources/proto
 
   # Python Protobuf
   - remote: buf.build/protocolbuffers/python

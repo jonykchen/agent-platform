@@ -3,7 +3,7 @@
 #  用法: make <target>
 # ============================================================
 
-.PHONY: help build test lint proto fmt dev clean docker ci build-frontend test-frontend lint-frontend
+.PHONY: help build test lint proto proto-commit proto-verify fmt dev clean docker ci build-frontend test-frontend lint-frontend
 
 # 默认显示帮助
 help:
@@ -94,6 +94,21 @@ BUF_CMD := $(shell buf version >/dev/null 2>&1 && echo "buf" || echo "$(LOCALAPP
 proto:
 	@$(BUF_CMD) generate 2>/dev/null || echo "buf not installed or generate failed"
 	@echo "✅ Proto code generated"
+
+# Proto 生成并提交（最佳实践：Proto 改动时使用）
+proto-commit: proto
+	@echo "Adding generated code to git..."
+	git add contracts/proto/
+	git add services/*/target/generated-sources/proto/
+	git add services/*/app/gen/
+	@echo "✅ Proto and generated code staged. Run 'git commit' to complete."
+
+# CI 验证：确保生成代码是最新的
+proto-verify:
+	@$(BUF_CMD) generate 2>/dev/null || (echo "❌ buf not installed" && exit 1)
+	@git diff --exit-code contracts/proto services/*/target/generated-sources services/*/app/gen 2>/dev/null || \
+		(echo "❌ Generated code is outdated! Run 'make proto-commit'" && exit 1)
+	@echo "✅ Generated code is up-to-date"
 
 # ---- 格式化 ----
 fmt: fmt-java fmt-python
