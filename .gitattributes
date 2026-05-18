@@ -1,0 +1,13 @@
+# ============================================================
+#  Git Attributes - Proto 生成代码标记
+#  标记为 linguist-generated，GitHub PR 自动折叠
+# ============================================================
+
+# Java Proto 生成代码
+**/target/generated-sources/proto/** linguist-generated=true
+
+# Python Proto 生成代码
+**/app/gen/** linguist-generated=true
+
+# 其他生成代码
+**/generated-sources/** linguist-generated=true
