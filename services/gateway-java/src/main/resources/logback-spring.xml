@@ -24,10 +24,8 @@
     <springProperty scope="context" name="ENVIRONMENT" source="spring.profiles.active" defaultValue="local"/>
     <springProperty scope="context" name="LOG_LEVEL" source="logging.level.root" defaultValue="INFO"/>
 
-    <!-- 定义脱敏规则 -->
-    <define name="SENSITIVE_FIELDS" class="java.lang.String">
-        password,token,secret,api_key,apiKey,access_token,refresh_token,credential,authorization
-    </define>
+    <!-- 脱敏字段列表（用于日志过滤，在代码中实现） -->
+    <!-- 敏感字段: password,token,secret,api_key,apiKey,access_token,refresh_token,credential,authorization -->
 
     <!-- ============================================== -->
     <!-- Appender: JSON 格式（生产环境推荐）              -->
