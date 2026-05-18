@@ -143,7 +143,7 @@ public class UserController {
         try {
             PageResponse<UserDetailResponse> response = userService.getUsers(tenantId, params);
             log.info("getUsers success: requestId={}, total={}, page={}",
-                    requestId, response.getTotal(), response.getPage());
+                    requestId, response.getTotalCount(), response.getPageNumber());
             return ResponseEntity.ok(response);
         } catch (BusinessException e) {
             log.warn("getUsers failed: requestId={}, error={}", requestId, e.getMessage());

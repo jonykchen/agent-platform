@@ -111,7 +111,7 @@ public class ChatController {
 
         try {
             // 快速路径判断：简单问答直接透传，不经过完整 Agent 编排
-            if (fastPathService.isFastPath(request.getMessage())) {
+            if (fastPathService.isFastPath(request)) {
                 log.debug("Fast path detected for request {}", requestId);
                 return ResponseEntity.ok(fastPathService.handleFastPath(request));
             }
