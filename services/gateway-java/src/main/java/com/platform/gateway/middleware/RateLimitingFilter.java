@@ -187,7 +187,7 @@ public class RateLimitingFilter implements Filter {
     private void handleRateLimitExceeded(HttpServletResponse response,
                                          ConsumptionProbe probe,
                                          int limit) throws IOException {
-        response.setStatus(HttpServletResponse.SC_TOO_MANY_REQUESTS);
+        response.setStatus(429); // HTTP 429 Too Many Requests
         response.setHeader(RATE_LIMIT_HEADER, String.valueOf(limit));
         response.setHeader(RATE_LIMIT_REMAINING_HEADER, "0");
 

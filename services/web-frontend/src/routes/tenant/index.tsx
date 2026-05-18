@@ -21,7 +21,7 @@ import {
   Tooltip,
   Space,
 } from 'antd';
-import { Save, RefreshCw, InfoCircle, Shield, Database, Bot } from 'lucide-react';
+import { Save, RefreshCw, Info, Shield, Database, Bot } from 'lucide-react';
 import { tenantService } from '@/services/tenant';
 import type { TenantConfig } from '@/services/tenant';
 import { LoadingState } from '@/components/feedback/LoadingState';
@@ -224,7 +224,7 @@ function TenantConfigPage() {
                     <Database className="w-4 h-4" />
                     最大会话数/用户
                     <Tooltip title="每个用户最多可创建的会话数量">
-                      <InfoCircle className="w-3 h-3 text-gray-400" />
+                      <Info className="w-3 h-3 text-gray-400" />
                     </Tooltip>
                   </span>
                 }
@@ -240,7 +240,7 @@ function TenantConfigPage() {
                     <Database className="w-4 h-4" />
                     每日最大 Token
                     <Tooltip title="每日可消耗的最大 Token 数量">
-                      <InfoCircle className="w-3 h-3 text-gray-400" />
+                      <Info className="w-3 h-3 text-gray-400" />
                     </Tooltip>
                   </span>
                 }
@@ -259,7 +259,7 @@ function TenantConfigPage() {
                     <Bot className="w-4 h-4" />
                     最大并发任务
                     <Tooltip title="同时运行的 Agent 任务数量上限">
-                      <InfoCircle className="w-3 h-3 text-gray-400" />
+                      <Info className="w-3 h-3 text-gray-400" />
                     </Tooltip>
                   </span>
                 }

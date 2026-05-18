@@ -195,7 +195,7 @@ public class LoggingFilter implements Filter {
         log.put("status", response.getStatus());
         log.put("duration_ms", durationMs);
         log.put("request_size", requestSize);
-        log.put("response_size", response.getContentLength());
+        log.put("response_size", response instanceof ContentCachingResponseWrapper ? ((ContentCachingResponseWrapper) response).getContentLength() : -1);
 
         // 请求头（脱敏）
         log.put("headers", sanitizeHeaders(request));
@@ -266,7 +266,11 @@ public class LoggingFilter implements Filter {
         public ContentCachingResponseWrapper(jakarta.servlet.http.HttpServletResponse response) {
             super(response);
             this.original = response;
-            this.outputStream = new ContentCachingServletOutputStream(content, response.getOutputStream());
+            try {
+                this.outputStream = new ContentCachingServletOutputStream(content, response.getOutputStream());
+            } catch (java.io.IOException e) {
+                throw new RuntimeException("Failed to get output stream from response", e);
+            }
         }
 
         @Override
@@ -279,7 +283,6 @@ public class LoggingFilter implements Filter {
             return new java.io.PrintWriter(new java.io.OutputStreamWriter(content, getCharacterEncoding()), true);
         }
 
-        @Override
         public int getContentLength() {
             return content.size();
         }
