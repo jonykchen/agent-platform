@@ -57,7 +57,7 @@ public class ApprovalTaskResponse {
      *
      * <p>【格式】run_xxx
      */
-    private String run_id;
+    private String runId;
 
     /**
      * 工具调用 ID
@@ -66,7 +66,7 @@ public class ApprovalTaskResponse {
      *
      * <p>【格式】call_xxx
      */
-    private String tool_invocation_id;
+    private String toolInvocationId;
 
     /**
      * 租户 ID
@@ -75,7 +75,7 @@ public class ApprovalTaskResponse {
      *
      * <p>【格式】UUID 格式
      */
-    private String tenant_id;
+    private String tenantId;
 
     /**
      * 任务类型
@@ -84,7 +84,7 @@ public class ApprovalTaskResponse {
      *
      * <p>【示例】payment、data_access、config_change
      */
-    private String task_type;
+    private String taskType;
 
     /**
      * 任务标题
@@ -107,7 +107,7 @@ public class ApprovalTaskResponse {
      *
      * <p>【用途】审批人查看请求详情
      */
-    private Map<String, Object> request_context;
+    private Map<String, Object> requestContext;
 
     /**
      * 请求者 ID
@@ -116,7 +116,7 @@ public class ApprovalTaskResponse {
      *
      * <p>【格式】UUID 格式
      */
-    private String requester_id;
+    private String requesterId;
 
     /**
      * 指派审批人 ID
@@ -125,7 +125,7 @@ public class ApprovalTaskResponse {
      *
      * <p>【格式】UUID 格式
      */
-    private String assignee_id;
+    private String assigneeId;
 
     /**
      * 优先级
@@ -152,21 +152,21 @@ public class ApprovalTaskResponse {
      *
      * <p>【格式】UUID 格式
      */
-    private String reviewer_id;
+    private String reviewerId;
 
     /**
      * 审批意见
      *
      * <p>审批人提交的审批意见或备注。
      */
-    private String review_comment;
+    private String reviewComment;
 
     /**
      * 审批时间
      *
      * <p>审批操作的时间（ISO 8601 格式）。
      */
-    private Instant reviewed_at;
+    private Instant reviewedAt;
 
     /**
      * 过期时间
@@ -175,19 +175,19 @@ public class ApprovalTaskResponse {
      *
      * <p>【格式】ISO 8601 格式
      */
-    private Instant expires_at;
+    private Instant expiresAt;
 
     /**
      * 创建时间
      *
      * <p>审批任务的创建时间（ISO 8601 格式）。
      */
-    private Instant created_at;
+    private Instant createdAt;
 
     /**
      * 更新时间
      *
      * <p>审批任务最后更新时间（ISO 8601 格式）。
      */
-    private Instant updated_at;
+    private Instant updatedAt;
 }

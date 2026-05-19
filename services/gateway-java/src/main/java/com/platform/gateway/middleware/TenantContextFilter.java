@@ -1,20 +1,26 @@
 package com.platform.gateway.middleware;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.platform.gateway.dto.response.ErrorResponse;
 import com.platform.gateway.exception.BusinessException;
 import com.platform.gateway.exception.ErrorCode;
 import com.platform.gateway.service.TenantContextService;
+import com.platform.gateway.util.RequestIdGenerator;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 租户上下文过滤器
@@ -99,12 +105,14 @@ public class TenantContextFilter implements Filter {
     private static final String REQUEST_ID_HEADER = "X-Request-ID";
 
     private final TenantContextService tenantContextService;
+    private final ObjectMapper objectMapper;
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
 
         HttpServletRequest httpRequest = (HttpServletRequest) request;
+        HttpServletResponse httpResponse = (HttpServletResponse) response;
 
         // 提取 tenant_id
         String tenantId = httpRequest.getHeader(TENANT_ID_HEADER);
@@ -118,7 +126,8 @@ public class TenantContextFilter implements Filter {
                 return;
             }
             log.warn("Missing tenant_id header");
-            throw BusinessException.of(ErrorCode.ERR_INVALID_REQUEST, "Missing X-Tenant-ID header");
+            writeErrorResponse(httpResponse, ErrorCode.ERR_INVALID_REQUEST, "Missing X-Tenant-ID header");
+            return;
         }
 
         // 提取 user_id（可选）
@@ -141,5 +150,24 @@ public class TenantContextFilter implements Filter {
         } finally {
             tenantContextService.clear();
         }
+    }
+
+    /**
+     * 写入错误响应（Filter 层异常处理）
+     * Filter 中抛出的异常不会被 @RestControllerAdvice 捕获，需要手动处理
+     */
+    private void writeErrorResponse(HttpServletResponse response, ErrorCode errorCode, String message) throws IOException {
+        response.setStatus(errorCode.getHttpStatus());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+
+        ErrorResponse errorResponse = ErrorResponse.builder()
+                .error(errorCode.getCode())
+                .message(message)
+                .userMessage(errorCode.getUserMessage())
+                .requestId(RequestIdGenerator.getCurrent())
+                .build();
+
+        response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
     }
 }

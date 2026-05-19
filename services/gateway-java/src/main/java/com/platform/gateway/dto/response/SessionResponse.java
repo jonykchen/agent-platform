@@ -101,4 +101,31 @@ public class SessionResponse {
      * <p>会话最后更新时间，如最后一条消息时间（ISO 8601 格式）。
      */
     private Instant updatedAt;
+
+    /**
+     * 消息数量
+     *
+     * <p>该会话的 AgentRun 数量。
+     *
+     * <p>【前端字段】messages_count
+     */
+    private Integer messagesCount;
+
+    /**
+     * 最后一条消息摘要
+     *
+     * <p>最后一个 Run 的 outputMessage 摘要（截取前100字符）。
+     *
+     * <p>【前端字段】last_message
+     */
+    private String lastMessage;
+
+    /**
+     * 最后消息时间
+     *
+     * <p>最后一个 Run 的 completedAt 或 createdAt。
+     *
+     * <p>【前端字段】last_message_at
+     */
+    private Instant lastMessageAt;
 }

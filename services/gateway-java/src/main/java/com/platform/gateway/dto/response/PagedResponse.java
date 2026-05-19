@@ -8,16 +8,13 @@ import java.util.List;
 /**
  * 分页响应包装 DTO
  *
- * <p>另一种分页响应结构，采用 snake_case 字段命名风格。
- * 用于部分接口的分页响应。
+ * <p>分页响应结构，用于列表接口的分页数据返回。
  *
  * <p>【对应 API】
  * <ul>
  *   <li>GET /api/v1/approvals - 审批列表</li>
  *   <li>GET /api/v1/audit/events - 审计事件列表</li>
  * </ul>
- *
- * <p>【字段命名】采用 snake_case 风格，如 page_size、total_pages
  *
  * @param <T> 数据项类型
  * @see com.platform.gateway.controller.ApprovalController
@@ -53,12 +50,12 @@ public class PagedResponse<T> {
      *
      * <p>每页返回的记录数。
      */
-    private Integer page_size;
+    private Integer pageSize;
 
     /**
      * 总页数
      *
-     * <p>总页数，根据 total 和 page_size 计算得出。
+     * <p>总页数，根据 total 和 pageSize 计算得出。
      */
-    private Integer total_pages;
+    private Integer totalPages;
 }
