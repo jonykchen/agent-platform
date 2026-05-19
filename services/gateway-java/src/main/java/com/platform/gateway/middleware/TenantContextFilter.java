@@ -109,9 +109,11 @@ public class TenantContextFilter implements Filter {
         // 提取 tenant_id
         String tenantId = httpRequest.getHeader(TENANT_ID_HEADER);
         if (tenantId == null || tenantId.isBlank()) {
-            // 允许健康检查等路径跳过租户检查
+            // 允许健康检查和认证路径跳过租户检查
             String path = httpRequest.getRequestURI();
-            if (path.startsWith("/health") || path.startsWith("/ready") || path.startsWith("/actuator")) {
+            if (path.startsWith("/health") || path.startsWith("/ready") || path.startsWith("/actuator")
+                    || path.equals("/api/v1/auth/login") || path.equals("/api/v1/auth/refresh")
+                    || path.equals("/api/v1/auth/logout")) {
                 chain.doFilter(request, response);
                 return;
             }
