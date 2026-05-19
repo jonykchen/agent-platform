@@ -117,11 +117,9 @@ public class TenantContextFilter implements Filter {
         // 提取 tenant_id
         String tenantId = httpRequest.getHeader(TENANT_ID_HEADER);
         if (tenantId == null || tenantId.isBlank()) {
-            // 允许健康检查和认证路径跳过租户检查
+            // 允许健康检查、认证路径和公开 API 跳过租户检查
             String path = httpRequest.getRequestURI();
-            if (path.startsWith("/health") || path.startsWith("/ready") || path.startsWith("/actuator")
-                    || path.equals("/api/v1/auth/login") || path.equals("/api/v1/auth/refresh")
-                    || path.equals("/api/v1/auth/logout")) {
+            if (isPublicPath(path)) {
                 chain.doFilter(request, response);
                 return;
             }
@@ -150,6 +148,29 @@ public class TenantContextFilter implements Filter {
         } finally {
             tenantContextService.clear();
         }
+    }
+
+    /**
+     * 判断是否为公开路径（无需租户上下文）
+     *
+     * @param path 请求路径
+     * @return 是否为公开路径
+     */
+    private boolean isPublicPath(String path) {
+        // 健康检查和监控端点
+        if (path.startsWith("/health") || path.startsWith("/ready") || path.startsWith("/actuator")) {
+            return true;
+        }
+        // 认证相关端点
+        if (path.equals("/api/v1/auth/login") || path.equals("/api/v1/auth/refresh")
+                || path.equals("/api/v1/auth/logout")) {
+            return true;
+        }
+        // 公开 API：可用模型列表
+        if (path.equals("/api/v1/tenants/models")) {
+            return true;
+        }
+        return false;
     }
 
     /**
