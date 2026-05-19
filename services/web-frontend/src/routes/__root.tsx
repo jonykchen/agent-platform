@@ -1,6 +1,5 @@
 import { createRootRoute, Outlet, redirect } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/authStore';
-import { PageLayout } from '@/components/layout/PageLayout';
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -25,11 +24,7 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
-  return (
-    <PageLayout>
-      <Outlet />
-    </PageLayout>
-  );
+  return <Outlet />;
 }
 
 export default Route;
