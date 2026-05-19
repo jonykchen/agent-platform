@@ -35,13 +35,11 @@
 from __future__ import annotations
 
 import typing
-from typing import Callable
 
-from opentelemetry import context, trace
-from opentelemetry.propagate import extract, inject
+from opentelemetry import trace
+from opentelemetry.propagate import extract
 from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import Span, Status, StatusCode
-from opentelemetry.trace.propagation.tracecontext import TraceContextPropagator
 
 if typing.TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -66,7 +64,7 @@ class OtelMiddleware:
         >>> app.add_middleware(OtelMiddleware, service_name="orchestrator-python")
     """
 
-    def __init__(self, app: "ASGIApp", service_name: str = "orchestrator-python") -> None:
+    def __init__(self, app: ASGIApp, service_name: str = "orchestrator-python") -> None:
         """初始化中间件
 
         Args:
@@ -77,7 +75,7 @@ class OtelMiddleware:
         self.service_name = service_name
         self.tracer = trace.get_tracer(service_name)
 
-    async def __call__(self, scope: "Scope", receive: "Receive", send: "Send") -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """ASGI 中间件入口点
 
         处理 HTTP 请求，创建 Span 并传播 trace context。
@@ -128,7 +126,7 @@ class OtelMiddleware:
             response_status_code: int = 0
             response_headers: dict[str, str] = {}
 
-            async def send_wrapper(message: "Message") -> None:
+            async def send_wrapper(message: Message) -> None:
                 """包装 send callable 以捕获响应信息"""
                 nonlocal response_status_code, response_headers
 
@@ -146,17 +144,18 @@ class OtelMiddleware:
 
                 await send(message)
 
-            def inject_response_headers(message: "Message") -> None:
+            def inject_response_headers(message: Message) -> None:
                 """将 trace context 注入到响应头"""
-                # 获取当前 context
-                current_ctx = context.get_current()
+                # 创建 carrier dict 并注入 trace context
+                carrier: dict[str, str] = {}
+                inject(carrier)
+
                 # 创建新的 headers 列表
                 headers = list(message.get("headers", []))
 
-                # 注入 traceparent header
-                traceparent_value = TraceContextPropagator().fields(current_ctx)
-                if traceparent_value:
-                    headers.append((b"traceparent", traceparent_value.encode("latin1")))
+                # 添加 traceparent header
+                if "traceparent" in carrier:
+                    headers.append((b"traceparent", carrier["traceparent"].encode("latin1")))
 
                 message["headers"] = headers
 
@@ -168,9 +167,7 @@ class OtelMiddleware:
                 span.set_attribute(SpanAttributes.HTTP_STATUS_CODE, response_status_code)
 
                 # 设置 Span 状态
-                if response_status_code >= 500:
-                    span.set_status(Status(StatusCode.ERROR, f"HTTP {response_status_code}"))
-                elif response_status_code >= 400:
+                if response_status_code >= 500 or response_status_code >= 400:
                     span.set_status(Status(StatusCode.ERROR, f"HTTP {response_status_code}"))
                 else:
                     span.set_status(Status(StatusCode.OK))
@@ -180,7 +177,7 @@ class OtelMiddleware:
                 self._record_exception(span, exc)
                 raise
 
-    def _set_http_attributes(self, span: Span, scope: "Scope") -> None:
+    def _set_http_attributes(self, span: Span, scope: Scope) -> None:
         """设置 HTTP 相关 Span 属性
 
         遵循 OpenTelemetry 语义约定（Semantic Conventions）。
@@ -220,7 +217,7 @@ class OtelMiddleware:
         span.set_attribute(SpanAttributes.HTTP_FLAVOR, http_version)
 
         # 服务信息
-        span.set_attribute(SpanAttributes.SERVICE_NAME, self.service_name)
+        span.set_attribute("service.name", self.service_name)
 
         # 客户端信息
         client = scope.get("client")

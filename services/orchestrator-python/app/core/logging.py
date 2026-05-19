@@ -67,7 +67,8 @@
 
 import re
 import sys
-from typing import Any, Optional
+
+import structlog
 
 
 def setup_logging(
@@ -189,7 +190,7 @@ def setup_logging(
 
 
 class _SensitiveDataProcessor(structlog.types.Processor):
-    """过滤日志中的敏感数据
+    r"""过滤日志中的敏感数据
 
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     【脱敏原理】
@@ -321,7 +322,6 @@ class _SensitiveDataProcessor(structlog.types.Processor):
     }
 
     def __call__(self, logger, method_name, event_dict):
-        import re
 
         for key, value in event_dict.items():
             if isinstance(value, str):
@@ -450,6 +450,7 @@ class _RequestContextProcessor(structlog.types.Processor):
     def __call__(self, logger, method_name, event_dict):
         try:
             from app.api.middleware.request_context import get_request_id, get_tenant_id, get_user_id
+
             event_dict.setdefault("request_id", get_request_id(""))
             event_dict.setdefault("tenant_id", get_tenant_id(""))
             event_dict.setdefault("user_id", get_user_id(""))

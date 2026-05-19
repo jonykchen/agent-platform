@@ -132,6 +132,8 @@ show_menu() {
     printf "   [8]  运行 E2E 测试   - 端到端集成测试\n"
     printf "   [9]  完整 CI 流水线  - lint + test + security\n"
     printf "   [10] 安全扫描        - Trivy 漏洞 + Gitleaks 密钥泄露\n"
+    printf "   [11] 生成 Proto     - 生成 gRPC/Protobuf 代码\n"
+    printf "   [12] 编译 Java      - 编译所有 Java 服务\n"
     printf "   [0]  退出\n\n"
 }
 
@@ -216,11 +218,57 @@ do_setup() {
         BUF_VERSION=$(buf --version 2>&1 || echo "unknown")
         print_status "buf: ${BUF_VERSION}"
     else
-        print_warn "buf 未安装 (Proto 可选)"
+        print_warn "buf 未安装 (Proto 生成工具)"
+        print_info "正在安装 buf..."
+
+        # 直接下载二进制文件（推荐方式）
+        local buf_url
+        local buf_bin="/usr/local/bin/buf"
+
         if [ "$OS" = "macOS" ]; then
-            printf "  安装: brew install bufbuild/buf/buf\n"
+            buf_url="https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Darwin-x86_64"
         elif [ "$OS" = "Linux" ]; then
-            printf "  安装: \" BUF_URL=\"https://github.com/bufbuild/buf/releases/latest/download/buf-\$(uname -s)-\$(uname -m)\" && sudo curl -sSL \"\$BUF_URL\" -o /usr/local/bin/buf && sudo chmod +x /usr/local/bin/buf\n"
+            buf_url="https://github.com/bufbuild/buf/releases/download/v1.47.2/buf-Linux-x86_64"
+        else
+            print_warn "不支持的操作系统: $OS"
+            return 0
+        fi
+
+        # 使用临时文件下载
+        local buf_tmp
+        buf_tmp="$(mktemp "${TMPDIR:-/tmp}/buf.XXXXXX")"
+
+        if curl -fsSL "$buf_url" -o "$buf_tmp" && chmod +x "$buf_tmp"; then
+            if sudo mv "$buf_tmp" "$buf_bin" 2>/dev/null || mv "$buf_tmp" "$buf_bin" 2>/dev/null; then
+                export PATH="/usr/local/bin:$PATH"
+                if command -v buf &>/dev/null; then
+                    print_status "buf 安装成功: $(buf --version 2>&1 | head -1)"
+                else
+                    print_warn "buf 安装完成但未在 PATH 中找到"
+                fi
+            else
+                rm -f "$buf_tmp"
+                print_warn "buf 安装失败（权限问题），请手动安装"
+            fi
+        else
+            rm -f "$buf_tmp"
+            print_warn "buf 下载失败"
+        fi
+    fi
+
+    # ruff (Python linter)
+    if command -v ruff &>/dev/null; then
+        RUFF_VERSION=$(ruff version 2>/dev/null || echo "unknown")
+        print_status "ruff: ${RUFF_VERSION}"
+    else
+        print_warn "ruff 未安装"
+        print_info "正在安装 ruff..."
+        if command -v uv &>/dev/null; then
+            uv tool install ruff && print_status "ruff 安装成功 (via uv)"
+        elif command -v pip &>/dev/null; then
+            pip install ruff && print_status "ruff 安装成功 (via pip)"
+        else
+            print_warn "ruff 安装失败，请手动安装: pip install ruff"
         fi
     fi
 
@@ -679,6 +727,164 @@ do_security() {
 }
 
 # ============================================================
+#  [11] 生成 Proto 代码
+# ============================================================
+do_proto() {
+    printf "\n${BLUE}=== 生成 Proto 代码 ===${NC}\n\n"
+
+    # 检查 buf 是否安装
+    if ! command -v buf &>/dev/null; then
+        print_warn "buf 未安装，正在安装..."
+        if [ "$OS" = "macOS" ]; then
+            if command -v brew &>/dev/null; then
+                brew install bufbuild/buf/buf || {
+                    local buf_url="https://github.com/bufbuild/buf/releases/latest/download/buf-Darwin-x86_64"
+                    curl -fsSL "$buf_url" -o /usr/local/bin/buf && chmod +x /usr/local/bin/buf
+                }
+            else
+                local buf_url="https://github.com/bufbuild/buf/releases/latest/download/buf-Darwin-x86_64"
+                curl -fsSL "$buf_url" -o /usr/local/bin/buf && chmod +x /usr/local/bin/buf
+            fi
+        elif [ "$OS" = "Linux" ]; then
+            local buf_url="https://github.com/bufbuild/buf/releases/latest/download/buf-Linux-x86_64"
+            curl -fsSL "$buf_url" -o /usr/local/bin/buf && chmod +x /usr/local/bin/buf
+        fi
+        export PATH="/usr/local/bin:$PATH"
+    fi
+
+    if ! command -v buf &>/dev/null; then
+        print_error "buf 安装失败"
+        return 1
+    fi
+
+    print_status "buf 已就绪: $(buf --version 2>&1 || echo 'installed')"
+
+    # 创建输出目录
+    for service in gateway-java tool-bus-java governance-java; do
+        mkdir -p "$PROJECT_ROOT/services/$service/target/generated-sources/proto"
+    done
+
+    # 生成 proto 代码
+    print_info "正在生成 Proto 代码..."
+    cd "$PROJECT_ROOT/contracts" || { print_error "contracts 目录不存在"; return 1; }
+
+    if buf generate; then
+        print_status "Proto 代码生成成功"
+    else
+        print_error "Proto 代码生成失败"
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    # 验证生成的文件
+    printf "\n${BLUE}=== 生成的文件 ===${NC}\n"
+    for service in gateway-java tool-bus-java governance-java; do
+        local gen_dir="$PROJECT_ROOT/services/$service/target/generated-sources/proto"
+        if [ -d "$gen_dir" ]; then
+            local file_count=$(find "$gen_dir" -name "*.java" 2>/dev/null | wc -l | tr -d ' ')
+            print_status "$service: ${file_count} 个 Java 文件"
+        fi
+    done
+
+    printf "\n"
+    print_status "Proto 代码生成完成"
+}
+
+# ============================================================
+#  [12] 编译 Java 服务
+# ============================================================
+do_build_java() {
+    printf "\n${BLUE}=== 编译 Java 服务 ===${NC}\n\n"
+
+    # 检查 Java
+    if ! command -v java &>/dev/null; then
+        print_error "Java 未安装"
+        return 1
+    fi
+
+    local JAVA_VERSION=$(java -version 2>&1 | head -1)
+    print_status "Java: ${JAVA_VERSION}"
+
+    # 检查 Maven
+    local MVN_CMD=""
+    if command -v mvn &>/dev/null; then
+        MVN_CMD="mvn"
+    elif [ -f "$PROJECT_ROOT/services/gateway-java/mvnw" ]; then
+        MVN_CMD="$PROJECT_ROOT/services/gateway-java/mvnw"
+    else
+        print_error "Maven 未安装"
+        return 1
+    fi
+
+    print_status "Maven: 已就绪"
+
+    # 先确保 Proto 代码已生成
+    printf "\n"
+    print_info "检查 Proto 代码..."
+    local need_proto=false
+    for service in gateway-java tool-bus-java governance-java; do
+        local gen_dir="$PROJECT_ROOT/services/$service/target/generated-sources/proto"
+        if [ ! -d "$gen_dir" ] || [ -z "$(find "$gen_dir" -name "*.java" 2>/dev/null)" ]; then
+            need_proto=true
+            break
+        fi
+    done
+
+    if [ "$need_proto" = true ]; then
+        print_info "Proto 代码未生成，正在生成..."
+        do_proto || { print_error "Proto 代码生成失败"; return 1; }
+    else
+        print_status "Proto 代码已存在"
+    fi
+
+    # 编译各个 Java 服务
+    local java_services=("gateway-java" "tool-bus-java" "governance-java")
+    local failed=()
+
+    for service in "${java_services[@]}"; do
+        local service_path="$PROJECT_ROOT/services/$service"
+        if [ ! -d "$service_path" ]; then
+            print_warn "$service 不存在，跳过"
+            continue
+        fi
+
+        printf "\n"
+        print_info "编译 $service..."
+
+        (
+            cd "$service_path" || exit 1
+            if $MVN_CMD package -DskipTests -q; then
+                print_status "$service 编译成功"
+            else
+                print_error "$service 编译失败"
+                exit 1
+            fi
+        ) || failed+=("$service")
+    done
+
+    printf "\n"
+
+    if [ ${#failed[@]} -eq 0 ]; then
+        print_status "所有 Java 服务编译成功"
+
+        printf "\n${BLUE}=== 编译产物 ===${NC}\n"
+        for service in "${java_services[@]}"; do
+            local jar_path="$PROJECT_ROOT/services/$service/target"
+            if [ -d "$jar_path" ]; then
+                local jar_file=$(ls "$jar_path"/*.jar 2>/dev/null | grep -v "\.original" | head -1)
+                if [ -n "$jar_file" ]; then
+                    print_status "$service: $(basename "$jar_file")"
+                fi
+            fi
+        done
+    else
+        print_error "以下服务编译失败: ${failed[*]}"
+        return 1
+    fi
+}
+
+# ============================================================
 #  主逻辑
 # ============================================================
 
@@ -695,15 +901,32 @@ if [ $# -gt 0 ]; then
         8|e2e)       do_e2e_test ;;
         9|ci)        do_ci ;;
         10|security) do_security ;;
+        11|proto)    do_proto ;;
+        12|build-java|java) do_build_java ;;
+        all|full)
+            # 全流程: setup -> proto -> build-java -> up
+            printf "${BLUE}=== 全流程部署 ===${NC}\n\n"
+            do_setup || true
+            printf "\n"
+            do_proto || { print_error "Proto 生成失败"; exit 1; }
+            printf "\n"
+            do_build_java || { print_error "Java 编译失败"; exit 1; }
+            printf "\n"
+            do_dev_up || true
+            printf "\n"
+            print_status "全流程部署完成"
+            ;;
         -h|--help)
             printf "用法: %s [操作]\n" "$0"
-            printf "操作: setup|uv|up|down|lint|fmt|test|e2e|ci|security\n"
+            printf "操作: setup|uv|up|down|lint|fmt|test|e2e|ci|security|proto|build-java|all\n"
             printf "无参数时进入交互模式\n"
+            printf "\n快捷操作:\n"
+            printf "  all/full  - 全流程部署 (setup + proto + build-java + up)\n"
             exit 0
             ;;
         *)
             print_error "未知操作: $1"
-            printf "可用操作: setup, uv, up, down, lint, fmt, test, e2e, ci, security\n"
+            printf "可用操作: setup, uv, up, down, lint, fmt, test, e2e, ci, security, proto, build-java, all\n"
             exit 1
             ;;
     esac
@@ -713,7 +936,7 @@ fi
 # 交互模式
 while true; do
     show_menu
-    read -r -p "请选择操作 (0-10): " CHOICE
+    read -r -p "请选择操作 (0-12): " CHOICE
 
     case "$CHOICE" in
         0) printf "再见!\n"; exit 0 ;;
@@ -727,7 +950,9 @@ while true; do
         8) do_e2e_test ;;
         9) do_ci ;;
         10) do_security ;;
-        h|H) printf "用法: ./scripts/unix/dev.sh [setup|uv|up|down|lint|fmt|test|e2e|ci|security]\n" ;;
+        11) do_proto ;;
+        12) do_build_java ;;
+        h|H) printf "用法: ./scripts/unix/dev.sh [setup|uv|up|down|lint|fmt|test|e2e|ci|security|proto|build-java|all]\n" ;;
         *) print_error "无效选择" ;;
     esac
 
