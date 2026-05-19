@@ -21,18 +21,18 @@ export interface AuditEvent {
   created_at: string;
 }
 
-/** 审计查询参数 */
+/** 审计查询参数（请求参数使用 camelCase） */
 export interface AuditQueryParams {
-  page_number: number;
-  page_size: number;
-  event_type?: string;
-  event_category?: string;
+  pageNumber: number;
+  pageSize: number;
+  eventType?: string;
+  eventCategory?: string;
   severity?: string;
-  user_id?: string;
-  resource_type?: string;
-  resource_id?: string;
-  start_time?: string;
-  end_time?: string;
-  sort_by?: string;
-  sort_descending?: boolean;
+  userId?: string;
+  resourceType?: string;
+  resourceId?: string;
+  startTime?: string;
+  endTime?: string;
+  sortBy?: string;
+  sortDescending?: boolean;
 }

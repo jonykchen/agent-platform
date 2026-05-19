@@ -10,7 +10,7 @@ export interface CreateSessionRequest {
 export interface SessionListParams {
   status?: 'active' | 'archived' | 'closed';
   page?: number;
-  page_size?: number;
+  pageSize?: number;
   search?: string;
 }
 

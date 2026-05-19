@@ -157,8 +157,8 @@ public class ApprovalService {
                 .items(items)
                 .total(page.getTotalElements())
                 .page(request.getPage() != null ? request.getPage() : 1)
-                .page_size(pageSize)
-                .total_pages(page.getTotalPages())
+                .pageSize(pageSize)
+                .totalPages(page.getTotalPages())
                 .build();
     }
 
@@ -386,23 +386,23 @@ public class ApprovalService {
     private ApprovalTaskResponse toResponse(ApprovalTask task) {
         return ApprovalTaskResponse.builder()
                 .id(task.getId().toString())
-                .run_id(task.getRunId() != null ? task.getRunId().toString() : null)
-                .tool_invocation_id(task.getToolInvocationId() != null ? task.getToolInvocationId().toString() : null)
-                .tenant_id(task.getTenantId())
-                .task_type(task.getTaskType())
+                .runId(task.getRunId() != null ? task.getRunId().toString() : null)
+                .toolInvocationId(task.getToolInvocationId() != null ? task.getToolInvocationId().toString() : null)
+                .tenantId(task.getTenantId())
+                .taskType(task.getTaskType())
                 .title(task.getTitle())
                 .description(task.getDescription())
-                .request_context(task.getRequestContext())
-                .requester_id(task.getRequesterId())
-                .assignee_id(task.getAssigneeId())
+                .requestContext(task.getRequestContext())
+                .requesterId(task.getRequesterId())
+                .assigneeId(task.getAssigneeId())
                 .priority(task.getPriority())
                 .status(task.getStatus())
-                .reviewer_id(task.getReviewerId())
-                .review_comment(task.getReviewComment())
-                .reviewed_at(task.getReviewedAt())
-                .expires_at(task.getExpiresAt())
-                .created_at(task.getCreatedAt())
-                .updated_at(task.getUpdatedAt())
+                .reviewerId(task.getReviewerId())
+                .reviewComment(task.getReviewComment())
+                .reviewedAt(task.getReviewedAt())
+                .expiresAt(task.getExpiresAt())
+                .createdAt(task.getCreatedAt())
+                .updatedAt(task.getUpdatedAt())
                 .build();
     }
 

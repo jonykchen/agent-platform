@@ -161,7 +161,7 @@ public class ApprovalController {
         ApprovalTaskResponse response = approvalService.getApproval(id, tenantId);
 
         log.info("Get approval result: requestId={}, approvalId={}, type={}, status={}",
-                requestId, id, response.getTask_type(), response.getStatus());
+                requestId, id, response.getTaskType(), response.getStatus());
 
         return ResponseEntity.ok(response);
     }

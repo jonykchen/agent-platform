@@ -22,7 +22,7 @@ export async function getAuditEvent(eventId: string): Promise<AuditEvent> {
  * 导出审计数据
  */
 export async function exportAuditEvents(
-  params: Omit<AuditQueryParams, 'page_number' | 'page_size'> & { format?: 'csv' | 'json' },
+  params: Omit<AuditQueryParams, 'pageNumber' | 'pageSize'> & { format?: 'csv' | 'json' },
   format: 'csv' | 'json' = 'json'
 ): Promise<Blob> {
   const response = await api.get('/audit/events/export', {
@@ -43,7 +43,7 @@ export async function getAuditEventTypes(): Promise<string[]> {
 /**
  * 获取审计统计信息
  */
-export async function getAuditStats(params: { start_time: string; end_time: string }): Promise<{
+export async function getAuditStats(params: { startTime: string; endTime: string }): Promise<{
   total_events: number;
   by_severity: Record<string, number>;
   by_category: Record<string, number>;

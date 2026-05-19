@@ -6,12 +6,12 @@ export interface RequestHeader {
   'X-Trace-ID': string;
 }
 
-/** 分页请求 */
+/** 分页请求（请求参数使用 camelCase） */
 export interface PageRequest {
-  page_number: number;
-  page_size: number;
-  sort_by?: string;
-  sort_descending?: boolean;
+  pageNumber: number;
+  pageSize: number;
+  sortBy?: string;
+  sortDescending?: boolean;
 }
 
 /** 分页响应 */
