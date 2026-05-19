@@ -2,7 +2,7 @@ import api from './api';
 import type { Notification } from '@/stores/notificationStore';
 import type { PageResponse, PageRequest } from '@/types/common';
 
-/** 通知查询参数 */
+/** 通知查询参数（请求参数使用 camelCase） */
 export interface NotificationQueryParams extends PageRequest {
   type?: 'approval' | 'system' | 'alert' | 'info';
   read?: boolean;

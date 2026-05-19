@@ -72,8 +72,8 @@ function AuditLogPage() {
 
   // 筛选状态
   const [params, setParams] = useState<AuditQueryParams>({
-    page_number: 1,
-    page_size: 20,
+    pageNumber: 1,
+    pageSize: 20,
   });
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [detailEvent, setDetailEvent] = useState<AuditEvent | null>(null);
@@ -107,10 +107,10 @@ function AuditLogPage() {
     (pagination: TablePaginationConfig, filters: Record<string, FilterValue | null>) => {
       setParams((prev) => ({
         ...prev,
-        page_number: pagination.current || 1,
-        page_size: pagination.pageSize || 20,
+        pageNumber: pagination.current || 1,
+        pageSize: pagination.pageSize || 20,
         severity: filters.severity?.[0] as string | undefined,
-        event_category: filters.event_category?.[0] as string | undefined,
+        eventCategory: filters.event_category?.[0] as string | undefined,
       }));
     },
     []
@@ -128,8 +128,8 @@ function AuditLogPage() {
         const blob = await exportAuditEvents(
           {
             ...params,
-            start_time: params.start_time,
-            end_time: params.end_time,
+            startTime: params.startTime,
+            endTime: params.endTime,
           },
           format
         );
@@ -265,9 +265,9 @@ function AuditLogPage() {
               onChange={(dates) => {
                 setParams((prev) => ({
                   ...prev,
-                  start_time: dates?.[0]?.toISOString(),
-                  end_time: dates?.[1]?.toISOString(),
-                  page_number: 1,
+                  startTime: dates?.[0]?.toISOString(),
+                  endTime: dates?.[1]?.toISOString(),
+                  pageNumber: 1,
                 }));
               }}
             />
@@ -277,7 +277,7 @@ function AuditLogPage() {
               allowClear
               style={{ width: 150 }}
               onChange={(value) =>
-                setParams((prev) => ({ ...prev, event_type: value, page_number: 1 }))
+                setParams((prev) => ({ ...prev, eventType: value, pageNumber: 1 }))
               }
             >
               {eventTypes?.map((type) => (
@@ -292,7 +292,7 @@ function AuditLogPage() {
               prefix={<Search className="w-4 h-4 text-gray-400" />}
               style={{ width: 150 }}
               onChange={(e) =>
-                setParams((prev) => ({ ...prev, user_id: e.target.value || undefined, page_number: 1 }))
+                setParams((prev) => ({ ...prev, userId: e.target.value || undefined, pageNumber: 1 }))
               }
             />
 
@@ -301,7 +301,7 @@ function AuditLogPage() {
               prefix={<Search className="w-4 h-4 text-gray-400" />}
               style={{ width: 150 }}
               onChange={(e) =>
-                setParams((prev) => ({ ...prev, resource_id: e.target.value || undefined, page_number: 1 }))
+                setParams((prev) => ({ ...prev, resourceId: e.target.value || undefined, pageNumber: 1 }))
               }
             />
 
@@ -343,8 +343,8 @@ function AuditLogPage() {
             rowKey="id"
             loading={isLoading}
             pagination={{
-              current: params.page_number,
-              pageSize: params.page_size,
+              current: params.pageNumber,
+              pageSize: params.pageSize,
               total: data?.total_count || 0,
               showSizeChanger: true,
               showQuickJumper: true,

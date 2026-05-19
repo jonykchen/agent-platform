@@ -54,7 +54,7 @@ function ChatListPage() {
   const [params, setParams] = useState<SessionListParams>({
     status: 'active',
     page: 1,
-    page_size: APP_CONFIG.DEFAULT_PAGE_SIZE,
+    pageSize: APP_CONFIG.DEFAULT_PAGE_SIZE,
   });
   const [searchText, setSearchText] = useState('');
 
@@ -327,15 +327,15 @@ function ChatListPage() {
               );
             }}
             pagination={
-              data && data.total_count > params.page_size!
+              data && data.total_count > params.pageSize!
                 ? {
                     current: params.page,
-                    pageSize: params.page_size,
+                    pageSize: params.pageSize,
                     total: data.total_count,
                     showSizeChanger: true,
                     showTotal: (total) => `共 ${total} 条`,
                     onChange: (page, pageSize) =>
-                      setParams((p) => ({ ...p, page, page_size: pageSize })),
+                      setParams((p) => ({ ...p, page, pageSize })),
                   }
                 : false
             }

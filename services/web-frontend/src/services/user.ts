@@ -2,7 +2,7 @@ import api from './api';
 import type { User, Role } from '@/types/user';
 import type { PageResponse, PageRequest } from '@/types/common';
 
-/** 用户查询参数 */
+/** 用户查询参数（请求参数使用 camelCase） */
 export interface UserQueryParams extends PageRequest {
   username?: string;
   email?: string;

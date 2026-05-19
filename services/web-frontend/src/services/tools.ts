@@ -2,21 +2,21 @@ import api from './api';
 import type { ToolDefinition, ToolRegisterRequest, ToolInvocation } from '@/types/tools';
 import type { PageResponse, PageRequest } from '@/types/common';
 
-/** 工具列表查询参数 */
+/** 工具列表查询参数（请求参数使用 camelCase） */
 export interface GetToolsParams extends Partial<PageRequest> {
   search?: string;
   category?: 'query' | 'write' | 'external';
-  risk_level?: 'low' | 'medium' | 'high' | 'critical';
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
   status?: 'draft' | 'active' | 'disabled' | 'deprecated' | 'sunset';
   enabled?: boolean;
 }
 
-/** 工具调用历史查询参数 */
+/** 工具调用历史查询参数（请求参数使用 camelCase） */
 export interface GetToolInvocationsParams extends Partial<PageRequest> {
-  tool_name: string;
+  toolName: string;
   status?: 'pending' | 'success' | 'failed' | 'rejected' | 'timeout';
-  start_date?: string;
-  end_date?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 /**
@@ -65,9 +65,9 @@ export async function disableTool(name: string): Promise<ToolDefinition> {
 export async function getToolInvocations(
   params: GetToolInvocationsParams
 ): Promise<PageResponse<ToolInvocation>> {
-  const { tool_name, ...queryParams } = params;
+  const { toolName, ...queryParams } = params;
   const response = await api.get<PageResponse<ToolInvocation>>(
-    `/internal/tools/${encodeURIComponent(tool_name)}/invocations`,
+    `/internal/tools/${encodeURIComponent(toolName)}/invocations`,
     { params: queryParams }
   );
   return response.data;
