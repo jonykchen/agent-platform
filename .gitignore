@@ -15,15 +15,8 @@ logs/
 *.tar.gz
 *.rar
 
-# Maven - 排除 target 但保留 proto 生成代码
-# 方案：精确排除 target/classes 和 target/test-classes
-target/classes/
-target/test-classes/
-target/site/
-target/maven-*
-target/surefire-*
-target/invoker-*
-target/archive-classes/
+# Maven - 排除所有 target 目录（编译产物）
+**/target/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
