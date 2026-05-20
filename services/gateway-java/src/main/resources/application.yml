@@ -90,6 +90,12 @@ model-gateway:
   connect-timeout: 10
   read-timeout: 60
 
+# ====== Knowledge Service 配置 ======
+knowledge:
+  url: ${KNOWLEDGE_URL:http://localhost:8003}
+  connect-timeout: 10
+  read-timeout: 60
+
 # ====== JWT 认证配置 ======
 auth:
   jwt:

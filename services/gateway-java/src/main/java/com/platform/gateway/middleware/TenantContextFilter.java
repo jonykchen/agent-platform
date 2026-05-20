@@ -170,6 +170,8 @@ public class TenantContextFilter implements Filter {
         if (path.equals("/api/v1/tenants/models")) {
             return true;
         }
+        // Knowledge API 需要租户认证（不在此处豁免）
+        // /api/v1/knowledge/* 路径必须携带 X-Tenant-ID Header
         return false;
     }
 
