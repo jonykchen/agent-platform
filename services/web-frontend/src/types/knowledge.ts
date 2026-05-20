@@ -14,13 +14,13 @@ export interface KnowledgeDocument {
   metadata?: Record<string, unknown>;
 }
 
-/** 文档查询参数 */
+/** 文档查询参数（请求参数使用 camelCase） */
 export interface DocumentQueryParams {
   status?: 'pending' | 'indexing' | 'ready' | 'failed';
-  content_type?: string;
+  contentType?: string;
   search?: string;
-  page_number?: number;
-  page_size?: number;
+  pageNumber?: number;
+  pageSize?: number;
 }
 
 /** 文档上传响应 */

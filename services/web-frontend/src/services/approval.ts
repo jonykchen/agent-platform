@@ -6,20 +6,20 @@ import type {
 
 export interface ApprovalListParams {
   page?: number;
-  page_size?: number;
+  pageSize?: number;
   status?: string;
   priority?: string;
-  task_type?: string;
-  sort_by?: string;
-  sort_order?: 'asc' | 'desc';
+  taskType?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface ApprovalListResponse {
   items: ApprovalTask[];
   total: number;
   page: number;
-  page_size: number;
-  total_pages: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 /**

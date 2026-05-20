@@ -84,8 +84,8 @@ function DashboardPage() {
     const days = timeRange === '24h' ? 1 : parseInt(timeRange.replace('d', ''));
     start.setDate(start.getDate() - days);
     return {
-      start_date: start.toISOString().split('T')[0],
-      end_date: end.toISOString().split('T')[0],
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
     };
   }, [timeRange]);
 

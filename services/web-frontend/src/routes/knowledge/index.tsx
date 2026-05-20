@@ -66,8 +66,8 @@ function KnowledgePage() {
 
   // 状态
   const [params, setParams] = useState<DocumentQueryParams>({
-    page_number: 1,
-    page_size: APP_CONFIG.DEFAULT_PAGE_SIZE,
+    pageNumber: 1,
+    pageSize: APP_CONFIG.DEFAULT_PAGE_SIZE,
   });
   const [searchText, setSearchText] = useState('');
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -138,12 +138,12 @@ function KnowledgePage() {
 
   // 处理搜索
   const handleSearch = useCallback(() => {
-    setParams((prev) => ({ ...prev, page_number: 1, search: searchText || undefined }));
+    setParams((prev) => ({ ...prev, pageNumber: 1, search: searchText || undefined }));
   }, [searchText]);
 
   // 处理筛选变化
   const handleFilterChange = useCallback((key: string, value?: string) => {
-    setParams((prev) => ({ ...prev, page_number: 1, [key]: value }));
+    setParams((prev) => ({ ...prev, pageNumber: 1, [key]: value }));
   }, []);
 
   // 处理上传
@@ -246,8 +246,8 @@ function KnowledgePage() {
   const handleTableChange = useCallback((pagination: TablePaginationConfig) => {
     setParams((prev) => ({
       ...prev,
-      page_number: pagination.current || 1,
-      page_size: pagination.pageSize || APP_CONFIG.DEFAULT_PAGE_SIZE,
+      pageNumber: pagination.current || 1,
+      pageSize: pagination.pageSize || APP_CONFIG.DEFAULT_PAGE_SIZE,
     }));
   }, []);
 
@@ -389,8 +389,8 @@ function KnowledgePage() {
           rowKey="id"
           loading={isLoading}
           pagination={{
-            current: params.page_number,
-            pageSize: params.page_size,
+            current: params.pageNumber,
+            pageSize: params.pageSize,
             total: data?.total_count || 0,
             showSizeChanger: true,
             showQuickJumper: true,

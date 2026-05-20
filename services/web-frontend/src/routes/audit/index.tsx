@@ -197,8 +197,8 @@ function AuditLogPage() {
         { text: '业务', value: 'business' },
         { text: '系统', value: 'system' },
       ],
-      filtered: !!params.event_category,
-      filteredValue: params.event_category ? [params.event_category] : null,
+      filtered: !!params.eventCategory,
+      filteredValue: params.eventCategory ? [params.eventCategory] : null,
     },
     {
       title: '事件类型',

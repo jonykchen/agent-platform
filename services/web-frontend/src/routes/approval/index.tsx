@@ -77,16 +77,16 @@ function ApprovalListPage() {
   // 筛选状态
   const [filters, setFilters] = useState<{
     page: number;
-    page_size: number;
+    pageSize: number;
     status?: string;
     priority?: string;
-    task_type?: string;
-    sort_by?: string;
-    sort_order?: 'asc' | 'desc';
+    taskType?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
     search?: string;
   }>({
     page: 1,
-    page_size: APP_CONFIG.DEFAULT_PAGE_SIZE,
+    pageSize: APP_CONFIG.DEFAULT_PAGE_SIZE,
   });
 
   // 搜索关键词
@@ -317,9 +317,9 @@ function ApprovalListPage() {
     setFilters((prev) => ({
       ...prev,
       page: pagination.current || 1,
-      page_size: pagination.pageSize || APP_CONFIG.DEFAULT_PAGE_SIZE,
-      sort_by: sortInfo.field?.toString(),
-      sort_order: sortInfo.order === 'ascend' ? 'asc' : 'desc',
+      pageSize: pagination.pageSize || APP_CONFIG.DEFAULT_PAGE_SIZE,
+      sortBy: sortInfo.field?.toString(),
+      sortOrder: sortInfo.order === 'ascend' ? 'asc' : 'desc',
     }));
   }, []);
 
@@ -402,8 +402,8 @@ function ApprovalListPage() {
           />
           <Select
             placeholder="类型"
-            value={filters.task_type}
-            onChange={(value) => handleFilterChange('task_type', value)}
+            value={filters.taskType}
+            onChange={(value) => handleFilterChange('taskType', value)}
             style={{ width: 140 }}
             allowClear
             options={[
@@ -431,7 +431,7 @@ function ApprovalListPage() {
           loading={isLoading}
           pagination={{
             current: filters.page,
-            pageSize: filters.page_size,
+            pageSize: filters.pageSize,
             total: data?.total || 0,
             showSizeChanger: true,
             showQuickJumper: true,
@@ -443,10 +443,10 @@ function ApprovalListPage() {
               <EmptyState
                 description="暂无审批任务"
                 action={
-                  filters.status || filters.priority || filters.task_type
+                  filters.status || filters.priority || filters.taskType
                     ? {
                         label: '清除筛选',
-                        onClick: () => setFilters({ page: 1, page_size: APP_CONFIG.DEFAULT_PAGE_SIZE }),
+                        onClick: () => setFilters({ page: 1, pageSize: APP_CONFIG.DEFAULT_PAGE_SIZE }),
                       }
                     : undefined
                 }

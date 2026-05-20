@@ -63,8 +63,8 @@ export async function getDashboardStats(range?: TimeRange): Promise<DashboardSta
  * 获取每日运行趋势
  */
 export async function getDailyRunStats(params: {
-  start_date: string;
-  end_date: string;
+  startDate: string;
+  endDate: string;
 }): Promise<DailyRunStats[]> {
   const response = await api.get<DailyRunStats[]>('/dashboard/runs/daily', { params });
   return response.data;
@@ -74,8 +74,8 @@ export async function getDailyRunStats(params: {
  * 获取每日成本趋势
  */
 export async function getDailyCostStats(params: {
-  start_date: string;
-  end_date: string;
+  startDate: string;
+  endDate: string;
 }): Promise<DailyCostStats[]> {
   const response = await api.get<DailyCostStats[]>('/dashboard/costs/daily', { params });
   return response.data;
@@ -85,8 +85,8 @@ export async function getDailyCostStats(params: {
  * 获取 Token 分布
  */
 export async function getTokenDistribution(params: {
-  start_date: string;
-  end_date: string;
+  startDate: string;
+  endDate: string;
 }): Promise<TokenDistribution[]> {
   const response = await api.get<TokenDistribution[]>('/dashboard/tokens/distribution', { params });
   return response.data;
@@ -96,8 +96,8 @@ export async function getTokenDistribution(params: {
  * 获取模型调用统计
  */
 export async function getModelCallStats(params: {
-  start_date: string;
-  end_date: string;
+  startDate: string;
+  endDate: string;
 }): Promise<ModelCallStats[]> {
   const response = await api.get<ModelCallStats[]>('/dashboard/models/stats', { params });
   return response.data;

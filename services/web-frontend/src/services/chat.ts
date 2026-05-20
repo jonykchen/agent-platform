@@ -4,7 +4,7 @@ import type { PageResponse } from '@/types/common';
 
 export interface GetMessagesParams {
   page?: number;
-  page_size?: number;
+  pageSize?: number;
   before?: string; // ISO date
   after?: string; // ISO date
 }

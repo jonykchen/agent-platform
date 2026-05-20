@@ -80,10 +80,10 @@ export default function ToolsPage() {
       getTools({
         search: search || undefined,
         category: categoryFilter as 'query' | 'write' | 'external' | undefined,
-        risk_level: riskFilter as 'low' | 'medium' | 'high' | 'critical' | undefined,
+        riskLevel: riskFilter as 'low' | 'medium' | 'high' | 'critical' | undefined,
         status: statusFilter,
-        page_number: pagination.current,
-        page_size: pagination.pageSize,
+        pageNumber: pagination.current,
+        pageSize: pagination.pageSize,
       }),
     placeholderData: (prev) => prev,
   });

@@ -64,8 +64,8 @@ function UsersPage() {
   const { hasPermission } = usePermission();
 
   const [params, setParams] = useState<UserQueryParams>({
-    page_number: 1,
-    page_size: 20,
+    pageNumber: 1,
+    pageSize: 20,
   });
   const [editUser, setEditUser] = useState<UserDetail | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -161,8 +161,8 @@ function UsersPage() {
   const handleTableChange = useCallback((pagination: TablePaginationConfig) => {
     setParams((prev) => ({
       ...prev,
-      page_number: pagination.current || 1,
-      page_size: pagination.pageSize || 20,
+      pageNumber: pagination.current || 1,
+      pageSize: pagination.pageSize || 20,
     }));
   }, []);
 
@@ -346,7 +346,7 @@ function UsersPage() {
                 prefix={<Search className="w-4 h-4 text-gray-400" />}
                 style={{ width: 200 }}
                 onChange={(e) =>
-                  setParams((prev) => ({ ...prev, username: e.target.value || undefined, page_number: 1 }))
+                  setParams((prev) => ({ ...prev, username: e.target.value || undefined, pageNumber: 1 }))
                 }
               />
               <Input
@@ -354,7 +354,7 @@ function UsersPage() {
                 prefix={<Search className="w-4 h-4 text-gray-400" />}
                 style={{ width: 200 }}
                 onChange={(e) =>
-                  setParams((prev) => ({ ...prev, email: e.target.value || undefined, page_number: 1 }))
+                  setParams((prev) => ({ ...prev, email: e.target.value || undefined, pageNumber: 1 }))
                 }
               />
               <Select
@@ -362,7 +362,7 @@ function UsersPage() {
                 allowClear
                 style={{ width: 120 }}
                 onChange={(value) =>
-                  setParams((prev) => ({ ...prev, status: value, page_number: 1 }))
+                  setParams((prev) => ({ ...prev, status: value, pageNumber: 1 }))
                 }
               >
                 <Select.Option value="active">正常</Select.Option>
@@ -374,7 +374,7 @@ function UsersPage() {
                 allowClear
                 style={{ width: 120 }}
                 onChange={(value) =>
-                  setParams((prev) => ({ ...prev, role: value, page_number: 1 }))
+                  setParams((prev) => ({ ...prev, role: value, pageNumber: 1 }))
                 }
               >
                 {roles?.map((role) => (
@@ -412,8 +412,8 @@ function UsersPage() {
             rowKey="id"
             loading={isLoading}
             pagination={{
-              current: params.page_number,
-              pageSize: params.page_size,
+              current: params.pageNumber,
+              pageSize: params.pageSize,
               total: data?.total_count || 0,
               showSizeChanger: true,
               showQuickJumper: true,

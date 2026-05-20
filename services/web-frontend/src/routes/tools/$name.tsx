@@ -89,9 +89,9 @@ export default function ToolDetailPage() {
     queryKey: ['tool-invocations', name, invocationPage],
     queryFn: () =>
       getToolInvocations({
-        tool_name: name,
-        page_number: invocationPage.current,
-        page_size: invocationPage.pageSize,
+        toolName: name,
+        pageNumber: invocationPage.current,
+        pageSize: invocationPage.pageSize,
       }),
     enabled: !!tool,
   });
