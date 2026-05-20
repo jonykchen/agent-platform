@@ -73,4 +73,14 @@ public interface AgentRunRepository extends JpaRepository<AgentRun, UUID> {
      * 按租户ID和用户ID查询（分页）
      */
     Page<AgentRun> findByTenantIdAndUserId(String tenantId, String userId, Pageable pageable);
+
+    /**
+     * 按租户ID和会话ID查询（分页）
+     */
+    Page<AgentRun> findByTenantIdAndSessionId(String tenantId, UUID sessionId, Pageable pageable);
+
+    /**
+     * 按ID和租户ID和会话ID查询
+     */
+    Optional<AgentRun> findByIdAndTenantIdAndSessionId(UUID id, String tenantId, UUID sessionId);
 }

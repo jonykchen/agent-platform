@@ -4,7 +4,10 @@ import com.platform.gateway.dto.request.CreateSessionRequest;
 import com.platform.gateway.dto.request.SessionListRequest;
 import com.platform.gateway.dto.request.UpdateTitleRequest;
 import com.platform.gateway.dto.response.PageResponse;
+import com.platform.gateway.dto.response.RunDetailResponse;
+import com.platform.gateway.dto.response.RunResponse;
 import com.platform.gateway.dto.response.SessionResponse;
+import com.platform.gateway.dto.response.StepResponse;
 import com.platform.gateway.exception.BusinessException;
 import com.platform.gateway.exception.ErrorCode;
 import com.platform.gateway.service.SessionService;
@@ -15,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -170,6 +174,98 @@ public class SessionController {
         } catch (Exception e) {
             log.error("Unarchive session error: requestId={}, sessionId={}", requestId, id, e);
             throw BusinessException.of(ErrorCode.ERR_SERVICE_UNAVAILABLE, "Failed to unarchive session");
+        }
+    }
+
+    // ==================== Run 相关接口 ====================
+
+    /**
+     * 获取会话的所有 Run
+     * GET /api/v1/sessions/{sessionId}/runs
+     */
+    @GetMapping("/{sessionId}/runs")
+    public ResponseEntity<PageResponse<RunResponse>> getSessionRuns(
+            @PathVariable UUID sessionId,
+            @RequestParam(defaultValue = "1") Integer pageNumber,
+            @RequestParam(defaultValue = "20") Integer pageSize) {
+        String requestId = RequestIdGenerator.getCurrent();
+        log.debug("Get session runs request: requestId={}, sessionId={}, page={}, size={}",
+                requestId, sessionId, pageNumber, pageSize);
+
+        try {
+            PageResponse<RunResponse> response = sessionService.getSessionRuns(sessionId, pageNumber, pageSize);
+            return ResponseEntity.ok(response);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Get session runs error: requestId={}, sessionId={}", requestId, sessionId, e);
+            throw BusinessException.of(ErrorCode.ERR_SERVICE_UNAVAILABLE, "Failed to get session runs");
+        }
+    }
+
+    /**
+     * 获取单个 Run 详情
+     * GET /api/v1/sessions/{sessionId}/runs/{runId}
+     */
+    @GetMapping("/{sessionId}/runs/{runId}")
+    public ResponseEntity<RunDetailResponse> getRun(
+            @PathVariable UUID sessionId,
+            @PathVariable UUID runId) {
+        String requestId = RequestIdGenerator.getCurrent();
+        log.debug("Get run request: requestId={}, sessionId={}, runId={}", requestId, sessionId, runId);
+
+        try {
+            RunDetailResponse response = sessionService.getRun(sessionId, runId);
+            return ResponseEntity.ok(response);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Get run error: requestId={}, sessionId={}, runId={}", requestId, sessionId, runId, e);
+            throw BusinessException.of(ErrorCode.ERR_SERVICE_UNAVAILABLE, "Failed to get run");
+        }
+    }
+
+    /**
+     * 获取 Run 的所有步骤
+     * GET /api/v1/sessions/{sessionId}/runs/{runId}/steps
+     */
+    @GetMapping("/{sessionId}/runs/{runId}/steps")
+    public ResponseEntity<List<StepResponse>> getRunSteps(
+            @PathVariable UUID sessionId,
+            @PathVariable UUID runId) {
+        String requestId = RequestIdGenerator.getCurrent();
+        log.debug("Get run steps request: requestId={}, sessionId={}, runId={}", requestId, sessionId, runId);
+
+        try {
+            List<StepResponse> response = sessionService.getRunSteps(sessionId, runId);
+            return ResponseEntity.ok(response);
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Get run steps error: requestId={}, sessionId={}, runId={}", requestId, sessionId, runId, e);
+            throw BusinessException.of(ErrorCode.ERR_SERVICE_UNAVAILABLE, "Failed to get run steps");
+        }
+    }
+
+    /**
+     * 取消正在执行的 Run
+     * POST /api/v1/sessions/{sessionId}/runs/{runId}/cancel
+     */
+    @PostMapping("/{sessionId}/runs/{runId}/cancel")
+    public ResponseEntity<Void> cancelRun(
+            @PathVariable UUID sessionId,
+            @PathVariable UUID runId) {
+        String requestId = RequestIdGenerator.getCurrent();
+        log.info("Cancel run request: requestId={}, sessionId={}, runId={}", requestId, sessionId, runId);
+
+        try {
+            sessionService.cancelRun(sessionId, runId);
+            return ResponseEntity.noContent().build();
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Cancel run error: requestId={}, sessionId={}, runId={}", requestId, sessionId, runId, e);
+            throw BusinessException.of(ErrorCode.ERR_SERVICE_UNAVAILABLE, "Failed to cancel run");
         }
     }
 }
