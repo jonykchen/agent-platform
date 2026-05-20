@@ -22,6 +22,7 @@ import {
   Space,
 } from 'antd';
 import { Save, RefreshCw, Info, Shield, Database, Bot } from 'lucide-react';
+import { PageLayout } from '@/components/layout/PageLayout';
 import { tenantService } from '@/services/tenant';
 import type { TenantConfig } from '@/services/tenant';
 import { LoadingState } from '@/components/feedback/LoadingState';
@@ -124,6 +125,7 @@ function TenantConfigPage() {
   const tier = tierConfig[data.tier] || tierConfig.free;
 
   return (
+    <PageLayout>
     <div className="p-6">
       {/* Header */}
       <div className="mb-6">
@@ -374,6 +376,7 @@ function TenantConfigPage() {
         </Form>
       </Card>
     </div>
+    </PageLayout>
   );
 }
 
