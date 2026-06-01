@@ -66,6 +66,12 @@ function TenantConfigPage() {
     enabled: !!tenant?.id,
   });
 
+  // 查询可用模型列表
+  const { data: models } = useQuery({
+    queryKey: ['tenant-models'],
+    queryFn: () => tenantService.getAvailableModels(),
+  });
+
   // 更新配置
   const updateMutation = useMutation({
     mutationFn: (values: Partial<TenantConfig['settings']>) =>
@@ -126,7 +132,7 @@ function TenantConfigPage() {
 
   return (
     <PageLayout>
-    <div className="p-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="mb-6">
         <Title level={4} className="!mb-2">
@@ -288,10 +294,9 @@ function TenantConfigPage() {
                 label="默认模型"
               >
                 <Select>
-                  <Select.Option value="qwen-plus">Qwen Plus</Select.Option>
-                  <Select.Option value="qwen-max">Qwen Max</Select.Option>
-                  <Select.Option value="deepseek-chat">DeepSeek Chat</Select.Option>
-                  <Select.Option value="glm-4">GLM-4</Select.Option>
+                  {models?.map((m) => (
+                    <Select.Option key={m.id} value={m.id}>{m.name}</Select.Option>
+                  ))}
                 </Select>
               </Form.Item>
             </Col>
@@ -301,11 +306,9 @@ function TenantConfigPage() {
                 label="允许使用的模型"
               >
                 <Select mode="multiple">
-                  <Select.Option value="qwen-plus">Qwen Plus</Select.Option>
-                  <Select.Option value="qwen-max">Qwen Max</Select.Option>
-                  <Select.Option value="deepseek-chat">DeepSeek Chat</Select.Option>
-                  <Select.Option value="glm-4">GLM-4</Select.Option>
-                  <Select.Option value="gpt-4">GPT-4</Select.Option>
+                  {models?.map((m) => (
+                    <Select.Option key={m.id} value={m.id}>{m.name}</Select.Option>
+                  ))}
                 </Select>
               </Form.Item>
             </Col>

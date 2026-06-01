@@ -51,6 +51,7 @@ public enum ErrorCode {
     ERR_APPROVAL_ALREADY_REVIEWED("ERR_APPROVAL_ALREADY_REVIEWED", "Already reviewed", "审批已处理", 409),
 
     // ====== 租户配额错误 (70xxx) ======
+    ERR_TENANT_NOT_FOUND("ERR_TENANT_NOT_FOUND", "Tenant not found", "租户不存在", 404),
     ERR_TENANT_QUOTA_EXCEEDED("ERR_TENANT_QUOTA_EXCEEDED", "Tenant quota exceeded", "租户配额已用尽", 429);
 
     private final String code;
