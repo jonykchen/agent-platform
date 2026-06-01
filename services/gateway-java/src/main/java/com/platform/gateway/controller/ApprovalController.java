@@ -1,5 +1,6 @@
 package com.platform.gateway.controller;
 
+import com.platform.gateway.audit.AuditLog;
 import com.platform.gateway.dto.request.ApprovalActionRequest;
 import com.platform.gateway.dto.request.ApprovalListRequest;
 import com.platform.gateway.dto.response.ApprovalTaskResponse;
@@ -188,6 +189,14 @@ public class ApprovalController {
      * @throws BusinessException 当审批任务不存在、状态不允许审批或无权限时抛出
      */
     @PostMapping("/{id}/approve")
+    @AuditLog(
+        type = "tool.approved",
+        category = "security",
+        action = "通过审批",
+        resourceType = "approval_task",
+        severity = "warn",
+        logArguments = true
+    )
     public ResponseEntity<ApprovalTaskResponse> approveApproval(
             @PathVariable String id,
             @Valid @RequestBody(required = false) ApprovalActionRequest request) {
@@ -229,6 +238,14 @@ public class ApprovalController {
      * @throws BusinessException 当审批任务不存在、状态不允许审批或无权限时抛出
      */
     @PostMapping("/{id}/reject")
+    @AuditLog(
+        type = "tool.rejected",
+        category = "security",
+        action = "拒绝审批",
+        resourceType = "approval_task",
+        severity = "warn",
+        logArguments = true
+    )
     public ResponseEntity<ApprovalTaskResponse> rejectApproval(
             @PathVariable String id,
             @Valid @RequestBody(required = false) ApprovalActionRequest request) {

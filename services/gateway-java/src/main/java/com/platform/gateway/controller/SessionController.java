@@ -1,5 +1,6 @@
 package com.platform.gateway.controller;
 
+import com.platform.gateway.audit.AuditLog;
 import com.platform.gateway.dto.request.CreateSessionRequest;
 import com.platform.gateway.dto.request.SessionListRequest;
 import com.platform.gateway.dto.request.UpdateTitleRequest;
@@ -59,9 +60,23 @@ public class SessionController {
      * POST /api/v1/sessions
      */
     @PostMapping
+    @AuditLog(
+        type = "session.created",
+        category = "lifecycle",
+        action = "创建会话",
+        resourceType = "session",
+        severity = "info",
+        logResult = true
+    )
     public ResponseEntity<SessionResponse> createSession(
-            @Valid @RequestBody CreateSessionRequest request) {
+            @RequestBody(required = false) CreateSessionRequest request) {
         String requestId = RequestIdGenerator.getCurrent();
+
+        // 如果请求体为空，使用默认值
+        if (request == null) {
+            request = new CreateSessionRequest();
+        }
+
         log.info("Create session request: requestId={}, type={}", requestId, request.getSessionType());
 
         try {
@@ -100,6 +115,13 @@ public class SessionController {
      * DELETE /api/v1/sessions/{id}
      */
     @DeleteMapping("/{id}")
+    @AuditLog(
+        type = "session.deleted",
+        category = "lifecycle",
+        action = "删除会话",
+        resourceType = "session",
+        severity = "warn"
+    )
     public ResponseEntity<Void> deleteSession(@PathVariable UUID id) {
         String requestId = RequestIdGenerator.getCurrent();
         log.info("Delete session request: requestId={}, sessionId={}", requestId, id);
@@ -142,6 +164,13 @@ public class SessionController {
      * POST /api/v1/sessions/{id}/archive
      */
     @PostMapping("/{id}/archive")
+    @AuditLog(
+        type = "session.archived",
+        category = "lifecycle",
+        action = "归档会话",
+        resourceType = "session",
+        severity = "info"
+    )
     public ResponseEntity<SessionResponse> archiveSession(@PathVariable UUID id) {
         String requestId = RequestIdGenerator.getCurrent();
         log.info("Archive session request: requestId={}, sessionId={}", requestId, id);
@@ -252,6 +281,13 @@ public class SessionController {
      * POST /api/v1/sessions/{sessionId}/runs/{runId}/cancel
      */
     @PostMapping("/{sessionId}/runs/{runId}/cancel")
+    @AuditLog(
+        type = "agent.run_cancelled",
+        category = "business",
+        action = "取消运行",
+        resourceType = "agent_run",
+        severity = "warn"
+    )
     public ResponseEntity<Void> cancelRun(
             @PathVariable UUID sessionId,
             @PathVariable UUID runId) {

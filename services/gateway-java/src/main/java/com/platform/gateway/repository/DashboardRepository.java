@@ -4,11 +4,13 @@ import com.platform.gateway.dto.response.DailyCostStatsResponse;
 import com.platform.gateway.dto.response.DailyRunStatsResponse;
 import com.platform.gateway.dto.response.ModelCallStatsResponse;
 import com.platform.gateway.dto.response.TokenDistributionResponse;
+import com.platform.gateway.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -198,5 +200,84 @@ public class DashboardRepository {
         private Double avgResponseTimeMs;
         private Long activeUsers;
         private Long pendingApprovals;
+    }
+
+    // ==================== 告警检测方法 ====================
+
+    /**
+     * 查询工具失败率统计
+     *
+     * <p>tool_invocation 表没有 tenant_id 列，需要通过 JOIN agent_run 获取租户信息
+     */
+    public List<DashboardService.ToolFailureStats> queryToolFailureStats(String tenantId, Instant since) {
+        String sql = """
+            SELECT
+                ti.tool_name,
+                COUNT(*) as total,
+                SUM(CASE WHEN ti.status = 'failed' THEN 1 ELSE 0 END) as failed,
+                ROUND(100.0 * SUM(CASE WHEN ti.status = 'failed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as failure_rate
+            FROM tool_invocation ti
+            JOIN agent_run r ON ti.run_id = r.id
+            WHERE r.tenant_id = ?
+              AND ti.created_at >= ?
+            GROUP BY ti.tool_name
+            HAVING ROUND(100.0 * SUM(CASE WHEN ti.status = 'failed' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) > 20
+            ORDER BY failure_rate DESC
+            LIMIT 5
+            """;
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new DashboardService.ToolFailureStats(
+                rs.getString("tool_name"),
+                rs.getLong("total"),
+                rs.getLong("failed"),
+                rs.getDouble("failure_rate")
+        ), tenantId, since);
+    }
+
+    /**
+     * 查询模型延迟统计（包含 P95 近似计算）
+     */
+    public List<DashboardService.ModelLatencyStats> queryModelLatencyStats(String tenantId, Instant since) {
+        // PostgreSQL 没有 PERCENTILE_CONT 的简化版本，使用近似计算
+        String sql = """
+            SELECT
+                model_used as model_name,
+                AVG(duration_ms) as avg_latency,
+                COALESCE(
+                    PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms),
+                    AVG(duration_ms) * 1.5
+                ) as p95_latency
+            FROM agent_run
+            WHERE tenant_id = ?
+              AND started_at >= ?
+              AND model_used IS NOT NULL
+              AND duration_ms IS NOT NULL
+            GROUP BY model_used
+            ORDER BY p95_latency DESC
+            LIMIT 5
+            """;
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new DashboardService.ModelLatencyStats(
+                rs.getString("model_name"),
+                rs.getDouble("avg_latency"),
+                rs.getDouble("p95_latency")
+        ), tenantId, since);
+    }
+
+    /**
+     * 统计即将超时的审批任务数量
+     */
+    public long countExpiringApprovals(String tenantId, Instant now, Instant deadline) {
+        String sql = """
+            SELECT COUNT(*)
+            FROM approval_task
+            WHERE tenant_id = ?
+              AND status = 'pending'
+              AND expires_at > ?
+              AND expires_at <= ?
+            """;
+
+        Long count = jdbcTemplate.queryForObject(sql, Long.class, tenantId, now, deadline);
+        return count != null ? count : 0L;
     }
 }

@@ -1,5 +1,6 @@
 package com.platform.gateway.controller;
 
+import com.platform.gateway.audit.AuditLog;
 import com.platform.gateway.dto.request.CreateUserRequest;
 import com.platform.gateway.dto.request.UpdateUserRequest;
 import com.platform.gateway.dto.request.UserQueryParams;
@@ -180,6 +181,14 @@ public class UserController {
      * @throws BusinessException 当用户名已存在、邮箱已存在或参数校验失败时抛出
      */
     @PostMapping
+    @AuditLog(
+        type = "user.created",
+        category = "lifecycle",
+        action = "创建用户",
+        resourceType = "user",
+        severity = "warn",
+        logResult = true
+    )
     public ResponseEntity<UserDetailResponse> createUser(
         @Valid @RequestBody CreateUserRequest request
     ) {
@@ -269,6 +278,14 @@ public class UserController {
      * @throws BusinessException 当用户不存在、邮箱已被占用或参数校验失败时抛出
      */
     @PatchMapping("/{id}")
+    @AuditLog(
+        type = "user.updated",
+        category = "lifecycle",
+        action = "更新用户信息",
+        resourceType = "user",
+        severity = "info",
+        logArguments = true
+    )
     public ResponseEntity<UserDetailResponse> updateUser(
         @PathVariable("id") String userId,
         @Valid @RequestBody UpdateUserRequest request
@@ -314,6 +331,13 @@ public class UserController {
      * @throws BusinessException 当用户不存在、尝试禁用自己或禁用管理员时抛出
      */
     @PostMapping("/{id}/disable")
+    @AuditLog(
+        type = "user.disabled",
+        category = "security",
+        action = "禁用用户",
+        resourceType = "user",
+        severity = "warn"
+    )
     public ResponseEntity<Void> disableUser(@PathVariable("id") String userId) {
         String requestId = RequestIdGenerator.getCurrent();
         String tenantId = tenantContextService.getCurrentTenantId();
@@ -352,6 +376,13 @@ public class UserController {
      * @throws BusinessException 当用户不存在时抛出
      */
     @PostMapping("/{id}/enable")
+    @AuditLog(
+        type = "user.enabled",
+        category = "security",
+        action = "启用用户",
+        resourceType = "user",
+        severity = "info"
+    )
     public ResponseEntity<Void> enableUser(@PathVariable("id") String userId) {
         String requestId = RequestIdGenerator.getCurrent();
         String tenantId = tenantContextService.getCurrentTenantId();
@@ -399,6 +430,13 @@ public class UserController {
      * @throws BusinessException 当用户不存在或尝试重置自己密码时抛出
      */
     @PostMapping("/{id}/reset-password")
+    @AuditLog(
+        type = "user.password_reset",
+        category = "security",
+        action = "重置用户密码",
+        resourceType = "user",
+        severity = "error"
+    )
     public ResponseEntity<ResetPasswordResponse> resetPassword(@PathVariable("id") String userId) {
         String requestId = RequestIdGenerator.getCurrent();
         String tenantId = tenantContextService.getCurrentTenantId();

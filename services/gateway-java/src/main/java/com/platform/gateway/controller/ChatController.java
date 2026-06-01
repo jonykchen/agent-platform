@@ -1,5 +1,7 @@
 package com.platform.gateway.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.platform.gateway.audit.AuditLog;
 import com.platform.gateway.dto.request.ChatRequest;
 import com.platform.gateway.dto.response.ChatResponse;
 import com.platform.gateway.exception.BusinessException;
@@ -11,11 +13,18 @@ import com.platform.gateway.util.RequestIdGenerator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 对话控制器
@@ -96,12 +105,22 @@ public class ChatController {
     private final FastPathService fastPathService;
     private final OrchestratorClient orchestratorClient;
     private final TenantContextService tenantContextService;
+    private final ObjectMapper objectMapper;
+    private final ExecutorService executor = Executors.newCachedThreadPool();
 
     /**
-     * 对话补全接口
+     * 对话补全接口（SSE 流式响应）
      */
-    @PostMapping("/completions")
-    public ResponseEntity<ChatResponse> chatCompletion(@Valid @RequestBody ChatRequest request) {
+    @PostMapping(value = "/completions", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @AuditLog(
+        type = "agent.run_started",
+        category = "business",
+        action = "发起对话",
+        resourceType = "agent_run",
+        severity = "info",
+        logArguments = false
+    )
+    public SseEmitter chatCompletion(@Valid @RequestBody ChatRequest request) {
         String requestId = RequestIdGenerator.getCurrent();
         String tenantId = tenantContextService.getCurrentTenantId();
         String userId = tenantContextService.getCurrentUserId();
@@ -109,27 +128,73 @@ public class ChatController {
         log.info("Chat request: requestId={}, tenant={}, user={}, message={}",
                 requestId, tenantId, userId, truncate(request.getMessage(), 100));
 
-        try {
-            // 快速路径判断：简单问答直接透传，不经过完整 Agent 编排
-            if (fastPathService.isFastPath(request)) {
-                log.debug("Fast path detected for request {}", requestId);
-                return ResponseEntity.ok(fastPathService.handleFastPath(request));
+        // 创建 SSE Emitter（超时 5 分钟）
+        SseEmitter emitter = new SseEmitter(300000L);
+
+        executor.execute(() -> {
+            try {
+                ChatResponse response;
+
+                // 快速路径判断：简单问答直接透传，不经过完整 Agent 编排
+                if (fastPathService.isFastPath(request)) {
+                    log.debug("Fast path detected for request {}", requestId);
+                    response = fastPathService.handleFastPath(request);
+                } else {
+                    // 正常路径：调用 Orchestrator
+                    response = orchestratorClient.sendChatRequest(request);
+                }
+
+                log.info("Chat response: requestId={}, model={}, tokens={}, latency={}ms",
+                        requestId, response.getModelUsed(), response.getTotalTokens(), response.getLatencyMs());
+
+                // 发送流式内容块
+                emitter.send(SseEmitter.event()
+                        .name("message")
+                        .data(objectMapper.writeValueAsString(Map.of(
+                                "delta_content", response.getResponse(),
+                                "is_final", false
+                        ))));
+
+                // 发送最终块
+                emitter.send(SseEmitter.event()
+                        .name("message")
+                        .data(objectMapper.writeValueAsString(Map.of(
+                                "delta_content", "",
+                                "is_final", true,
+                                "usage", Map.of(
+                                        "prompt_tokens", response.getPromptTokens(),
+                                        "completion_tokens", response.getCompletionTokens(),
+                                        "total_tokens", response.getTotalTokens()
+                                )
+                        ))));
+
+                emitter.complete();
+
+            } catch (BusinessException e) {
+                try {
+                    emitter.send(SseEmitter.event()
+                            .name("error")
+                            .data(objectMapper.writeValueAsString(Map.of(
+                                    "error", e.getErrorCode(),
+                                    "message", e.getMessage()
+                            ))));
+                    emitter.completeWithError(e);
+                } catch (IOException ignored) {}
+            } catch (Exception e) {
+                log.error("Chat error: requestId={}", requestId, e);
+                try {
+                    emitter.send(SseEmitter.event()
+                            .name("error")
+                            .data(objectMapper.writeValueAsString(Map.of(
+                                    "error", "ERR_UNKNOWN",
+                                    "message", "Internal server error"
+                            ))));
+                    emitter.completeWithError(e);
+                } catch (IOException ignored) {}
             }
+        });
 
-            // 正常路径：调用 Orchestrator
-            ChatResponse response = orchestratorClient.sendChatRequest(request);
-
-            log.info("Chat response: requestId={}, model={}, tokens={}, latency={}ms",
-                    requestId, response.getModelUsed(), response.getTotalTokens(), response.getLatencyMs());
-
-            return ResponseEntity.ok(response);
-
-        } catch (BusinessException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Chat error: requestId={}", requestId, e);
-            throw BusinessException.of(ErrorCode.ERR_SERVICE_UNAVAILABLE, "Service temporarily unavailable");
-        }
+        return emitter;
     }
 
     private String truncate(String str, int maxLength) {

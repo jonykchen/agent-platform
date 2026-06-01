@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -34,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 @SpringBootApplication
 @EnableScheduling
+@EnableAsync
 public class GatewayApplication {
 
     /**
