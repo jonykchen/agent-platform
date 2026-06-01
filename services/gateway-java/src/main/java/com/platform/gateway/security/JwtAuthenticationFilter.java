@@ -1,6 +1,8 @@
 package com.platform.gateway.security;
 
+import com.platform.gateway.service.TenantContextService;
 import com.platform.gateway.util.JwtUtil;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -42,6 +44,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtUtil jwtUtil;
+    private final TenantContextService tenantContextService;
 
     @Override
     protected void doFilterInternal(
@@ -49,6 +52,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+
+        // ASYNC 分发时跳过：SecurityContext 已通过 MODE_INHERITABLETHREADLOCAL 传播
+        if (request.getDispatcherType() == DispatcherType.ASYNC) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // 如果已经有认证（如 DevAuthenticationFilter 已设置），跳过 JWT 验证
+        if (SecurityContextHolder.getContext().getAuthentication() != null) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         String requestPath = request.getRequestURI();
 
@@ -97,6 +112,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 设置租户上下文（用于多租户隔离）
         request.setAttribute("tenantId", tenantId);
         request.setAttribute("userId", userId);
+
+        // 同时设置 MDC，供 TenantContextService 使用
+        tenantContextService.setCurrentTenant(tenantId, userId);
 
         log.debug("JWT authentication successful: userId={}, tenantId={}", userId, tenantId);
 

@@ -51,13 +51,22 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
-  # Redis 配置 (分布式限流)
+  # Redis 配置 (分布式限流 + 缓存)
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:dev_password}
       timeout: 5000ms
+
+  # 缓存配置
+  cache:
+    type: redis
+    redis:
+      time-to-live: 300000  # 默认 TTL 5分钟
+      cache-null-values: false
+      key-prefix: 'gateway:'
+      use-key-prefix: true
 
 # ====== 服务配置 ======
 server:
@@ -96,12 +105,21 @@ knowledge:
   connect-timeout: 10
   read-timeout: 60
 
+# ====== Tool Bus Service 配置 ======
+tool-bus:
+  url: ${TOOL_BUS_URL:http://localhost:8083}
+  connect-timeout: 10
+  read-timeout: 30
+
 # ====== JWT 认证配置 ======
 auth:
   jwt:
     secret: ${JWT_SECRET:your-secret-key-must-be-at-least-256-bits-long-for-hs256-algorithm}
     access-token-ttl-seconds: ${ACCESS_TOKEN_TTL:3600}
     refresh-token-ttl-seconds: ${REFRESH_TOKEN_TTL:604800}
+  # 开发环境绕过认证（生产环境必须为 false）
+  dev-bypass:
+    enabled: ${AUTH_DEV_BYPASS:false}
 
 # ====== Orchestrator gRPC 配置 ======
 orchestrator:
@@ -175,6 +193,27 @@ spring:
   config:
     activate:
       on-profile: local
+
+# 开发环境启用认证绕过
+auth:
+  dev-bypass:
+    enabled: true
+
+logging:
+  level:
+    com.platform: DEBUG
+
+---
+# ====== 开发环境 (development) ======
+spring:
+  config:
+    activate:
+      on-profile: development
+
+# 开发环境启用认证绕过
+auth:
+  dev-bypass:
+    enabled: true
 
 logging:
   level:

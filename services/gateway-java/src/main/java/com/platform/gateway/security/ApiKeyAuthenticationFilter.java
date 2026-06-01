@@ -3,6 +3,7 @@ package com.platform.gateway.security;
 import com.platform.gateway.exception.BusinessException;
 import com.platform.gateway.exception.ErrorCode;
 import com.platform.gateway.service.ApiKeyService;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -63,6 +64,12 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
+
+        // ASYNC 分发时跳过：SecurityContext 已通过 MODE_INHERITABLETHREADLOCAL 传播
+        if (request.getDispatcherType() == DispatcherType.ASYNC) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
         // 如果已有 JWT 认证，跳过 API Key 认证
         if (SecurityContextHolder.getContext().getAuthentication() != null) {

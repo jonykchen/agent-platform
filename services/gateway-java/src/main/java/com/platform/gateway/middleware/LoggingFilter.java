@@ -127,20 +127,14 @@ public class LoggingFilter implements Filter {
         int requestSize = httpRequest.getContentLength();
         httpRequest.setAttribute(REQUEST_SIZE_ATTR, requestSize);
 
-        // 包装响应以捕获响应大小
-        ContentCachingResponseWrapper responseWrapper = new ContentCachingResponseWrapper(httpResponse);
-
         try {
-            chain.doFilter(request, responseWrapper);
+            chain.doFilter(request, response);
         } finally {
             // 计算耗时
             long duration = System.currentTimeMillis() - startTime;
 
-            // 记录访问日志
-            logAccess(httpRequest, responseWrapper, duration, requestSize);
-
-            // 刷新响应
-            responseWrapper.copyBodyToResponse();
+            // 记录访问日志（不再包装 response，避免干扰 Mono/Flux 异步写入）
+            logAccess(httpRequest, httpResponse, duration, requestSize);
         }
     }
 
@@ -195,7 +189,7 @@ public class LoggingFilter implements Filter {
         log.put("status", response.getStatus());
         log.put("duration_ms", durationMs);
         log.put("request_size", requestSize);
-        log.put("response_size", response instanceof ContentCachingResponseWrapper ? ((ContentCachingResponseWrapper) response).getContentLength() : -1);
+        log.put("response_size", -1);  // 不再包装 response，无法获取精确响应大小
 
         // 请求头（脱敏）
         log.put("headers", sanitizeHeaders(request));
