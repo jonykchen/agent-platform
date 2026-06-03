@@ -67,6 +67,7 @@
 
 import re
 import sys
+from typing import Any
 
 import structlog
 
@@ -310,9 +311,17 @@ class _SensitiveDataProcessor(structlog.types.Processor):
     【已知限制】
     ────────────────────────────────────────────────────────────────────────────
     1. 正则可能误匹配（如订单号包含手机号）→ 建议在业务层明确标记敏感字段
-    2. 仅处理字符串值，不处理嵌套字典/列表 → 复杂对象建议序列化前处理
+    2. 嵌套字典/列表已支持递归处理
     3. 超长截断可能破坏多字节字符 → 已按字符截断，非字节截断
     """
+
+    # 敏感字段名列表（完全隐藏）
+    SENSITIVE_FIELDS = {
+        "password", "passwd", "pwd", "secret", "token",
+        "api_key", "apikey", "authorization", "auth", "credential",
+        "private_key", "privatekey", "access_token", "refresh_token",
+        "jwt", "jwt_secret", "api_secret", "client_secret",
+    }
 
     PATTERNS = {
         "phone": (r"1[3-9]\d{9}", lambda m: f"{m.group()[:3]}****{m.group()[-4:]}"),
@@ -322,15 +331,62 @@ class _SensitiveDataProcessor(structlog.types.Processor):
     }
 
     def __call__(self, logger, method_name, event_dict):
+        """处理日志字典，递归脱敏所有字段"""
+        return self._process_dict(event_dict, depth=0)
 
-        for key, value in event_dict.items():
-            if isinstance(value, str):
-                for field_type, (pattern, replacer) in self.PATTERNS.items():
-                    value = re.sub(pattern, replacer, value)
-                if len(value) > 500:
-                    value = value[:500] + "... (truncated)"
-                event_dict[key] = value
-        return event_dict
+    def _process_dict(self, data: dict, depth: int = 0) -> dict:
+        """递归处理字典"""
+        MAX_DEPTH = 10
+        if depth > MAX_DEPTH:
+            return {"_truncated": "max depth exceeded"}
+
+        result = {}
+        for key, value in data.items():
+            result[key] = self._process_value(key, value, depth)
+        return result
+
+    def _process_value(self, key: str, value: Any, depth: int = 0) -> Any:
+        """递归处理值
+
+        Args:
+            key: 字段名
+            value: 字段值
+            depth: 当前递归深度
+
+        Returns:
+            脱敏后的值
+        """
+        MAX_DEPTH = 10
+        if depth > MAX_DEPTH:
+            return str(value)[:100] + "... (truncated)"
+
+        # 敏感字段名直接隐藏
+        if key.lower() in self.SENSITIVE_FIELDS:
+            return "********"
+
+        if isinstance(value, str):
+            return self._mask_string(value)
+
+        if isinstance(value, dict):
+            return self._process_dict(value, depth + 1)
+
+        if isinstance(value, list):
+            return [self._process_value(f"item_{i}", item, depth + 1)
+                    for i, item in enumerate(value)]
+
+        if isinstance(value, (int, float, bool, type(None))):
+            return value
+
+        # 其他类型转字符串处理
+        return self._mask_string(str(value))
+
+    def _mask_string(self, value: str) -> str:
+        """应用正则脱敏到字符串"""
+        for field_type, (pattern, replacer) in self.PATTERNS.items():
+            value = re.sub(pattern, replacer, value)
+        if len(value) > 500:
+            value = value[:500] + "... (truncated)"
+        return value
 
 
 class _RequestContextProcessor(structlog.types.Processor):

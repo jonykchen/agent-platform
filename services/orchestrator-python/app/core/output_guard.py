@@ -156,12 +156,15 @@ class OutputLeakageGuard:
         Args:
             output: LLM 输出文本
             context: 上下文信息（用于日志）
+                - session_id: 当前会话 ID
+                - tenant_id: 租户 ID
+                - request_id: 请求 ID
 
         Returns:
             {
                 "safe": bool,
                 "leakage_detected": bool,
-                "leakage_type": str | None,  # system_prompt / tool_definition / user_data
+                "leakage_type": str | None,  # system_prompt / tool_definition / user_data / cross_session
                 "matched_patterns": list[str],
                 "json_valid": bool,
                 "action": str  # allow / warn / sanitize
@@ -199,13 +202,19 @@ class OutputLeakageGuard:
             if not result["json_valid"]:
                 result["matched_patterns"].append("json_format_error")
 
+        # 4. 跨会话数据泄露检测（新增）
+        if context and self._check_cross_session_leak(output, context):
+            result["matched_patterns"].append("cross_session_data")
+            if not result["leakage_type"]:
+                result["leakage_type"] = "cross_session_data"
+
         # 决策
         if result["matched_patterns"]:
             result["leakage_detected"] = True
             result["safe"] = False
 
             # 根据泄露类型决定动作
-            if result["leakage_type"] in ("system_prompt", "tool_definition"):
+            if result["leakage_type"] in ("system_prompt", "tool_definition", "cross_session_data"):
                 result["action"] = "sanitize"
             elif not result["json_valid"]:
                 result["action"] = "warn"
@@ -221,6 +230,58 @@ class OutputLeakageGuard:
             )
 
         return result
+
+    def _check_cross_session_leak(self, output: str, context: dict) -> bool:
+        """检测输出是否包含其他会话的数据
+
+        【安全考虑】
+        防止 LLM 输出中泄露其他用户或会话的数据。
+        这可能是由于：
+        1. 模型训练数据泄露
+        2. 提示词注入攻击
+        3. 缓存污染
+
+        Args:
+            output: LLM 输出文本
+            context: 上下文信息
+
+        Returns:
+            是否检测到跨会话泄露
+        """
+        current_session = context.get("session_id")
+        if not current_session:
+            return False
+
+        # 检测会话 ID 格式
+        session_pattern = r"sess_[a-zA-Z0-9]{16}_[a-zA-Z0-9]+"
+        found_sessions = re.findall(session_pattern, output)
+
+        for sess in found_sessions:
+            if sess != current_session:
+                logger.warning(
+                    "cross_session_data_detected",
+                    current_session=current_session,
+                    leaked_session=sess,
+                    request_id=context.get("request_id"),
+                )
+                return True
+
+        # 检测其他用户 ID 格式（如果输出包含明确的用户 ID）
+        current_user = context.get("user_id")
+        if current_user:
+            user_pattern = r"user_[a-zA-Z0-9]+"
+            found_users = re.findall(user_pattern, output)
+            for user in found_users:
+                if user != current_user:
+                    logger.warning(
+                        "cross_user_data_detected",
+                        current_user=current_user,
+                        leaked_user=user,
+                        request_id=context.get("request_id"),
+                    )
+                    return True
+
+        return False
 
     def _validate_json_output(self, output: str) -> bool:
         """校验 JSON 输出完整性
