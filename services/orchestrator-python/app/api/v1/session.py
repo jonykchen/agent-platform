@@ -243,6 +243,7 @@ async def list_sessions(
     """列出会话
 
     分页查询当前用户的会话列表。
+    使用 Redis 实现会话索引，支持分页和过滤。
 
     Args:
         page: 页码（从 1 开始）
@@ -272,31 +273,71 @@ async def list_sessions(
         session_type=session_type,
     )
 
-    # TODO: 从数据库分页查询
-    # 当前返回模拟数据
     session_store = get_session_store()
 
-    # 模拟数据
-    now = datetime.utcnow()
-    mock_sessions = [
-        SessionInfo(
-            id=f"sess_mock_{i}",
-            type=session_type or SessionType.CHAT,
-            title=f"会话 {i + 1}",
-            status=status or SessionStatus.ACTIVE,
-            message_count=i * 5 + 3,
-            created_at=now - timedelta(days=i),
-            updated_at=now - timedelta(hours=i),
+    # 使用 Redis Sorted Set 实现分页
+    # Key: session:index:{tenant_id}:{user_id}
+    # Score: updated_at timestamp
+    index_key = f"session:index:{tenant_id}:{user_id}"
+
+    # 计算分页
+    offset = (page - 1) * page_size
+
+    # 从 Redis 获取会话 ID 列表（按更新时间倒序）
+    redis_client = session_store._client if hasattr(session_store, '_client') else None
+    if redis_client is None:
+        redis_client = await session_store._get_client()
+
+    # 获取总数
+    total = await redis_client.zcard(index_key)
+
+    # 获取分页数据
+    session_ids = await redis_client.zrange(
+        index_key,
+        -offset - page_size,
+        -offset - 1 if offset > 0 else -1,
+        desc=True,
+    )
+
+    # 如果索引为空，返回空列表
+    if not session_ids:
+        return SessionList(
+            sessions=[],
+            total=0,
+            page=page,
+            page_size=page_size,
+            has_more=False,
         )
-        for i in range(min(page_size, 5))
-    ]
+
+    # 批量获取会话详情
+    sessions = []
+    for sid in session_ids:
+        sid_str = sid.decode() if isinstance(sid, bytes) else sid
+        info = await session_store.get_session_info(sid_str)
+        if info and info.get("exists"):
+            # 过滤
+            if session_type and info.get("type") != session_type.value:
+                continue
+            if status and info.get("status") != status.value:
+                continue
+
+            sessions.append(SessionInfo(
+                id=sid_str,
+                type=SessionType(info.get("type", "chat")),
+                title=info.get("title", "未命名会话"),
+                status=SessionStatus(info.get("status", "active")),
+                message_count=info.get("message_count", 0),
+                created_at=info.get("created_at", datetime.utcnow()),
+                updated_at=info.get("updated_at", datetime.utcnow()),
+                metadata=info.get("metadata"),
+            ))
 
     return SessionList(
-        sessions=mock_sessions,
-        total=42,  # 模拟总数
+        sessions=sessions,
+        total=total,
         page=page,
         page_size=page_size,
-        has_more=page * page_size < 42,
+        has_more=offset + page_size < total,
     )
 
 
@@ -320,30 +361,63 @@ async def update_session(session_id: str, request: SessionUpdate, req: Request):
         HTTPException: 会话不存在 (404)
     """
     request_id = get_request_id()
+    tenant_id = get_tenant_id()
+    user_id = get_user_id()
 
     logger.info(
         "session_updated",
         session_id=session_id,
         request_id=request_id,
+        tenant_id=tenant_id,
         updates=request.model_dump(exclude_none=True),
     )
 
     session_store = get_session_store()
     info = await session_store.get_session_info(session_id)
 
-    if not info:
+    if not info or not info.get("exists"):
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    # TODO: 实现更新逻辑
-    # 当前返回模拟数据
+    # 获取 Redis 客户端
+    redis_client = await session_store._get_client()
+    now = datetime.utcnow()
+
+    # 更新会话元数据
+    meta_key = f"session:{session_id}:meta"
+
+    # 构建更新数据
+    updates = {}
+    if request.title:
+        updates["title"] = request.title
+    if request.status:
+        updates["status"] = request.status.value
+    if request.metadata:
+        updates["metadata"] = json.dumps(request.metadata)
+    updates["updated_at"] = now.isoformat()
+
+    # 写入更新
+    if updates:
+        import json
+        await redis_client.hset(meta_key, mapping={
+            k: v if isinstance(v, str) else json.dumps(v)
+            for k, v in updates.items()
+        })
+        await redis_client.expire(meta_key, 86400)  # 保持 TTL
+
+        # 更新索引中的 score（按更新时间排序）
+        index_key = f"session:index:{tenant_id}:{user_id}"
+        await redis_client.zadd(index_key, {session_id: now.timestamp()})
+
+    # 返回更新后的信息
+    updated_info = await session_store.get_session_info(session_id)
 
     return SessionInfo(
         id=session_id,
-        type=SessionType(info.get("type", "chat")),
-        title=request.title or info.get("title"),
-        status=request.status or SessionStatus(info.get("status", "active")),
-        message_count=info.get("message_count", 0),
-        created_at=info.get("created_at", datetime.utcnow()),
-        updated_at=datetime.utcnow(),
-        metadata=request.metadata or info.get("metadata"),
+        type=SessionType(updated_info.get("type", "chat")),
+        title=request.title or updated_info.get("title", "未命名会话"),
+        status=request.status or SessionStatus(updated_info.get("status", "active")),
+        message_count=updated_info.get("message_count", 0),
+        created_at=updated_info.get("created_at", now),
+        updated_at=now,
+        metadata=request.metadata or updated_info.get("metadata"),
     )

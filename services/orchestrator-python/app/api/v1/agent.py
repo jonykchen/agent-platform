@@ -58,6 +58,7 @@ from app.core.config import config
 from app.graph.builder import get_agent_graph
 from app.graph.state import create_initial_state
 from app.memory.session_store import get_session_store
+from app.infrastructure.redis_client import get_redis
 from app.schemas.agent import (
     AgentCancelResponse,
     AgentRunRequest,
@@ -225,8 +226,23 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request)
 
     # 异步模式：立即返回 run_id，后台执行
     else:
-        # TODO: 实现异步执行（使用 BackgroundTasks 或消息队列）
-        # 当前先返回 pending 状态
+        from fastapi import BackgroundTasks
+        import json
+
+        # 将任务状态存储到 Redis
+        redis_client = get_redis()
+        await redis_client.hset(f"run:{run_id}", mapping={
+            "status": "pending",
+            "agent_id": agent_id,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "session_id": session_id,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "request_id": request_id,
+            "task": request.task[:500],  # 截断长任务描述
+        })
+        await redis_client.expire(f"run:{run_id}", 86400)  # 24小时过期
+
         logger.info(
             "agent_run_queued",
             agent_id=agent_id,
@@ -240,6 +256,103 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request)
             status=AgentRunStatus.PENDING,
             message="任务已排队，请通过状态查询 API 获取进度",
         )
+
+
+async def _execute_agent_background(
+    run_id: str,
+    agent_id: str,
+    initial_state: dict,
+    graph_config: dict,
+    callback_url: str | None,
+):
+    """后台执行 Agent 任务
+
+    Args:
+        run_id: 运行 ID
+        agent_id: Agent ID
+        initial_state: 初始状态
+        graph_config: 图配置
+        callback_url: 回调 URL
+    """
+    import httpx
+    from datetime import datetime
+
+    redis_client = get_redis()
+
+    try:
+        # 更新状态为 running
+        await redis_client.hset(f"run:{run_id}", mapping={
+            "status": "running",
+            "started_at": datetime.utcnow().isoformat(),
+        })
+
+        # 执行 Agent
+        graph = get_agent_graph()
+        result = await graph.invoke(initial_state, config=graph_config)
+
+        # 更新状态为 completed
+        await redis_client.hset(f"run:{run_id}", mapping={
+            "status": "completed",
+            "output": result.get("output", ""),
+            "step_count": str(result.get("step_count", 0)),
+            "completed_at": datetime.utcnow().isoformat(),
+        })
+
+        logger.info(
+            "agent_background_completed",
+            run_id=run_id,
+            agent_id=agent_id,
+            step_count=result.get("step_count", 0),
+        )
+
+        # 回调通知
+        if callback_url:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    await client.post(callback_url, json={
+                        "run_id": run_id,
+                        "status": "completed",
+                        "output": result.get("output", ""),
+                    })
+            except Exception as e:
+                logger.warning(
+                    "callback_failed",
+                    run_id=run_id,
+                    callback_url=callback_url,
+                    error=str(e),
+                )
+
+    except Exception as e:
+        # 更新状态为 failed
+        await redis_client.hset(f"run:{run_id}", mapping={
+            "status": "failed",
+            "error": str(e)[:500],
+            "failed_at": datetime.utcnow().isoformat(),
+        })
+
+        logger.error(
+            "agent_background_failed",
+            run_id=run_id,
+            agent_id=agent_id,
+            error=str(e),
+        )
+
+        # 回调通知失败
+        if callback_url:
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    await client.post(callback_url, json={
+                        "run_id": run_id,
+                        "status": "failed",
+                        "error": str(e),
+                    })
+            except Exception as callback_error:
+                logger.warning(
+                    "callback_failed",
+                    run_id=run_id,
+                    callback_url=callback_url,
+                    error=str(callback_error),
+                )
 
 
 @router.get("/runs/{run_id}", response_model=AgentStatus)
@@ -267,15 +380,47 @@ async def get_run_status(run_id: str, req: Request):
         request_id=request_id,
     )
 
-    # TODO: 从 Redis 或数据库查询运行状态
-    # 当前返回模拟数据
+    # 从 Redis 获取运行状态
+    redis_client = get_redis()
+    run_data = await redis_client.hgetall(f"run:{run_id}")
+
+    if not run_data:
+        raise HTTPException(
+            status_code=404,
+            detail=f"运行任务 {run_id} 不存在或已过期",
+        )
+
+    # 解析状态
+    status_str = run_data.get("status", "pending")
+    status = AgentRunStatus(status_str)
+    step_count = int(run_data.get("step_count", 0))
+    error = run_data.get("error")
+
+    # 计算进度
+    max_steps = config.max_agent_steps
+    progress = min(int(step_count / max_steps * 100), 100)
+
+    # 构建当前步骤描述
+    current_step = ""
+    if status == AgentRunStatus.PENDING:
+        current_step = "任务排队等待执行"
+        progress = 0
+    elif status == AgentRunStatus.RUNNING:
+        current_step = f"正在执行第 {step_count + 1} 步"
+    elif status == AgentRunStatus.COMPLETED:
+        current_step = "任务已完成"
+        progress = 100
+    elif status == AgentRunStatus.FAILED:
+        current_step = f"任务执行失败: {error}"
+        progress = 0
+
     return AgentStatus(
         run_id=run_id,
-        status=AgentRunStatus.RUNNING,
-        step_count=3,
-        current_step="正在调用工具 query_sales_data",
-        progress=45,
-        message="执行中",
+        status=status,
+        step_count=step_count,
+        current_step=current_step,
+        progress=progress,
+        message=error if status == AgentRunStatus.FAILED else None,
     )
 
 
