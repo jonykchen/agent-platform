@@ -73,7 +73,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 import structlog
@@ -398,7 +398,7 @@ class LongTermMemoryStore:
         Returns:
             排序后的记忆列表
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for entry in entries:
             days_passed = (now - entry.timestamp).days

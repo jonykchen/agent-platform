@@ -131,7 +131,7 @@ Key 格式：session:{session_id}:history
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import redis.asyncio as redis
 import structlog
@@ -220,7 +220,7 @@ class SessionStore:
         message = {
             "role": role,
             "content": content,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         # 追加消息
@@ -312,7 +312,7 @@ class SessionStore:
 
             # 创建摘要消息
             summary_msg = create_summary_message(summary_text)
-            summary_msg["timestamp"] = datetime.utcnow().isoformat()
+            summary_msg["timestamp"] = datetime.now(timezone.utc).isoformat()
 
             # 重新写入：摘要 + 保留的消息
             # 先删除旧数据

@@ -78,7 +78,7 @@ import json
 import os
 import time
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -349,7 +349,7 @@ def _write_to_wal(steps: list[StepRecord]) -> None:
         wal_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 使用统一的时间戳，便于追踪同一批次
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat() + "Z"
 
         # 【关键】以追加模式打开文件
         # 'a' 模式确保每次写入都在文件末尾，不会覆盖已有记录
@@ -513,7 +513,7 @@ def _clear_wal_entries(run_ids_to_clear: set[str]) -> None:
         all_entries = _read_wal()
 
         # 过滤：保留未清理且未过期的记录
-        cutoff_time = datetime.utcnow() - timedelta(hours=24)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
         remaining_entries: list[WALEntry] = []
         cleared_count = 0
         expired_count = 0
@@ -618,7 +618,7 @@ def _cleanup_expired_wal() -> int:
 
     try:
         all_entries = _read_wal()
-        cutoff_time = datetime.utcnow() - timedelta(hours=24)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
 
         remaining_entries: list[WALEntry] = []
         expired_count = 0

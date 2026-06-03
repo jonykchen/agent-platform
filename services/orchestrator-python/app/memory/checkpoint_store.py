@@ -83,7 +83,7 @@ LangGraph 的 Checkpoint 用于实现：
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import redis.asyncio as redis
 import structlog
@@ -223,7 +223,7 @@ class CheckpointStore:
         checkpoint_data = {
             "run_id": run_id,
             "checkpoint": checkpoint,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         await client.set(key, json.dumps(checkpoint_data), ex=ttl_seconds)
@@ -406,7 +406,7 @@ class CheckpointStore:
         checkpoint["approval_status"] = status
         checkpoint["approval_reviewer"] = reviewer_id
         checkpoint["approval_comment"] = comment
-        checkpoint["approval_updated_at"] = datetime.utcnow().isoformat()
+        checkpoint["approval_updated_at"] = datetime.now(timezone.utc).isoformat()
 
         await self.save(run_id, checkpoint)
 

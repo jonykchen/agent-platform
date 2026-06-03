@@ -283,7 +283,7 @@ async def _execute_agent_background(
         # 更新状态为 running
         await redis_client.hset(f"run:{run_id}", mapping={
             "status": "running",
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
         })
 
         # 执行 Agent
@@ -295,7 +295,7 @@ async def _execute_agent_background(
             "status": "completed",
             "output": result.get("output", ""),
             "step_count": str(result.get("step_count", 0)),
-            "completed_at": datetime.utcnow().isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
         })
 
         logger.info(
@@ -327,7 +327,7 @@ async def _execute_agent_background(
         await redis_client.hset(f"run:{run_id}", mapping={
             "status": "failed",
             "error": str(e)[:500],
-            "failed_at": datetime.utcnow().isoformat(),
+            "failed_at": datetime.now(timezone.utc).isoformat(),
         })
 
         logger.error(

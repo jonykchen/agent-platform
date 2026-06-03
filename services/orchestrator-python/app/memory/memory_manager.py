@@ -135,7 +135,7 @@ async def save_to_long_term_memory(
             user_query=user_query,
             agent_response_summary=response_summary,
             key_entities=key_entities or {},
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             importance_score=importance_score,
         )
 
