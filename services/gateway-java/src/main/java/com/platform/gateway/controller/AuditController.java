@@ -73,16 +73,22 @@ public class AuditController {
         String tenantId = tenantContextService.getCurrentTenantId();
         String requestId = tenantContextService.getCurrentRequestId();
 
+        // 验证 format 参数，防止 CRLF 注入
+        String safeFormat = format.replaceAll("[\\r\\n]", "");
+        if (!safeFormat.matches("^(csv|json)$")) {
+            safeFormat = "csv";
+        }
+
         log.info("Export audit events: requestId={}, tenant={}, format={}",
-                requestId, tenantId, format);
+                requestId, tenantId, safeFormat);
 
-        byte[] data = auditService.exportEvents(tenantId, request, format);
+        byte[] data = auditService.exportEvents(tenantId, request, safeFormat);
 
-        response.setContentType(format.equals("csv")
+        response.setContentType(safeFormat.equals("csv")
                 ? "text/csv"
                 : MediaType.APPLICATION_JSON_VALUE);
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
-                "attachment; filename=audit-events." + format);
+                "attachment; filename=audit-events." + safeFormat);
         response.getOutputStream().write(data);
         response.getOutputStream().flush();
     }

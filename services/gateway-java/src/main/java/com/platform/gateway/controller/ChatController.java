@@ -10,6 +10,7 @@ import com.platform.gateway.service.FastPathService;
 import com.platform.gateway.service.OrchestratorClient;
 import com.platform.gateway.service.TenantContextService;
 import com.platform.gateway.util.RequestIdGenerator;
+import jakarta.annotation.PreDestroy;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,7 +25,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 对话控制器
@@ -106,7 +109,26 @@ public class ChatController {
     private final OrchestratorClient orchestratorClient;
     private final TenantContextService tenantContextService;
     private final ObjectMapper objectMapper;
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+
+    // 有界线程池：核心线程 10，最大线程 50，队列容量 100，拒绝策略为调用者运行
+    private final ExecutorService executor = new ThreadPoolExecutor(
+        10, 50, 60L, TimeUnit.SECONDS,
+        new LinkedBlockingQueue<>(100),
+        new ThreadPoolExecutor.CallerRunsPolicy()
+    );
+
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
 
     /**
      * 对话补全接口（SSE 流式响应）

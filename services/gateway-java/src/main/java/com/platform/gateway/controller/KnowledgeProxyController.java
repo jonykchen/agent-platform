@@ -1,5 +1,6 @@
 package com.platform.gateway.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.gateway.exception.BusinessException;
 import com.platform.gateway.exception.ErrorCode;
 import com.platform.gateway.service.KnowledgeClient;
@@ -53,6 +54,7 @@ public class KnowledgeProxyController {
 
     private final KnowledgeClient knowledgeClient;
     private final TenantContextService tenantContextService;
+    private final ObjectMapper objectMapper;
 
     // ─────────────────────────────────────────────────────────────────────────────
     // 文档管理 API
@@ -200,19 +202,28 @@ public class KnowledgeProxyController {
         if (error instanceof BusinessException biz) {
             log.warn("[KnowledgeProxy] {} failed: code={}, msg={}", operation, biz.getErrorCode().getCode(), biz.getMessage());
             int status = biz.getErrorCode().getHttpStatus();
-            String body = String.format(
-                    "{\"error\":\"%s\",\"message\":\"%s\"}",
-                    biz.getErrorCode().getCode(),
-                    biz.getMessage()
-            );
-            return Mono.just(ResponseEntity.status(status).body(body));
+            try {
+                String body = objectMapper.writeValueAsString(Map.of(
+                    "error", biz.getErrorCode().getCode(),
+                    "message", biz.getMessage()
+                ));
+                return Mono.just(ResponseEntity.status(status).body(body));
+            } catch (Exception e) {
+                log.error("[KnowledgeProxy] JSON serialization failed", e);
+                return Mono.just(ResponseEntity.status(status).body("{\"error\":\"ERR_INTERNAL\",\"message\":\"序列化失败\"}"));
+            }
         }
 
         log.error("[KnowledgeProxy] {} failed with unexpected error", operation, error);
-        String body = String.format(
-                "{\"error\":\"ERR_SERVICE_UNAVAILABLE\",\"message\":\"Knowledge 服务暂时不可用: %s\"}",
-                error.getMessage()
-        );
-        return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body));
+        try {
+            String body = objectMapper.writeValueAsString(Map.of(
+                "error", "ERR_SERVICE_UNAVAILABLE",
+                "message", "Knowledge 服务暂时不可用: " + error.getMessage()
+            ));
+            return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body));
+        } catch (Exception e) {
+            return Mono.just(ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body("{\"error\":\"ERR_SERVICE_UNAVAILABLE\",\"message\":\"服务不可用\"}"));
+        }
     }
 }

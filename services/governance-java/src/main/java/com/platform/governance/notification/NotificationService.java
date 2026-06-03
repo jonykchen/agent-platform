@@ -120,7 +120,18 @@ public class NotificationService {
                 task.getStatus(), task.getId(), task.getRunId(), task.getTenantId()
         );
 
-        kafkaTemplate.send(APPROVAL_TOPIC, task.getId().toString(), event);
+        kafkaTemplate.send(APPROVAL_TOPIC, task.getId().toString(), event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("kafka_send_failed: topic={}, approvalId={}, error={}",
+                                APPROVAL_TOPIC, task.getId(), ex.getMessage());
+                    } else {
+                        log.debug("kafka_send_success: topic={}, approvalId={}, partition={}, offset={}",
+                                APPROVAL_TOPIC, task.getId(),
+                                result.getRecordMetadata().partition(),
+                                result.getRecordMetadata().offset());
+                    }
+                });
 
         log.info("Published approval result: approvalId={}, status={}",
                 task.getId(), task.getStatus());
@@ -211,8 +222,11 @@ public class NotificationService {
 
     /**
      * 构建 HTML 邮件内容
+     * 对用户输入进行 HTML 转义，防止 XSS/HTML 注入
      */
     private String buildHtmlEmail(String subject, String content) {
+        String safeSubject = escapeHtml(subject);
+        String safeContent = escapeHtml(content);
         return """
             <!DOCTYPE html>
             <html>
@@ -241,7 +255,19 @@ public class NotificationService {
                 </div>
             </body>
             </html>
-            """.formatted(subject, content, Instant.now().toString());
+            """.formatted(safeSubject, safeContent, Instant.now().toString());
+    }
+
+    /**
+     * HTML 特殊字符转义，防止 XSS 攻击
+     */
+    private String escapeHtml(String input) {
+        if (input == null) return "";
+        return input.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace("\"", "&quot;")
+                    .replace("'", "&#39;");
     }
 
     /**
