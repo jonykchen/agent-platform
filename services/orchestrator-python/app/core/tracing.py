@@ -22,6 +22,7 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
 
 logger = structlog.get_logger()
 
@@ -32,16 +33,26 @@ _tracer: Optional[trace.Tracer] = None
 def setup_tracing(
     service_name: str,
     otlp_endpoint: Optional[str] = None,
-    sample_rate: float = 1.0,
+    sample_rate: Optional[float] = None,
 ) -> None:
     """初始化 OpenTelemetry 追踪
 
     Args:
         service_name: 服务名称（用于标识追踪链路）
-        otlp_endpoint: OTel Collector 地址（默认从环境变量读取）
-        sample_rate: 采样率（0.0-1.0，生产环境建议 0.1）
+        otlp_endpoint: OTel Collector 地址（默认从环境变量或配置读取）
+        sample_rate: 采样率（0.0-1.0），默认从配置读取
+            - 生产环境建议 0.1（10% 采样）
+            - 开发环境建议 1.0（100% 采样）
     """
     global _tracer
+
+    # 从配置读取采样率（优先级：参数 > 配置 > 环境变量 > 默认值）
+    if sample_rate is None:
+        try:
+            from app.core.config import config
+            sample_rate = config.otel_sample_rate
+        except Exception:
+            sample_rate = float(os.getenv("OTEL_SAMPLE_RATE", "1.0"))
 
     # 从环境变量获取配置
     endpoint = otlp_endpoint or os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
@@ -52,6 +63,13 @@ def setup_tracing(
         _tracer = trace.NoOpTracer()
         return
 
+    logger.info(
+        "Tracing setup",
+        service_name=service_name,
+        endpoint=endpoint,
+        sample_rate=sample_rate,
+    )
+
     # 创建资源（服务标识）
     resource = Resource.create({
         "service.name": service_name,
@@ -59,8 +77,11 @@ def setup_tracing(
         "deployment.environment": os.getenv("ENVIRONMENT", "production"),
     })
 
-    # 创建 TracerProvider
-    provider = TracerProvider(resource=resource)
+    # 创建采样器（ParentBased 确保子 span 跟随父 span 的采样决策）
+    sampler = ParentBased(TraceIdRatioBased(sample_rate))
+
+    # 创建 TracerProvider（带采样器）
+    provider = TracerProvider(resource=resource, sampler=sampler)
 
     # 配置 OTLP 导出器
     otlp_exporter = OTLPSpanExporter(endpoint=endpoint)
@@ -76,7 +97,11 @@ def setup_tracing(
     try:
         FastAPIInstrumentor.instrument()
         HTTPXClientInstrumentor.instrument()
-        logger.info("Auto-instrumentation enabled", service_name=service_name)
+        logger.info(
+            "Auto-instrumentation enabled",
+            service_name=service_name,
+            sample_rate=sample_rate,
+        )
     except Exception as e:
         logger.warning("Auto-instrumentation failed", error=str(e))
 

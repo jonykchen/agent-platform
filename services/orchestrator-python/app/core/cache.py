@@ -476,16 +476,17 @@ class DualLayerCache:
 
         【写入流程】
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        1. 写 L1（本地缓存）- 使用基础 TTL，不抖动
-        2. 写 L2（Redis）- 应用 TTL 抖动，防雪崩
+        1. 写 L1（本地缓存）- 应用小抖动（±5%），轻微分散过期
+        2. 写 L2（Redis）- 应用大抖动（±20%），防雪崩
 
-        【为什么 L1 不抖动？】
-        L1 是进程内缓存，不同实例的 L1 相互独立：
-        - 实例 A 的 L1 TTL: 300s
-        - 实例 B 的 L1 TTL: 300s
-        - 它们不会"同时过期"，因为本身就独立
+        【TTL 抖动策略】
+        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        L1 小抖动（±5%）：
+        - L1 虽然实例间独立，但同一实例内可能大量 Key 同时过期
+        - 小抖动可分散实例内的过期峰值
 
-        只有 L2（共享的 Redis）才需要抖动防止雪崩。
+        L2 大抖动（±20%）：
+        - 防止多实例同时向 Redis 发起大量回源请求（缓存雪崩）
 
         Args:
             key: 缓存键
@@ -493,29 +494,40 @@ class DualLayerCache:
             ttl: 过期时间（秒），为 None 时使用默认值
             apply_jitter: 是否应用 TTL 抖动（雪崩防御），默认 True
         """
+        import random
+
         full_key = self._make_key(key)
         base_ttl = ttl or self._ttl
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # 应用 TTL 抖动（雪崩防御）
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        actual_ttl = calculate_ttl_with_jitter(base_ttl) if apply_jitter else base_ttl
+        if apply_jitter:
+            # L1 小抖动（±5%）：分散实例内过期峰值
+            l1_ttl = int(base_ttl * random.uniform(0.95, 1.05))
+            # L2 大抖动（±20%）：防止多实例同时回源
+            l2_ttl = int(base_ttl * random.uniform(0.8, 1.2))
+        else:
+            l1_ttl = base_ttl
+            l2_ttl = base_ttl
 
-        # 设置 L1（不应用抖动，使用基础 TTL）
+        # 设置 L1（带小抖动）
         self._local_cache[key] = value
+        self._local_cache_ttl[key] = l1_ttl
 
         # 设置 L2
         try:
             await self._redis.setex(
                 full_key,
-                actual_ttl,
+                l2_ttl,
                 json.dumps(value, ensure_ascii=False),
             )
             logger.debug(
                 "Cache set",
                 cache=self._name,
                 key=key,
-                ttl=actual_ttl,
+                l1_ttl=l1_ttl,
+                l2_ttl=l2_ttl,
                 jitter_applied=apply_jitter,
             )
         except RedisError as e:
