@@ -1,0 +1,1 @@
+"""Common proto 生成代码"""

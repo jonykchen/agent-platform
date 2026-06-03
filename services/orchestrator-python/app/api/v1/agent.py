@@ -58,7 +58,7 @@ from app.core.config import config
 from app.graph.builder import get_agent_graph
 from app.graph.state import create_initial_state
 from app.memory.session_store import get_session_store
-from app.infrastructure.redis_client import get_redis
+from app.main import get_redis
 from app.schemas.agent import (
     AgentCancelResponse,
     AgentRunRequest,

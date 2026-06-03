@@ -155,6 +155,11 @@ async def lifespan(app: FastAPI):
     await init_grpc_client()
     logger.info("gRPC client initialized")
 
+    # 8. gRPC 服务端（供 Gateway Java 调用）
+    from app.grpc.server import start_grpc_server
+    await start_grpc_server()
+    logger.info("gRPC server started", port=config.grpc_port)
+
     # ─────────────────────────────────────────────────────────────────────
     # Runtime: 处理请求
     # ─────────────────────────────────────────────────────────────────────
@@ -165,15 +170,24 @@ async def lifespan(app: FastAPI):
     # ─────────────────────────────────────────────────────────────────────
 
     # 释放顺序与初始化相反
+    # 8. 关闭 gRPC 服务端
+    from app.grpc.server import stop_grpc_server
+    await stop_grpc_server()
+    logger.info("gRPC server stopped")
+
+    # 7. 关闭 gRPC 客户端
+    from app.infrastructure.grpc_client import close_grpc_client
+    await close_grpc_client()
+
+    # 6. 关闭数据库连接池
+    from app.infrastructure.database import close_database_pool
+    await close_database_pool()
+
+    # 5. Step 缓冲区
     if step_buffer:
         await step_buffer.stop()
 
-    from app.infrastructure.grpc_client import close_grpc_client
-    from app.infrastructure.database import close_database_pool
-
-    await close_grpc_client()
-    await close_database_pool()
-
+    # 2. Redis 连接
     if redis_client:
         await redis_client.close()
 

@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-from gateway import orchestrator_pb2 as gateway_dot_orchestrator__pb2
+from app.gen.gateway import orchestrator_pb2 as gateway_dot_orchestrator__pb2
 
 
 class OrchestratorServiceStub:
