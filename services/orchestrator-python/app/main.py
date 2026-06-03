@@ -70,6 +70,7 @@ from app.core.health_checker import init_health_checker
 from app.core.logging import setup_logging
 from app.core.metrics import RequestMetricsMiddleware
 from app.core.step_buffer import StepBuffer
+from app.infrastructure.redis_client import init_redis, close_redis, get_redis
 
 logger = structlog.get_logger()
 
@@ -126,7 +127,7 @@ async def lifespan(app: FastAPI):
     )
 
     # 2. Redis 连接（Feature Flag、缓存、健康检查依赖）
-    redis_client = Redis.from_url(config.redis_url)
+    redis_client = await init_redis(config.redis_url)
     feature_flags = FeatureFlagClient(redis_client)
     logger.info("Redis connected")
 
@@ -188,8 +189,7 @@ async def lifespan(app: FastAPI):
         await step_buffer.stop()
 
     # 2. Redis 连接
-    if redis_client:
-        await redis_client.close()
+    await close_redis()
 
     logger.info("Orchestrator shutting down")
 
@@ -297,10 +297,3 @@ def get_step_buffer() -> StepBuffer:
     if step_buffer is None:
         raise RuntimeError("Step buffer not initialized")
     return step_buffer
-
-
-def get_redis() -> Redis:
-    """获取 Redis 客户端"""
-    if redis_client is None:
-        raise RuntimeError("Redis not initialized")
-    return redis_client
