@@ -60,6 +60,7 @@ import redis.asyncio as redis
 import structlog
 
 from app.core.config import AppConfig, get_config
+from app.core.exceptions import UnauthorizedError, QuotaExceededError
 from app.infrastructure.database import Pool, get_database_pool
 
 if TYPE_CHECKING:
@@ -339,6 +340,8 @@ def _verify_jwt_token(token: str) -> dict:
     """
     import jwt
 
+    config = get_config()
+
     try:
         payload = jwt.decode(
             token,
@@ -402,8 +405,10 @@ def get_optional_user(
         if x_user_id:
             return x_user_id
         if credentials:
-            # 简化处理
-            return getattr(credentials, "user_id", None)
+            # 尝试从 JWT 解析用户 ID
+            token = credentials.credentials
+            payload = _verify_jwt_token(token)
+            return payload.get("sub")
     except Exception:
         pass
     return None

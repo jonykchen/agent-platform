@@ -56,8 +56,9 @@ Session API 用于：
 
 from __future__ import annotations
 
+import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -109,7 +110,7 @@ async def create_session(request: SessionCreate, req: Request):
     user_id = get_user_id()
 
     session_id = f"sess_{uuid.uuid4().hex[:16]}_{tenant_id}"
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     logger.info(
         "session_created",
@@ -188,7 +189,7 @@ async def get_session(session_id: str, req: Request):
         title=info.get("title"),
         status=SessionStatus(info.get("status", "active")),
         message_count=len(history),
-        created_at=info.get("created_at", datetime.utcnow()),
+        created_at=info.get("created_at", datetime.now(timezone.utc)),
         updated_at=info.get("updated_at"),
         last_message_at=history[-1].get("timestamp") if history else None,
         metadata=info.get("metadata"),
@@ -327,8 +328,8 @@ async def list_sessions(
                 title=info.get("title", "未命名会话"),
                 status=SessionStatus(info.get("status", "active")),
                 message_count=info.get("message_count", 0),
-                created_at=info.get("created_at", datetime.utcnow()),
-                updated_at=info.get("updated_at", datetime.utcnow()),
+                created_at=info.get("created_at", datetime.now(timezone.utc)),
+                updated_at=info.get("updated_at", datetime.now(timezone.utc)),
                 metadata=info.get("metadata"),
             ))
 
@@ -380,7 +381,7 @@ async def update_session(session_id: str, request: SessionUpdate, req: Request):
 
     # 获取 Redis 客户端
     redis_client = await session_store._get_client()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # 更新会话元数据
     meta_key = f"session:{session_id}:meta"
@@ -397,7 +398,6 @@ async def update_session(session_id: str, request: SessionUpdate, req: Request):
 
     # 写入更新
     if updates:
-        import json
         await redis_client.hset(meta_key, mapping={
             k: v if isinstance(v, str) else json.dumps(v)
             for k, v in updates.items()
