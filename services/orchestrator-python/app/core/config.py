@@ -277,6 +277,87 @@ class AppConfig(BaseSettings):
     max_concurrent_model_calls: int = Field(default=20, description="最大并发模型调用数")
     max_concurrent_tool_calls: int = Field(default=30, description="最大并发工具调用数")
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # 摘要生成配置 - 对话历史压缩
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # 摘要生成策略：
+    # 1. 当对话超过 trigger_turns 时触发摘要
+    # 2. 对早期对话（保留 preserve_turns 之前的）生成摘要
+    # 3. 用摘要替换早期对话，节省 token
+    # 效果：原本 20 轮对话约 5000 tokens，摘要后约 500 tokens
+
+    summary_enabled: bool = Field(default=True, description="是否启用摘要生成")
+    summary_trigger_turns: int = Field(default=10, description="摘要触发阈值（对话轮数）")
+    summary_turns: int = Field(default=5, description="每次摘要的对话轮数")
+    summary_preserve_turns: int = Field(default=3, description="保留的最近轮数（不参与摘要）")
+    summary_max_length: int = Field(default=500, description="摘要最大长度（字符）")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 长时记忆配置 - 跨会话记忆存储
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # 长时记忆作用：
+    # 1. 存储用户历史对话到向量数据库
+    # 2. 新会话时检索相关历史记忆
+    # 3. 支持用户画像和偏好学习
+    # 技术实现：PostgreSQL pgvector + 语义检索 + 时间衰减
+
+    long_term_memory_enabled: bool = Field(default=True, description="是否启用长时记忆")
+    embedding_service_url: str = Field(default="http://localhost:8001", description="Embedding 服务地址")
+    memory_retrieve_top_k: int = Field(default=5, description="检索相关记忆数量")
+    memory_decay_factor: float = Field(default=0.95, description="记忆时间衰减系数（每天）")
+    embedding_dim: int = Field(default=1536, description="向量维度（与 embedding 模型匹配）")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 配额限制配置 - 防止资源滥用
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # 配额设计原则：
+    # 1. 租户级限制：防止单个租户占用过多资源
+    # 2. 用户级限制：防止单个用户滥用
+    # 3. Token 配额：控制 LLM 成本
+
+    quota_tenant_requests_per_minute: int = Field(
+        default=100,
+        description="租户每分钟请求限制",
+    )
+    quota_user_requests_per_hour: int = Field(
+        default=500,
+        description="用户每小时请求限制",
+    )
+    quota_tenant_tokens_per_day: int = Field(
+        default=100000,
+        description="租户每日 Token 配额",
+    )
+    quota_concurrent_requests: int = Field(
+        default=10,
+        description="租户并发请求数限制",
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # OpenTelemetry 采样配置
+    # ─────────────────────────────────────────────────────────────────────────
+
+    otel_sample_rate: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="OTel 采样率（生产环境建议 0.1，开发环境 1.0）",
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # gRPC 服务端配置 - Gateway 调用入口
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # gRPC 服务端配置
+    # Gateway Java 通过 gRPC 调用 Orchestrator，需要启动 gRPC 服务端
+    grpc_enabled: bool = Field(default=True, description="是否启用 gRPC 服务端")
+    grpc_port: int = Field(default=50051, description="gRPC 服务端口")
+    grpc_max_message_size: int = Field(default=16 * 1024 * 1024, description="gRPC 最大消息大小（字节）")
+    grpc_keepalive_time_ms: int = Field(default=30000, description="gRPC Keepalive 时间（毫秒）")
+    grpc_keepalive_timeout_ms: int = Field(default=10000, description="gRPC Keepalive 超时（毫秒）")
+
     @field_validator("jwt_secret")
     @classmethod
     def validate_jwt_secret(cls, v: str, info) -> str:

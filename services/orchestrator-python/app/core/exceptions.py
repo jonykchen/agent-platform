@@ -125,6 +125,15 @@ class RateLimitedError(BasePlatformException):
         )
 
 
+class QuotaExceededError(BasePlatformException):
+    def __init__(self, message: str = "配额已用尽"):
+        super().__init__(
+            message,
+            code="ERR_QUOTA_EXCEEDED",
+            user_message="您的使用配额已用尽，请联系管理员",
+        )
+
+
 class TimeoutError(BasePlatformException):
     def __init__(self, operation: str, timeout_s: float):
         super().__init__(

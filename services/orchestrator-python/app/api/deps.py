@@ -293,17 +293,22 @@ def get_current_user(
     # 尝试从 JWT 解析（外部调用）
     if credentials:
         try:
-            # TODO: 实现 JWT 验证
-            # 目前简化处理，生产环境需要完整验证
-            import base64
-            import json
-
             token = credentials.credentials
-            # 注意：这里仅作演示，实际需要验证签名
-            payload = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=="))
+            payload = _verify_jwt_token(token)
             user_id = payload.get("sub")
             if user_id:
                 return user_id
+        except UnauthorizedError as e:
+            logger.warning(
+                "jwt_verification_failed",
+                error=e.message,
+                error_code=e.code,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=e.user_message,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         except Exception as e:
             logger.warning("jwt_parse_failed", error=str(e))
 
@@ -312,6 +317,57 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _verify_jwt_token(token: str) -> dict:
+    """完整 JWT 验证
+
+    验证项：
+    1. 签名验证（使用 HS256 算法）
+    2. 过期时间验证（exp 字段）
+    3. 签发时间验证（iat 字段）
+    4. Token 类型验证（type 字段必须为 access）
+
+    Args:
+        token: JWT Token 字符串
+
+    Returns:
+        dict: 解码后的 payload
+
+    Raises:
+        UnauthorizedError: 验证失败
+    """
+    import jwt
+
+    try:
+        payload = jwt.decode(
+            token,
+            config.jwt_secret,
+            algorithms=[config.jwt_algorithm],
+            options={
+                "verify_exp": True,
+                "verify_iat": True,
+                "require": ["exp", "iat", "sub"],
+            },
+        )
+
+        # 验证 token 类型（如果有）
+        token_type = payload.get("type")
+        if token_type and token_type != "access":
+            raise UnauthorizedError("Invalid token type")
+
+        return payload
+
+    except jwt.ExpiredSignatureError:
+        raise UnauthorizedError("Token 已过期，请重新登录")
+    except jwt.InvalidSignatureError:
+        raise UnauthorizedError("Token 签名无效")
+    except jwt.InvalidAlgorithmError:
+        raise UnauthorizedError("Token 使用了不支持的算法")
+    except jwt.MissingRequiredClaimError as e:
+        raise UnauthorizedError(f"Token 缺少必要字段: {e.claim}")
+    except jwt.InvalidTokenError as e:
+        raise UnauthorizedError(f"Token 无效: {str(e)}")
 
 
 # 类型别名
@@ -418,6 +474,10 @@ class QuotaManager:
     ) -> bool:
         """检查请求配额
 
+        实现两级限制：
+        1. 租户级：每分钟请求数限制
+        2. 用户级：每小时请求数限制
+
         Args:
             tenant_id: 租户 ID
             user_id: 用户 ID
@@ -428,10 +488,41 @@ class QuotaManager:
         Raises:
             QuotaExceededError: 配额用尽
         """
-        # TODO: 实现配额检查逻辑
-        # 1. 检查租户级配额
-        # 2. 检查用户级配额
-        # 3. 更新使用计数
+        # 1. 检查租户级每分钟限制
+        minute_key = f"quota:{tenant_id}:req:min"
+        count = await self._redis.incr(minute_key)
+        if count == 1:
+            await self._redis.expire(minute_key, 60)
+
+        if count > config.quota_tenant_requests_per_minute:
+            logger.warning(
+                "tenant_rate_limit_exceeded",
+                tenant_id=tenant_id,
+                count=count,
+                limit=config.quota_tenant_requests_per_minute,
+            )
+            raise QuotaExceededError(
+                f"租户请求频率超限（{config.quota_tenant_requests_per_minute}/分钟）"
+            )
+
+        # 2. 检查用户级每小时限制
+        hour_key = f"quota:{tenant_id}:{user_id}:req:hour"
+        count = await self._redis.incr(hour_key)
+        if count == 1:
+            await self._redis.expire(hour_key, 3600)
+
+        if count > config.quota_user_requests_per_hour:
+            logger.warning(
+                "user_rate_limit_exceeded",
+                tenant_id=tenant_id,
+                user_id=user_id,
+                count=count,
+                limit=config.quota_user_requests_per_hour,
+            )
+            raise QuotaExceededError(
+                f"用户请求频率超限（{config.quota_user_requests_per_hour}/小时）"
+            )
+
         return True
 
     async def check_token_quota(
@@ -441,14 +532,38 @@ class QuotaManager:
     ) -> bool:
         """检查 Token 配额
 
+        实现租户级每日 Token 配额限制。
+
         Args:
             tenant_id: 租户 ID
             tokens_requested: 请求的 Token 数
 
         Returns:
             bool: 是否有配额
+
+        Raises:
+            QuotaExceededError: 配额用尽
         """
-        # TODO: 实现 Token 配额检查
+        daily_key = f"quota:{tenant_id}:tokens:daily"
+        used = await self._redis.incrby(daily_key, tokens_requested)
+
+        # 首次设置时设置过期时间
+        if used == tokens_requested:
+            await self._redis.expire(daily_key, 86400)
+
+        if used > config.quota_tenant_tokens_per_day:
+            logger.warning(
+                "token_quota_exceeded",
+                tenant_id=tenant_id,
+                used=used,
+                limit=config.quota_tenant_tokens_per_day,
+            )
+            # 回滚计数
+            await self._redis.incrby(daily_key, -tokens_requested)
+            raise QuotaExceededError(
+                f"租户 Token 配额用尽（{config.quota_tenant_tokens_per_day}/天）"
+            )
+
         return True
 
     async def record_usage(
@@ -460,14 +575,35 @@ class QuotaManager:
     ) -> None:
         """记录使用量
 
+        将使用量记录到 Redis，用于计费和统计。
+
         Args:
             tenant_id: 租户 ID
             user_id: 用户 ID
             tokens_used: 使用的 Token 数
             request_id: 请求 ID
         """
-        # TODO: 实现使用量记录
-        pass
+        import time
+
+        today = time.strftime("%Y-%m-%d")
+
+        # 记录到每日统计
+        daily_key = f"usage:{tenant_id}:{today}"
+        await self._redis.incrby(f"{daily_key}:tokens", tokens_used)
+        await self._redis.incr(f"{daily_key}:requests")
+
+        # 记录用户级统计
+        user_key = f"usage:{tenant_id}:{user_id}:{today}"
+        await self._redis.incrby(f"{user_key}:tokens", tokens_used)
+        await self._redis.incr(f"{user_key}:requests")
+
+        logger.debug(
+            "usage_recorded",
+            tenant_id=tenant_id,
+            user_id=user_id,
+            tokens_used=tokens_used,
+            request_id=request_id,
+        )
 
 
 async def get_quota_manager(
