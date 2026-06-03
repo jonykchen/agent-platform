@@ -331,8 +331,28 @@ _generator: SummaryGenerator | None = None
 
 
 def get_summary_generator() -> SummaryGenerator:
-    """获取摘要生成器实例"""
+    """获取摘要生成器实例（注入依赖）
+
+    自动注入 ModelGatewayClient 用于 LLM 摘要生成，
+    并从配置读取摘要参数。
+    """
     global _generator
     if _generator is None:
-        _generator = SummaryGenerator()
+        from app.core.config import config
+        from app.tools.clients import get_model_gateway_client
+
+        summary_config = SummaryConfig(
+            trigger_turns=config.summary_trigger_turns,
+            summary_turns=config.summary_turns,
+            preserve_turns=config.summary_preserve_turns,
+            max_summary_length=config.summary_max_length,
+        )
+
+        # 注入 ModelGatewayClient 用于 LLM 摘要生成
+        llm_client = get_model_gateway_client() if config.summary_enabled else None
+
+        _generator = SummaryGenerator(
+            config=summary_config,
+            llm_client=llm_client,
+        )
     return _generator

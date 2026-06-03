@@ -230,6 +230,29 @@ async def chat_completion(request: ChatRequest, req: Request):
         request_id=request_id,
     )
 
+    # 检索相关长时记忆（跨会话召回）
+    from app.memory.memory_manager import (
+        retrieve_relevant_memories,
+        format_memories_for_context,
+    )
+
+    relevant_memories = await retrieve_relevant_memories(
+        query=request.message,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        top_k=config.memory_retrieve_top_k,
+    )
+
+    # 格式化记忆为上下文
+    memory_context = format_memories_for_context(relevant_memories)
+
+    logger.info(
+        "memories_retrieved_for_context",
+        request_id=request_id,
+        memory_count=len(relevant_memories),
+        has_context=bool(memory_context),
+    )
+
     # 构建初始状态
     initial_state = create_initial_state(
         input=request.message,
@@ -242,6 +265,18 @@ async def chat_completion(request: ChatRequest, req: Request):
 
     # 添加历史消息
     initial_state["messages"] = history
+
+    # 添加记忆上下文（如果有）
+    if memory_context:
+        initial_state["messages"].append({
+            "role": "system",
+            "content": memory_context,
+        })
+        logger.debug(
+            "memory_context_injected",
+            request_id=request_id,
+            context_length=len(memory_context),
+        )
 
     # 获取 Agent 图
     graph = get_agent_graph()
@@ -271,10 +306,31 @@ async def chat_completion(request: ChatRequest, req: Request):
         approval_id = result.get("approval_id")
         step_count = result.get("step_count", 0)
 
-        # 保存消息到会话
+        # 保存消息到会话（触发摘要生成）
         await session_store.append_message(session_id, "user", request.message)
         if output:
             await session_store.append_message(session_id, "assistant", output)
+
+            # 保存到长时记忆（跨会话召回）
+            from app.memory.memory_manager import (
+                save_to_long_term_memory,
+                extract_key_entities_from_tool_results,
+            )
+
+            # 提取关键实体（从工具结果中）
+            key_entities = extract_key_entities_from_tool_results(
+                result.get("tool_results", [])
+            )
+
+            # 存储对话到长时记忆
+            await save_to_long_term_memory(
+                session_id=session_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                user_query=request.message,
+                agent_response=output,
+                key_entities=key_entities,
+            )
 
         # 如果需要审批，保存 Checkpoint 用于恢复
         if approval_id:
@@ -401,7 +457,7 @@ async def resume_chat(request: dict, req: Request):
     session_id = checkpoint.get("session_id")
     output = result.get("output", "")
 
-    if output:
+    if output and session_id:
         await session_store.append_message(session_id, "assistant", output)
 
     return {

@@ -200,12 +200,13 @@ class SessionStore:
         content: str,
         max_turns: int = 20,
     ) -> None:
-        """追加消息到会话历史
+        """追加消息到会话历史（集成摘要生成）
 
-        实现滑动窗口策略：
-        1. RPUSH 追加新消息到尾部
-        2. LTRIM 保留最新的 N 条消息
-        3. EXPIRE 设置/刷新过期时间
+        执行流程：
+        1. RPUSH 追加新消息
+        2. 检查并触发摘要生成（如果超过阈值）
+        3. LTRIM 保持滑动窗口（如果摘要未触发）
+        4. EXPIRE 设置过期时间
 
         Args:
             session_id: 会话 ID
@@ -225,11 +226,14 @@ class SessionStore:
         # 追加消息
         await client.rpush(key, json.dumps(message))
 
-        # 保持最大轮数（每轮包含 user + assistant）
-        # 使用 LTRIM 保留最新的 N 条消息
-        length = await client.llen(key)
-        if length > max_turns * 2:
-            await client.ltrim(key, -(max_turns * 2), -1)
+        # 检查并触发摘要生成（在 LTRIM 之前）
+        summary_triggered = await self._trigger_summary_if_needed(session_id, max_turns)
+
+        # 如果摘要未触发，使用传统滑动窗口截断
+        if not summary_triggered:
+            length = await client.llen(key)
+            if length > max_turns * 2:
+                await client.ltrim(key, -(max_turns * 2), -1)
 
         # 设置过期时间（24 小时）
         await client.expire(key, 86400)
@@ -239,7 +243,110 @@ class SessionStore:
             session_id=session_id,
             role=role,
             content_length=len(content),
+            summary_triggered=summary_triggered,
         )
+
+    async def _trigger_summary_if_needed(
+        self,
+        session_id: str,
+        max_turns: int,
+    ) -> bool:
+        """检查并触发摘要生成（内部方法）
+
+        【触发条件】
+        1. 消息数量超过 trigger_turns
+        2. 每追加一条消息检查一次（避免遗漏）
+
+        【执行流程】
+        1. 获取当前消息列表
+        2. 检查是否需要摘要
+        3. 分离需要摘要和保留的消息
+        4. 调用 SummaryGenerator 生成摘要
+        5. 用摘要替换早期消息
+        6. 重新写入 Redis
+
+        Args:
+            session_id: 会话 ID
+            max_turns: 最大保留轮数
+
+        Returns:
+            是否触发了摘要生成
+        """
+        try:
+            from app.core.config import config
+            from app.memory.summary_generator import (
+                get_summary_generator,
+                create_summary_message,
+            )
+
+            if not config.summary_enabled:
+                return False
+
+            client = await self._get_client()
+            key = self._key(session_id)
+
+            # 获取所有消息
+            messages_raw = await client.lrange(key, 0, -1)
+            messages = [json.loads(m) for m in messages_raw]
+
+            # 检查是否需要摘要
+            generator = get_summary_generator()
+            if not generator.should_generate_summary(messages):
+                return False
+
+            # 分离需要摘要和保留的消息
+            to_summarize, to_preserve = generator.get_messages_to_summarize(messages)
+
+            if not to_summarize:
+                return False
+
+            # 生成摘要（带上下文信息）
+            context = {
+                "session_id": session_id,
+                "message_count": len(messages),
+            }
+            summary_text = await generator.generate(to_summarize, context)
+
+            if not summary_text:
+                return False
+
+            # 创建摘要消息
+            summary_msg = create_summary_message(summary_text)
+            summary_msg["timestamp"] = datetime.utcnow().isoformat()
+
+            # 重新写入：摘要 + 保留的消息
+            # 先删除旧数据
+            await client.delete(key)
+
+            # 写入摘要
+            await client.rpush(key, json.dumps(summary_msg))
+
+            # 写入保留的消息
+            for msg in to_preserve:
+                await client.rpush(key, json.dumps(msg))
+
+            # 恢复 TTL
+            await client.expire(key, 86400)
+
+            logger.info(
+                "summary_generated",
+                session_id=session_id,
+                summarized_count=len(to_summarize),
+                preserved_count=len(to_preserve),
+                summary_length=len(summary_text),
+            )
+
+            return True
+
+        except Exception as e:
+            # 摘要生成失败不影响主流程，记录警告日志
+            logger.warning(
+                "summary_generation_failed",
+                session_id=session_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            return False
 
     async def get_history(
         self,

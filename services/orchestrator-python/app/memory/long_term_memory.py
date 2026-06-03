@@ -365,9 +365,16 @@ class LongTermMemoryStore:
         try:
             import httpx
 
+            # 使用配置的服务地址（支持动态配置）
+            embedding_url = getattr(
+                self,
+                "_embedding_service_url",
+                "http://localhost:8001",
+            )
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
-                    "http://localhost:8001/embeddings",
+                    f"{embedding_url}/embeddings",
                     json={"input": text, "model": "text-embedding-ada-002"},
                 )
                 if response.status_code == 200:
@@ -437,8 +444,21 @@ _store: LongTermMemoryStore | None = None
 
 
 def get_long_term_memory() -> LongTermMemoryStore:
-    """获取长时记忆存储实例"""
+    """获取长时记忆存储实例（注入依赖）
+
+    自动从配置读取数据库连接、向量维度、衰减系数等参数，
+    并设置 embedding 服务地址。
+    """
     global _store
     if _store is None:
-        _store = LongTermMemoryStore()
+        from app.core.config import config
+
+        _store = LongTermMemoryStore(
+            db_url=config.database_url,
+            embedding_dim=config.embedding_dim,
+            decay_factor=config.memory_decay_factor,
+            max_retrieve=config.memory_retrieve_top_k,
+        )
+        # 设置 embedding 服务地址（从配置读取）
+        _store._embedding_service_url = config.embedding_service_url
     return _store
