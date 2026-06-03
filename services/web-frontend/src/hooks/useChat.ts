@@ -1,6 +1,5 @@
-import { useCallback, useRef } from 'react';
-import { useChatStore } from '@/stores/chatStore';
-import { useSSE } from './useSSE';
+import { useCallback, useRef, useState } from 'react';
+import { useChatStore, DEFAULT_SESSION_STATE } from '@/stores/chatStore';
 import { useNetworkStatus } from './useNetworkStatus';
 import { useAuthStore } from '@/stores/authStore';
 import type { ChatCompletionChunk, Message, ChatRequest } from '@/types/chat';
@@ -41,8 +40,9 @@ export interface UseChatReturn {
 export function useChat(options: UseChatOptions): UseChatReturn {
   const { sessionId, onComplete, onError, onStep } = options;
 
+  // 使用 zustand selector 订阅会话状态，确保 store 变化时组件重新渲染
+  const sessionState = useChatStore((state) => state.sessions[sessionId] || DEFAULT_SESSION_STATE);
   const {
-    getSessionState,
     addMessage,
     setStreaming,
     clearStreamContent,
@@ -51,23 +51,23 @@ export function useChat(options: UseChatOptions): UseChatReturn {
     handleChunk,
     clearMessages: clearStoreMessages,
     addToOfflineQueue,
-    removeFromOfflineQueue,
   } = useChatStore();
 
-  const sessionState = getSessionState(sessionId);
   const { isOnline } = useNetworkStatus();
   const { accessToken, tenant, user } = useAuthStore();
 
   // 保存最后一次请求的引用，用于重试
   const lastRequestRef = useRef<SendMessageOptions | null>(null);
 
-  // SSE 处理
-  const sseUrl = `${APP_CONFIG.API_BASE_URL}/chat/completions`;
+  // AbortController 用于取消正在进行的 SSE 请求
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const sseOptions = {
-    url: sseUrl,
-    enabled: false, // 手动控制
-    onMessage: (chunk: ChatCompletionChunk) => {
+  // SSE 连接状态
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  // SSE 处理函数
+  const handleSSEMessage = useCallback(
+    (chunk: ChatCompletionChunk) => {
       handleChunk(sessionId, chunk);
 
       if (chunk.step_info) {
@@ -75,12 +75,15 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       }
 
       if (chunk.is_final) {
+        // 从 store 获取最新的 streamingContent
+        const latestState = useChatStore.getState().getSessionState(sessionId);
+
         // 创建最终的 AI 消息
         const assistantMessage: Message = {
           id: `msg_${Date.now()}`,
           session_id: sessionId,
           role: 'assistant',
-          content: sessionState.streamingContent,
+          content: latestState.streamingContent,
           created_at: new Date().toISOString(),
         };
 
@@ -88,35 +91,42 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         clearStreamContent(sessionId);
         clearSteps(sessionId);
         setCurrentRunId(sessionId, null);
+        setIsConnecting(false);
         onComplete?.(assistantMessage);
       }
     },
-    onError: (error) => {
+    [sessionId, handleChunk, onStep, addMessage, clearStreamContent, clearSteps, setCurrentRunId, onComplete]
+  );
+
+  const handleSSEError = useCallback(
+    (error: Error) => {
       setStreaming(sessionId, false);
       clearSteps(sessionId);
+      setIsConnecting(false);
       onError?.(error);
     },
-    onComplete: () => {
-      setStreaming(sessionId, false);
-    },
-  };
+    [sessionId, setStreaming, clearSteps, onError]
+  );
 
-  const { connect, disconnect, retry: sseRetry, isStreaming: sseStreaming } = useSSE<ChatCompletionChunk>(sseOptions);
-
-  // 发送消息
+  // 直接使用 fetch 发送 SSE 请求
   const sendMessage = useCallback(
-    (sendOptions: SendMessageOptions) => {
+    async (sendOptions: SendMessageOptions) => {
       const { content, history, options: chatOptions } = sendOptions;
 
       if (!content.trim()) {
         return;
       }
 
+      // 取消正在进行的旧请求，避免多个 SSE 流并发
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+
       lastRequestRef.current = sendOptions;
 
       // 检查离线状态
       if (!isOnline) {
-        // 添加到离线队列
         addToOfflineQueue({
           id: `offline_${Date.now()}`,
           sessionId,
@@ -125,7 +135,6 @@ export function useChat(options: UseChatOptions): UseChatReturn {
           retryCount: 0,
         });
 
-        // 创建用户消息标记为离线
         const offlineMessage: Message = {
           id: `msg_offline_${Date.now()}`,
           session_id: sessionId,
@@ -150,54 +159,191 @@ export function useChat(options: UseChatOptions): UseChatReturn {
 
       addMessage(sessionId, userMessage);
 
-      // 准备请求
-      const requestBody: ChatRequest = {
-        message: content,
-        session_id: sessionId,
-        history,
-        options: {
-          stream: true,
-          ...chatOptions,
-        },
-      };
+      // 构建历史消息（在添加 userMessage 之前的消息）
+      const currentState = useChatStore.getState().getSessionState(sessionId);
+      const recentMessages = currentState.messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .slice(-APP_CONFIG.MAX_HISTORY_MESSAGES);
 
-      // 更新 SSE 选项并连接
-      sseOptions.body = requestBody;
       setStreaming(sessionId, true);
       clearStreamContent(sessionId);
       clearSteps(sessionId);
+      setIsConnecting(true);
 
-      connect();
+      // 准备请求 - 匹配后端 ChatRequest 格式
+      const requestBody: Record<string, unknown> = {
+        message: content,
+        stream: true,
+        ...chatOptions,
+      };
+
+      // 构建历史消息（扁平格式，传给后端的 history 字段）
+      if (history && history.length > 0) {
+        requestBody.history = history;
+      } else if (recentMessages.length > 0) {
+        requestBody.history = recentMessages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+      }
+
+      // 发送 SSE 请求
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        };
+
+        if (accessToken) {
+          headers.Authorization = `Bearer ${accessToken}`;
+        }
+        if (tenant) {
+          headers['X-Tenant-ID'] = tenant.id;
+        }
+        if (user) {
+          headers['X-User-ID'] = user.id;
+        }
+
+        const fetchUrl = `${APP_CONFIG.API_BASE_URL}/chat/completions`;
+
+        // SSE 流式请求必须直接请求后端，绕过 Vite 代理缓冲
+        // 开发环境后端端口 8080，生产环境使用相对路径走网关
+        const directSseUrl = import.meta.env.DEV
+          ? `http://localhost:8080${fetchUrl}`
+          : fetchUrl;
+
+        let response: Response;
+        try {
+          abortControllerRef.current = new AbortController();
+          response = await fetch(directSseUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody),
+            signal: abortControllerRef.current.signal,
+          });
+        } catch (fetchError) {
+          if ((fetchError as Error).name === 'AbortError') {
+            return;
+          }
+          throw fetchError;
+        }
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        // SSE 解析器
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let currentEvent = '';
+
+        const processChunk = (chunk: string) => {
+          const lines = (buffer + chunk).split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            // 处理 SSE event 行
+            if (line.startsWith('event:')) {
+              currentEvent = line.slice(6).trim();
+              continue;
+            }
+
+            // 空行表示事件结束，重置 event
+            if (line.trim() === '') {
+              currentEvent = '';
+              continue;
+            }
+
+            if (line.startsWith('data:')) {
+              const data = line.slice(5).trim();
+              if (!data) continue;
+
+              // 跳过 error 事件
+              if (currentEvent === 'error') {
+                try {
+                  const parsed = JSON.parse(data);
+                  handleSSEError(new Error(parsed.message || 'Server error'));
+                } catch {
+                  handleSSEError(new Error(data));
+                }
+                currentEvent = '';
+                continue;
+              }
+
+              try {
+                const parsed = JSON.parse(data) as ChatCompletionChunk;
+                handleSSEMessage(parsed);
+              } catch {
+                // 忽略解析错误
+              }
+              currentEvent = '';
+            }
+          }
+        };
+
+        const reader = response.body?.getReader();
+
+        if (!reader) {
+          // 没有 ReadableStream，用 text() 兜底读取
+          const text = await response.text();
+          processChunk(text);
+          setStreaming(sessionId, false);
+          setIsConnecting(false);
+          return;
+        }
+
+        while (reader) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          const chunk = decoder.decode(value, { stream: true });
+          processChunk(chunk);
+        }
+
+        setStreaming(sessionId, false);
+        setIsConnecting(false);
+      } catch (error) {
+        setStreaming(sessionId, false);
+        setIsConnecting(false);
+        handleSSEError(error as Error);
+      }
     },
     [
       sessionId,
       isOnline,
+      accessToken,
+      tenant,
+      user,
       addMessage,
       setStreaming,
       clearStreamContent,
       clearSteps,
       addToOfflineQueue,
-      connect,
+      handleSSEMessage,
+      handleSSEError,
     ]
   );
 
-  // 取消请求
+  // 取消请求（中止正在进行的 SSE 流）
   const cancel = useCallback(() => {
-    disconnect();
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setStreaming(sessionId, false);
     clearStreamContent(sessionId);
     clearSteps(sessionId);
     setCurrentRunId(sessionId, null);
-  }, [disconnect, sessionId, setStreaming, clearStreamContent, clearSteps, setCurrentRunId]);
+    setIsConnecting(false);
+  }, [sessionId, setStreaming, clearStreamContent, clearSteps, setCurrentRunId]);
 
   // 重试
   const retry = useCallback(() => {
     if (lastRequestRef.current) {
       sendMessage(lastRequestRef.current);
-    } else {
-      sseRetry();
     }
-  }, [sendMessage, sseRetry]);
+  }, [sendMessage]);
 
   // 清空消息
   const clearMessages = useCallback(() => {
@@ -207,9 +353,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   // 离线消息列表
   const pendingMessages = sessionState.messages.filter((m) => m.is_offline);
 
+  const computedStreaming = sessionState.isStreaming || isConnecting;
+
   return {
     messages: sessionState.messages,
-    isStreaming: sessionState.isStreaming,
+    isStreaming: computedStreaming,
     streamingContent: sessionState.streamingContent,
     currentSteps: sessionState.currentSteps,
     currentRunId: sessionState.currentRunId,

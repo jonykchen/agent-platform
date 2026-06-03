@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosError } from 'axios';
 import { useAuthStore } from '@/stores/authStore';
-import { generateRequestId } from '@/utils/request';
+import { generateRequestId, generateTraceId } from '@/utils/request';
 import type { ErrorDetail } from '@/types/error';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -32,9 +32,9 @@ api.interceptors.request.use(
       config.headers['X-User-ID'] = user.id;
     }
 
-    // 请求追踪
+    // 请求追踪 - 生成独立的 Request-ID 和 Trace-ID
     config.headers['X-Request-ID'] = generateRequestId();
-    config.headers['X-Trace-ID'] = config.headers['X-Request-ID'];
+    config.headers['X-Trace-ID'] = generateTraceId();
 
     return config;
   },
@@ -88,6 +88,8 @@ api.interceptors.response.use(
 
         return api(originalRequest);
       } catch (refreshError) {
+        // 刷新失败时清空等待队列，避免请求挂起
+        refreshSubscribers = [];
         useAuthStore.getState().logout();
         window.location.href = '/login';
         return Promise.reject(refreshError);

@@ -60,7 +60,7 @@ const menuItems: MenuItem[] = [
     key: '/knowledge',
     icon: <Database className="w-4 h-4" />,
     label: '知识库',
-    permission: Permissions.TOOL_READ,
+    permission: Permissions.KNOWLEDGE_READ,
   },
   {
     key: '/notifications',
