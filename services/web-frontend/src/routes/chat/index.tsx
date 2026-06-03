@@ -13,6 +13,8 @@ import {
   Space,
   Modal,
   message,
+  Checkbox,
+  Popconfirm,
 } from 'antd';
 import {
   Plus,
@@ -23,14 +25,17 @@ import {
   Trash2,
   Edit2,
   Clock,
+  CheckSquare,
+  Square,
+  X,
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { sessionService, type SessionListParams } from '@/services/session';
 import type { SessionDetail } from '@/services/session';
 import { LoadingState } from '@/components/feedback/LoadingState';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { PageLayout } from '@/components/layout/PageLayout';
 import { APP_CONFIG } from '@/constants/config';
-import { ROUTE_PATHS } from '@/constants/routes';
 import { formatRelativeTime } from '@/utils/date';
 
 const { Title, Text } = Typography;
@@ -58,6 +63,10 @@ function ChatListPage() {
   });
   const [searchText, setSearchText] = useState('');
 
+  // 多选模式状态
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   // 获取会话列表
   const {
     data,
@@ -82,7 +91,7 @@ function ChatListPage() {
     },
   });
 
-  // 删除会话
+  // 删除单个会话
   const deleteMutation = useMutation({
     mutationFn: (sessionId: string) => sessionService.delete(sessionId),
     onSuccess: () => {
@@ -91,6 +100,29 @@ function ChatListPage() {
     },
     onError: () => {
       message.error('删除失败');
+    },
+  });
+
+  // 批量删除会话
+  const batchDeleteMutation = useMutation({
+    mutationFn: async (sessionIds: string[]) => {
+      // 并行删除所有选中的会话
+      const results = await Promise.allSettled(
+        sessionIds.map(id => sessionService.delete(id))
+      );
+      const failed = results.filter(r => r.status === 'rejected');
+      if (failed.length > 0) {
+        throw new Error(`${failed.length} 个会话删除失败`);
+      }
+    },
+    onSuccess: () => {
+      message.success('批量删除成功');
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+    onError: (error) => {
+      message.error(error.message || '批量删除失败');
     },
   });
 
@@ -139,7 +171,63 @@ function ChatListPage() {
 
   // 处理点击会话
   const handleClickSession = (sessionId: string) => {
-    navigate({ to: '/chat/$sessionId', params: { sessionId } });
+    if (selectionMode) {
+      // 多选模式下，点击切换选中状态
+      handleToggleSelect(sessionId);
+    } else {
+      navigate({ to: '/chat/$sessionId', params: { sessionId } });
+    }
+  };
+
+  // 切换选中状态
+  const handleToggleSelect = (sessionId: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(sessionId)) {
+      newSelected.delete(sessionId);
+    } else {
+      newSelected.add(sessionId);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  // 全选/取消全选
+  const handleSelectAll = () => {
+    const sessions = data?.items || [];
+    if (selectedIds.size === sessions.length) {
+      // 已全选，取消全选
+      setSelectedIds(new Set());
+    } else {
+      // 未全选，全选所有
+      setSelectedIds(new Set(sessions.map(s => s.id)));
+    }
+  };
+
+  // 进入/退出选择模式
+  const handleToggleSelectionMode = () => {
+    if (selectionMode) {
+      setSelectionMode(false);
+      setSelectedIds(new Set());
+    } else {
+      setSelectionMode(true);
+      setSelectedIds(new Set());
+    }
+  };
+
+  // 批量删除确认
+  const handleBatchDelete = () => {
+    if (selectedIds.size === 0) {
+      message.warning('请先选择要删除的会话');
+      return;
+    }
+
+    Modal.confirm({
+      title: '确认批量删除',
+      content: `确定要删除选中的 ${selectedIds.size} 个会话吗？删除后将无法恢复。`,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => batchDeleteMutation.mutate(Array.from(selectedIds)),
+    });
   };
 
   // 处理删除
@@ -178,8 +266,13 @@ function ChatListPage() {
   // 会话列表
   const sessions = useMemo(() => data?.items || [], [data]);
 
+  // 是否全选
+  const isAllSelected = sessions.length > 0 && selectedIds.size === sessions.length;
+  const isPartialSelected = selectedIds.size > 0 && selectedIds.size < sessions.length;
+
   return (
-    <div className="p-6">
+    <PageLayout>
+    <div className="space-y-4">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
@@ -190,14 +283,29 @@ function ChatListPage() {
             查看和管理您的对话历史
           </Text>
         </div>
-        <Button
-          type="primary"
-          icon={<Plus className="w-4 h-4" />}
-          onClick={handleNewChat}
-          loading={createMutation.isPending}
-        >
-          新建对话
-        </Button>
+        <Space>
+          {selectionMode && (
+            <Text type="secondary">
+              已选择 {selectedIds.size} 个会话
+            </Text>
+          )}
+          <Button
+            type={selectionMode ? 'default' : 'text'}
+            icon={selectionMode ? <X className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
+            onClick={handleToggleSelectionMode}
+          >
+            {selectionMode ? '取消选择' : '批量管理'}
+          </Button>
+          <Button
+            type="primary"
+            icon={<Plus className="w-4 h-4" />}
+            onClick={handleNewChat}
+            loading={createMutation.isPending}
+            disabled={selectionMode}
+          >
+            新建对话
+          </Button>
+        </Space>
       </div>
 
       {/* Filters */}
@@ -233,6 +341,36 @@ function ChatListPage() {
           >
             刷新
           </Button>
+
+          {/* 批量操作按钮 */}
+          {selectionMode && (
+            <>
+              <Button
+                icon={isAllSelected ? <Square className="w-4 h-4" /> : <CheckSquare className="w-4 h-4" />}
+                onClick={handleSelectAll}
+              >
+                {isAllSelected ? '取消全选' : '全选'}
+              </Button>
+              <Popconfirm
+                title={`删除选中的 ${selectedIds.size} 个会话`}
+                description="删除后将无法恢复，确定要删除吗？"
+                onConfirm={handleBatchDelete}
+                disabled={selectedIds.size === 0}
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button
+                  danger
+                  icon={<Trash2 className="w-4 h-4" />}
+                  disabled={selectedIds.size === 0}
+                  loading={batchDeleteMutation.isPending}
+                >
+                  批量删除 {selectedIds.size > 0 && `(${selectedIds.size})`}
+                </Button>
+              </Popconfirm>
+            </>
+          )}
         </Space>
       </Card>
 
@@ -261,6 +399,7 @@ function ChatListPage() {
           <List
             dataSource={sessions}
             renderItem={(session) => {
+              const isSelected = selectedIds.has(session.id);
               const menuItems = [
                 {
                   key: 'edit',
@@ -289,10 +428,21 @@ function ChatListPage() {
 
               return (
                 <List.Item
-                  className="cursor-pointer hover:bg-gray-50 transition-colors rounded px-2 -mx-2"
+                  className={`cursor-pointer hover:bg-gray-50 transition-colors rounded px-2 -mx-2 ${
+                    isSelected ? 'bg-blue-50' : ''
+                  }`}
                   onClick={() => handleClickSession(session.id)}
                 >
-                  <div className="flex items-center flex-1 min-w-0">
+                  <div className="flex items-center flex-1 min-w-0 gap-3">
+                    {/* 选择模式下的 Checkbox */}
+                    {selectionMode && (
+                      <Checkbox
+                        checked={isSelected}
+                        onChange={() => handleToggleSelect(session.id)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    )}
+
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <Text strong className="truncate">
@@ -315,13 +465,17 @@ function ChatListPage() {
                         <span>消息: {session.messages_count}</span>
                       </div>
                     </div>
-                    <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-                      <Button
-                        type="text"
-                        icon={<MoreVertical className="w-4 h-4" />}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </Dropdown>
+
+                    {/* 非选择模式下显示操作按钮 */}
+                    {!selectionMode && (
+                      <Dropdown menu={{ items: menuItems }} trigger={['click']}>
+                        <Button
+                          type="text"
+                          icon={<MoreVertical className="w-4 h-4" />}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </Dropdown>
+                    )}
                   </div>
                 </List.Item>
               );
@@ -343,7 +497,7 @@ function ChatListPage() {
         )}
       </Card>
 
-      {/* Edit Title Modal */}
+        {/* Edit Title Modal */}
       <Modal
         title="编辑标题"
         open={!!editingSession}
@@ -362,6 +516,7 @@ function ChatListPage() {
         />
       </Modal>
     </div>
+    </PageLayout>
   );
 }
 

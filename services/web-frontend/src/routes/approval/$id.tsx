@@ -31,6 +31,7 @@ import type { ApprovalTask, ApprovalStatus, ApprovalType } from '@/types/approva
 import { ApprovalTimeline } from '@/components/approval/ApprovalTimeline';
 import { LoadingState } from '@/components/feedback/LoadingState';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { PageLayout } from '@/components/layout/PageLayout';
 import { usePermission, Permissions } from '@/hooks/usePermission';
 import { formatDateTime } from '@/utils/date';
 
@@ -158,18 +159,21 @@ function ApprovalDetailPage() {
   // Loading 状态
   if (isLoading) {
     return (
-      <div className="p-6">
+      <PageLayout>
+      <div className="space-y-4">
         <Card>
           <Skeleton active paragraph={{ rows: 10 }} />
         </Card>
       </div>
+      </PageLayout>
     );
   }
 
   // Error 状态
   if (error || !approval) {
     return (
-      <div className="p-6">
+      <PageLayout>
+      <div className="space-y-4">
         <Card>
           <EmptyState
             description="审批任务不存在或已被删除"
@@ -180,6 +184,7 @@ function ApprovalDetailPage() {
           />
         </Card>
       </div>
+      </PageLayout>
     );
   }
 
@@ -190,7 +195,8 @@ function ApprovalDetailPage() {
   const isExpired = isPending && new Date(approval.expires_at) < new Date();
 
   return (
-    <div className="p-6">
+    <PageLayout>
+    <div className="space-y-4">
       {/* Header */}
       <div className="mb-6">
         <Button
@@ -397,6 +403,7 @@ function ApprovalDetailPage() {
         </div>
       </Modal>
     </div>
+    </PageLayout>
   );
 }
 

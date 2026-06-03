@@ -88,8 +88,8 @@ groups:
 
       - alert: AllProvidersDown
         expr: |
-          sum(model_call_total{status="error"})
-          / sum(model_call_total) > 0.9
+          sum(rate(model_call_total{status="error"}[5m]))
+          / sum(rate(model_call_total[5m])) > 0.9
         for: 2m
         labels:
           severity: critical
@@ -146,7 +146,9 @@ groups:
 
       - alert: AgentLongRunning
         expr: |
-          histogram_quantile(0.95, rate(agent_run_latency_seconds_bucket[10m])) > 120
+          histogram_quantile(0.95,
+            sum(rate(agent_run_latency_seconds_bucket[10m])) by (le)
+          ) > 120
         for: 10m
         labels:
           severity: warning

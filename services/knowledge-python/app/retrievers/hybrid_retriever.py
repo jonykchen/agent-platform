@@ -368,7 +368,8 @@ class HybridRetriever:
             sql += " AND document_id = ANY($3)"
             params.append(doc_ids)
 
-        sql += f" ORDER BY score DESC LIMIT {top_k}"
+        sql += f" ORDER BY score DESC LIMIT ${len(params) + 1}"
+        params.append(top_k)
 
         try:
             results = await pool.fetch(sql, *params)
@@ -455,13 +456,15 @@ class HybridRetriever:
         # 按综合分数排序
         sorted_results = sorted(merged.values(), key=lambda x: x["rrf_score"], reverse=True)
 
-        # 返回结果
+        # 返回结果（保留 document_name 和 metadata 字段）
         return [
             {
                 "chunk_id": r["data"]["chunk_id"],
                 "document_id": r["data"]["document_id"],
+                "document_name": r["data"].get("document_name", ""),
                 "content": r["data"]["content"],
                 "score": r["rrf_score"],
+                "metadata": r["data"].get("metadata", {}),
                 "source": "hybrid",
             }
             for r in sorted_results

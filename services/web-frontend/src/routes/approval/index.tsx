@@ -27,6 +27,7 @@ import { getApprovals, approveApproval, rejectApproval } from '@/services/approv
 import type { ApprovalTask, ApprovalStatus, ApprovalType } from '@/types/approval';
 import type { ApprovalNotification } from '@/types/approval';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { PageLayout } from '@/components/layout/PageLayout';
 import { usePermission, Permissions } from '@/hooks/usePermission';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useNotificationStore } from '@/stores/notificationStore';
@@ -347,7 +348,8 @@ function ApprovalListPage() {
   }, [data]);
 
   return (
-    <div className="p-6">
+    <PageLayout>
+    <div className="space-y-4">
       {/* Header */}
       <div className="mb-6">
         <Title level={4} className="!mb-2">
@@ -502,6 +504,7 @@ function ApprovalListPage() {
         )}
       </Modal>
     </div>
+    </PageLayout>
   );
 }
 

@@ -27,6 +27,7 @@ import { useState, useMemo } from 'react';
 import { useNotificationStore, type Notification } from '@/stores/notificationStore';
 import { LoadingState } from '@/components/feedback/LoadingState';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { PageLayout } from '@/components/layout/PageLayout';
 import { APP_CONFIG } from '@/constants/config';
 import { formatRelativeTime, formatDateTime } from '@/utils/date';
 
@@ -106,7 +107,8 @@ function NotificationsPage() {
   };
 
   return (
-    <div className="p-6">
+    <PageLayout>
+    <div className="space-y-4">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div>
@@ -251,6 +253,7 @@ function NotificationsPage() {
         )}
       </Card>
     </div>
+    </PageLayout>
   );
 }
 

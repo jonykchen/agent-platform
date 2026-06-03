@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -95,12 +96,12 @@ public class RiskRuleEngine {
      */
     public RiskAssessment assess(String toolName, Map<String, Object> arguments, String tenantId) {
         int totalScore = 0;
-        String matchedRule = null;
+        List<String> matchedRules = new ArrayList<>();
 
         for (RiskRule rule : rules) {
             if (rule.matches(toolName, arguments, tenantId)) {
                 totalScore += rule.getScore();
-                matchedRule = rule.getName();
+                matchedRules.add(rule.getName());
                 log.debug("Rule matched: {} for tool {}", rule.getName(), toolName);
             }
         }
@@ -113,7 +114,7 @@ public class RiskRuleEngine {
                 .tenantId(tenantId)
                 .riskLevel(riskLevel)
                 .riskScore(totalScore)
-                .matchedRule(matchedRule)
+                .matchedRule(String.join(",", matchedRules))
                 .requiresApproval(requiresApproval)
                 .build();
     }

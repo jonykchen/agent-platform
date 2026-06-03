@@ -29,6 +29,7 @@ import {
 import { knowledgeService } from '@/services/knowledge';
 import type { DocumentDetail, DocumentChunk } from '@/types/knowledge';
 import { LoadingState } from '@/components/feedback/LoadingState';
+import { PageLayout } from '@/components/layout/PageLayout';
 import { usePermission, Permissions } from '@/hooks/usePermission';
 import { formatDateTime, formatRelativeTime } from '@/utils/date';
 import { formatFileSize } from '@/utils/format';
@@ -102,24 +103,27 @@ function DocumentDetailPage() {
   }, [navigate]);
 
   if (isLoading) {
-    return <LoadingState />;
+    return <PageLayout><LoadingState /></PageLayout>;
   }
 
   if (!data) {
     return (
-      <div className="p-6">
+      <PageLayout>
+      <div className="space-y-4">
         <Alert type="error" message="文档不存在或已被删除" showIcon />
         <Button type="link" onClick={handleBack} className="mt-4">
           返回知识库列表
         </Button>
       </div>
+      </PageLayout>
     );
   }
 
   const status = statusConfig[data.status] || statusConfig.pending;
 
   return (
-    <div className="p-6">
+    <PageLayout>
+    <div className="space-y-4">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -247,6 +251,7 @@ function DocumentDetailPage() {
         )}
       </Card>
     </div>
+    </PageLayout>
   );
 }
 

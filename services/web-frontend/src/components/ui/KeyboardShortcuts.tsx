@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { message } from 'antd';
 
 export interface KeyboardShortcutsConfig {
@@ -18,6 +18,10 @@ export interface KeyboardShortcutsProps {
 }
 
 export function useKeyboardShortcuts(shortcuts: KeyboardShortcutsConfig[], enabled = true) {
+  // 使用 ref 存储 shortcuts，避免依赖变化
+  const shortcutsRef = useRef(shortcuts);
+  shortcutsRef.current = shortcuts;
+
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       if (!enabled) return;
@@ -31,7 +35,10 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcutsConfig[], enabl
         }
       }
 
-      for (const shortcut of shortcuts) {
+      // 使用 ref 获取最新的 shortcuts
+      const currentShortcuts = shortcutsRef.current;
+
+      for (const shortcut of currentShortcuts) {
         const keyMatch = event.key.toLowerCase() === shortcut.key.toLowerCase();
         const ctrlMatch = shortcut.ctrl ? event.ctrlKey : !event.ctrlKey;
         const metaMatch = shortcut.meta ? event.metaKey : !event.metaKey;
@@ -47,7 +54,7 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcutsConfig[], enabl
         }
       }
     },
-    [shortcuts, enabled]
+    [enabled] // 只依赖 enabled
   );
 
   useEffect(() => {
@@ -56,7 +63,10 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcutsConfig[], enabl
   }, [handleKeyDown]);
 
   const showShortcutsHelp = useCallback(() => {
-    const shortcutList = shortcuts
+    // 使用 ref 获取最新的 shortcuts
+    const currentShortcuts = shortcutsRef.current;
+
+    const shortcutList = currentShortcuts
       .filter((s) => s.description)
       .map((s) => {
         const keys = [];
@@ -78,7 +88,7 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcutsConfig[], enabl
       ),
       duration: 5,
     });
-  }, [shortcuts]);
+  }, []); // 不依赖 shortcuts
 
   return { showShortcutsHelp };
 }

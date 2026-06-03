@@ -19,8 +19,12 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 /**
  * Spring Security 配置
@@ -87,6 +91,8 @@ public class SecurityConfig {
 
                 // 授权规则
                 .authorizeHttpRequests(auth -> auth
+                        // CORS 预检请求公开
+                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                         // 健康检查端点公开
                         .requestMatchers("/health", "/ready", "/actuator/**").permitAll()
                         // 认证端点公开
@@ -155,6 +161,44 @@ public class SecurityConfig {
         public boolean containsContext(HttpServletRequest request) {
             return request.getAttribute(ATTR_KEY) != null;
         }
+    }
+
+    /**
+     * CORS 配置源
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+
+        // 允许的来源（使用 allowedOrigins 而不是 allowedOriginPatterns）
+        config.setAllowedOrigins(List.of(
+                "http://localhost:5173",
+                "http://localhost:5174",
+                "http://localhost:3000",
+                "http://127.0.0.1:5173",
+                "http://127.0.0.1:5174",
+                "http://127.0.0.1:3000"
+        ));
+
+        // 允许的方法
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+
+        // 允许的请求头
+        config.setAllowedHeaders(List.of("*"));
+
+        // 允许携带凭证
+        config.setAllowCredentials(true);
+
+        // 暴露的响应头
+        config.setExposedHeaders(List.of("X-Request-ID", "X-RateLimit-Limit", "X-RateLimit-Remaining"));
+
+        // 预检请求缓存时间
+        config.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+
+        return source;
     }
 
     /**

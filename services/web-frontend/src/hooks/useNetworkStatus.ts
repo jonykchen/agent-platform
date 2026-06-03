@@ -40,6 +40,10 @@ export function useNetworkStatus(): NetworkStatus {
       removeEventListener: (type: string, listener: () => void) => void;
     }
 
+    // online/offline 事件始终监听，确保所有浏览器都能正确追踪网络状态
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
     if (connection) {
       const handleConnectionChange = () => {
         setStatus((s) => ({
@@ -53,14 +57,11 @@ export function useNetworkStatus(): NetworkStatus {
       handleConnectionChange();
 
       return () => {
-        connection.removeEventListener('change', handleConnectionChange);
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
+        connection.removeEventListener('change', handleConnectionChange);
       };
     }
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
 
     return () => {
       window.removeEventListener('online', handleOnline);

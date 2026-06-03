@@ -93,12 +93,8 @@ class GrpcServer:
 
     async def start(self) -> None:
         """启动 gRPC 服务器"""
-        # 创建拦截器
-        interceptors = [TracingInterceptor(service_name="orchestrator-python")]
-
-        # 创建异步服务器
+        # 创建异步服务器（暂不使用拦截器，待 grpcio 版本兼容问题解决后启用）
         self.server = aio.server(
-            interceptors=interceptors,
             options=[
                 # 消息大小限制
                 ("grpc.max_receive_message_length", config.grpc_max_message_size),
@@ -135,7 +131,6 @@ class GrpcServer:
             "grpc_server_started",
             port=self.port,
             address=listen_addr,
-            interceptors=len(interceptors),
         )
 
         # 注册信号处理（优雅关闭）
@@ -174,14 +169,23 @@ class GrpcServer:
         self._shutdown_event.set()
 
     def _register_signal_handlers(self) -> None:
-        """注册信号处理器（用于优雅关闭）"""
+        """注册信号处理器（用于优雅关闭）
+
+        注意：Windows 不支持 add_signal_handler，跳过信号处理
+        """
+        import sys
+        if sys.platform == "win32":
+            # Windows 不支持信号处理，跳过
+            logger.debug("grpc_signal_handlers_skipped", reason="Windows platform")
+            return
+
         loop = asyncio.get_running_loop()
 
         def handle_signal(sig):
             logger.info("grpc_signal_received", signal=sig.name)
             asyncio.create_task(self.stop(grace_period=5))
 
-        # 注册 SIGTERM 和 SIGINT 处理
+        # 注册 SIGTERM 和 SIGINT 处理（仅 Unix）
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, handle_signal, sig)
 

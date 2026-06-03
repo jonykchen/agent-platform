@@ -66,7 +66,7 @@ export interface ChatState {
   resetSessionState: (sessionId: string) => void;
 }
 
-const DEFAULT_SESSION_STATE: ChatSessionState = {
+export const DEFAULT_SESSION_STATE: ChatSessionState = {
   messages: [],
   currentSteps: [],
   isStreaming: false,

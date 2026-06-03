@@ -32,6 +32,12 @@ export function InputBox({
   const setValue = controlledOnChange || setInternalValue;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // 使用 ref 存储回调，避免依赖变化
+  const onSendRef = useRef(onSend);
+  const onCancelRef = useRef(onCancel);
+  onSendRef.current = onSend;
+  onCancelRef.current = onCancel;
+
   // 自动调整高度
   const adjustHeight = useCallback(() => {
     const textarea = textareaRef.current;
@@ -49,19 +55,18 @@ export function InputBox({
     adjustHeight();
   }, [value, adjustHeight]);
 
-  // 发送消息
+  // 发送消息 - 使用 ref 避免依赖变化
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || disabled || isStreaming) return;
 
     if (trimmed.length > APP_CONFIG.MAX_MESSAGE_LENGTH) {
-      // 可以显示错误提示
       return;
     }
 
-    onSend(trimmed);
+    onSendRef.current(trimmed);
     setValue('');
-  }, [value, disabled, isStreaming, onSend]);
+  }, [value, disabled, isStreaming, setValue]);
 
   // 键盘快捷键
   const handleKeyDown = useCallback(
@@ -74,6 +79,11 @@ export function InputBox({
     },
     [handleSend]
   );
+
+  // 取消操作
+  const handleCancel = useCallback(() => {
+    onCancelRef.current?.();
+  }, []);
 
   const canSend = value.trim().length > 0 && !disabled && !isStreaming;
 
@@ -107,7 +117,7 @@ export function InputBox({
               type="default"
               danger
               icon={<StopCircle size={18} />}
-              onClick={onCancel}
+              onClick={handleCancel}
               className="flex-shrink-0"
             >
               停止

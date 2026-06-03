@@ -172,40 +172,51 @@ class ModelRouter:
             primary_model=policy.get("primary_model"),
         )
 
-        # 尝试使用用户指定的模型
+        # 尝试使用用户指定的模型（遍历 providers 查找支持该模型的提供商）
         if request.model:
-            provider = self._providers.get(request.model)
-            if provider:
-                cb = self._circuit_breakers.get(request.model)
-                if cb and cb.is_available():
-                    logger.info(
-                        "route_decision",
+            for name, provider in self._providers.items():
+                if request.model in provider.supported_models:
+                    cb = self._circuit_breakers.get(name)
+                    if cb and cb.is_available():
+                        logger.info(
+                            "route_decision",
+                            model=request.model,
+                            source="user_specified",
+                            provider=name,
+                            circuit_state=cb.state.value,
+                        )
+                        return provider, request.model, cb
+
+                    logger.warning(
+                        "route_specified_unavailable",
                         model=request.model,
-                        source="user_specified",
-                        circuit_state=cb.state.value,
+                        reason="circuit_open",
+                        provider=name,
+                        circuit_state=cb.state.value if cb else "not_found",
                     )
-                    return provider, request.model, cb
+                    break
 
-                logger.warning(
-                    "route_specified_unavailable",
-                    model=request.model,
-                    reason="circuit_open",
-                    circuit_state=cb.state.value if cb else "not_found",
-                )
-
-        # 尝试使用主模型
+        # 尝试使用主模型（遍历 providers 查找支持该模型的提供商）
         primary_model = policy.get("primary_model", "qwen-max")
-        provider = self._providers.get(primary_model)
-        cb = self._circuit_breakers.get(primary_model)
+        primary_provider = None
+        primary_name = None
+        for name, provider in self._providers.items():
+            if primary_model in provider.supported_models:
+                primary_provider = provider
+                primary_name = name
+                break
 
-        if provider and cb and cb.is_available():
+        cb = self._circuit_breakers.get(primary_name) if primary_name else None
+
+        if primary_provider and cb and cb.is_available():
             logger.info(
                 "route_decision",
                 model=primary_model,
                 source="primary",
+                provider=primary_name,
                 circuit_state=cb.state.value,
             )
-            return provider, primary_model, cb
+            return primary_provider, primary_model, cb
 
         # 尝试 Fallback 备用模型
         fallback_models = policy.get("fallback_models", [])
@@ -217,18 +228,20 @@ class ModelRouter:
         )
 
         for fallback_model in fallback_models:
-            provider = self._providers.get(fallback_model)
-            cb = self._circuit_breakers.get(fallback_model)
-
-            if provider and cb and cb.is_available():
-                logger.warning(
-                    "route_decision",
-                    model=fallback_model,
-                    source="fallback",
-                    primary_failed=primary_model,
-                    circuit_state=cb.state.value,
-                )
-                return provider, fallback_model, cb
+            for name, provider in self._providers.items():
+                if fallback_model in provider.supported_models:
+                    cb = self._circuit_breakers.get(name)
+                    if cb and cb.is_available():
+                        logger.warning(
+                            "route_decision",
+                            model=fallback_model,
+                            source="fallback",
+                            primary_failed=primary_model,
+                            provider=name,
+                            circuit_state=cb.state.value,
+                        )
+                        return provider, fallback_model, cb
+                    break
 
         # 所有模型都不可用
         logger.error(

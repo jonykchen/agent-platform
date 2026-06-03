@@ -21,7 +21,13 @@
       "Bash(mvn test:*)",
       "Bash(buf lint:*)",
       "mcp__langchain-docs__query_docs_filesystem_docs_by_lang_chain",
-      "Bash(DB_PASSWORD=dev_password mvn spring-boot:run -Dspring-boot.run.arguments=\"--spring.profiles.active=local\")"
+      "Bash(DB_PASSWORD=dev_password mvn spring-boot:run -Dspring-boot.run.arguments=\"--spring.profiles.active=local\")",
+      "Bash(netstat -ano)",
+      "Bash(pkill -f \"spring-boot:run\")",
+      "Bash(rm -rf node_modules/.vite)",
+      "Bash(uvicorn app.main:app --port 8001 --reload)",
+      "Bash(uvicorn app.main:app --port 8001)",
+      "Bash(set GRPC_PORT=60051)"
     ]
   },
   "extends": "./settings.json"

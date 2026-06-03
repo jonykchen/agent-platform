@@ -125,7 +125,7 @@ auth:
 orchestrator:
   grpc:
     host: ${ORCHESTRATOR_HOST:localhost}
-    port: ${ORCHESTRATOR_GRPC_PORT:50051}
+    port: ${ORCHESTRATOR_GRPC_PORT:50100}
     timeout-ms: ${ORCHESTRATOR_TIMEOUT_MS:30000}
     keepalive-time-ms: ${ORCHESTRATOR_KEEPALIVE_TIME_MS:30000}
     keepalive-timeout-ms: ${ORCHESTRATOR_KEEPALIVE_TIMEOUT_MS:10000}

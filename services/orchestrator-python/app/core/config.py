@@ -352,8 +352,9 @@ class AppConfig(BaseSettings):
 
     # gRPC 服务端配置
     # Gateway Java 通过 gRPC 调用 Orchestrator，需要启动 gRPC 服务端
+    # 注意：端口 50051/50052/50053 已被占用，Orchestrator 使用 50100
     grpc_enabled: bool = Field(default=True, description="是否启用 gRPC 服务端")
-    grpc_port: int = Field(default=50051, description="gRPC 服务端口")
+    grpc_port: int = Field(default=50100, description="gRPC 服务端口")
     grpc_max_message_size: int = Field(default=16 * 1024 * 1024, description="gRPC 最大消息大小（字节）")
     grpc_keepalive_time_ms: int = Field(default=30000, description="gRPC Keepalive 时间（毫秒）")
     grpc_keepalive_timeout_ms: int = Field(default=10000, description="gRPC Keepalive 超时（毫秒）")

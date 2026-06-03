@@ -155,7 +155,7 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
                     if (!request.getCategory().isEmpty() && !tool.getCategory().equals(request.getCategory())) {
                         return false;
                     }
-                    if (request.getIncludeDeprecated() && tool.isDeprecated()) {
+                    if (!request.getIncludeDeprecated() && tool.isDeprecated()) {
                         return false;
                     }
                     return true;

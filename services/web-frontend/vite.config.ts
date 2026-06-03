@@ -21,6 +21,15 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
+        // SSE 支持：不缓冲代理响应，直接透传
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            // SSE 响应不设置 Content-Length，避免代理缓冲
+            if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
+              delete proxyRes.headers['content-length'];
+            }
+          });
+        },
       },
       '/ws': {
         target: 'ws://localhost:8080',

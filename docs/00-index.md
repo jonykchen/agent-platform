@@ -154,3 +154,4 @@
 | [06-operability-guide.md](./06-operability-guide.md) | 运维指南 |
 | [07-scalability-patterns.md](./07-scalability-patterns.md) | 扩展性设计 |
 | [09-frontend-design.md](./09-frontend-design.md) | 前端设计 |
+| [14-testing-strategy.md](./14-testing-strategy.md) | 测试体系与质量保障 |

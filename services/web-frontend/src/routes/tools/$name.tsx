@@ -24,6 +24,7 @@ import {
 import { getTool, getToolInvocations, enableTool, disableTool } from '@/services/tools';
 import { usePermission } from '@/hooks/usePermission';
 import { LoadingState } from '@/components/feedback/LoadingState';
+import { PageLayout } from '@/components/layout/PageLayout';
 import { ROUTES } from '@/constants/routes';
 import type { ToolInvocation, ToolStatus } from '@/types/tools';
 import dayjs from 'dayjs';
@@ -171,11 +172,12 @@ export default function ToolDetailPage() {
   ];
 
   if (isLoading) {
-    return <LoadingState tip="加载工具详情..." />;
+    return <PageLayout><LoadingState tip="加载工具详情..." /></PageLayout>;
   }
 
   if (!tool) {
     return (
+      <PageLayout>
       <Card>
         <Empty description="工具不存在" />
         <div className="text-center mt-4">
@@ -184,10 +186,12 @@ export default function ToolDetailPage() {
           </Button>
         </div>
       </Card>
+      </PageLayout>
     );
   }
 
   return (
+    <PageLayout>
     <div className="space-y-4">
       {/* 顶部操作栏 */}
       <Card>
@@ -356,5 +360,6 @@ export default function ToolDetailPage() {
         ]}
       />
     </div>
+    </PageLayout>
   );
 }

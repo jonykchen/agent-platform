@@ -44,7 +44,7 @@ public interface AgentSessionRepository extends JpaRepository<AgentSession, UUID
      */
     @Query("SELECT s FROM AgentSession s WHERE s.tenantId = :tenantId AND s.userId = :userId " +
            "AND (:status IS NULL OR s.status = :status) " +
-           "AND (:search IS NULL OR LOWER(s.title) LIKE LOWER(CONCAT('%', :search, '%')))")
+           "AND (COALESCE(:search, '') = '' OR LOWER(COALESCE(s.title, '')) LIKE LOWER(CONCAT('%', :search, '%')))")
     Page<AgentSession> findByTenantAndUserWithFilter(
             @Param("tenantId") String tenantId,
             @Param("userId") String userId,

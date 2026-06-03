@@ -126,18 +126,19 @@ public class AuthServerInterceptor implements ServerInterceptor {
         // 解析 payload
         String payloadJson = new String(Base64.getUrlDecoder().decode(payloadB64), StandardCharsets.UTF_8);
 
-        // 简单验证过期时间（实际应使用 JSON 库解析）
-        if (payloadJson.contains("\"exp\"")) {
-            // 提取 exp 字段值
-            int expStart = payloadJson.indexOf("\"exp\":") + 6;
-            int expEnd = payloadJson.indexOf(",", expStart);
-            if (expEnd == -1) {
-                expEnd = payloadJson.indexOf("}", expStart);
-            }
-            long exp = Long.parseLong(payloadJson.substring(expStart, expEnd).trim());
-            if (exp < System.currentTimeMillis() / 1000) {
-                throw new IllegalArgumentException("Token expired");
-            }
+        // 验证过期时间（exp 字段为必需）
+        if (!payloadJson.contains("\"exp\"")) {
+            throw new IllegalArgumentException("Token missing required 'exp' field");
+        }
+        // 提取 exp 字段值
+        int expStart = payloadJson.indexOf("\"exp\":") + 6;
+        int expEnd = payloadJson.indexOf(",", expStart);
+        if (expEnd == -1) {
+            expEnd = payloadJson.indexOf("}", expStart);
+        }
+        long exp = Long.parseLong(payloadJson.substring(expStart, expEnd).trim());
+        if (exp < System.currentTimeMillis() / 1000) {
+            throw new IllegalArgumentException("Token expired");
         }
 
         // 验证签发者

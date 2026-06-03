@@ -58,16 +58,15 @@ function parseSSEMessages(
 }
 
 export function useSSE<T = unknown>(options: SSEOptions<T>): SSEState & { connect: () => void; disconnect: () => void; retry: () => void } {
-  const {
-    url,
-    body,
-    onMessage,
-    onError,
-    onComplete,
-    enabled = true,
-    retryAttempts = 3,
-    retryDelay = 1000,
-  } = options;
+  // 使用 ref 存储回调，避免依赖变化导致重新连接
+  const onMessageRef = useRef(options.onMessage);
+  const onErrorRef = useRef(options.onError);
+  const onCompleteRef = useRef(options.onComplete);
+
+  // 每次渲染更新 ref（ref 变化不触发重渲染）
+  onMessageRef.current = options.onMessage;
+  onErrorRef.current = options.onError;
+  onCompleteRef.current = options.onComplete;
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const bufferRef = useRef<string>('');
@@ -81,9 +80,8 @@ export function useSSE<T = unknown>(options: SSEOptions<T>): SSEState & { connec
     retryCount: 0,
   });
 
+  // connect 函数不依赖回调，只依赖稳定值
   const connect = useCallback(() => {
-    if (!enabled) return;
-
     const { accessToken, tenant, user } = useAuthStore.getState();
 
     abortControllerRef.current = new AbortController();
@@ -107,10 +105,10 @@ export function useSSE<T = unknown>(options: SSEOptions<T>): SSEState & { connec
       headers['Last-Event-ID'] = lastEventIdRef.current;
     }
 
-    fetch(url, {
+    fetch(options.url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify(options.body),
       signal: abortControllerRef.current.signal,
     })
       .then((response) => {
@@ -127,7 +125,7 @@ export function useSSE<T = unknown>(options: SSEOptions<T>): SSEState & { connec
           return reader?.read().then(({ done, value }) => {
             if (done) {
               setState((s) => ({ ...s, isStreaming: false }));
-              onComplete?.();
+              onCompleteRef.current?.();
               return;
             }
 
@@ -144,7 +142,8 @@ export function useSSE<T = unknown>(options: SSEOptions<T>): SSEState & { connec
               }
               try {
                 const data = JSON.parse(msg.data) as T;
-                onMessage(data);
+                // 使用 ref 调用最新回调
+                onMessageRef.current(data);
               } catch (e) {
                 console.warn('Failed to parse SSE message:', msg.data);
               }
@@ -163,7 +162,10 @@ export function useSSE<T = unknown>(options: SSEOptions<T>): SSEState & { connec
         }
 
         setState((s) => ({ ...s, error, isStreaming: false }));
-        onError?.(error);
+        onErrorRef.current?.(error);
+
+        const retryAttempts = options.retryAttempts ?? 3;
+        const retryDelay = options.retryDelay ?? 1000;
 
         if (retryCountRef.current < retryAttempts) {
           retryCountRef.current += 1;
@@ -172,7 +174,7 @@ export function useSSE<T = unknown>(options: SSEOptions<T>): SSEState & { connec
           setTimeout(connect, delay);
         }
       });
-  }, [url, body, enabled, onMessage, onError, onComplete, retryAttempts, retryDelay]);
+  }, [options.url, options.enabled, options.retryAttempts, options.retryDelay]); // 不依赖回调函数
 
   const disconnect = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -187,11 +189,11 @@ export function useSSE<T = unknown>(options: SSEOptions<T>): SSEState & { connec
   }, [connect]);
 
   useEffect(() => {
-    if (enabled) {
+    if (options.enabled) {
       connect();
     }
     return disconnect;
-  }, [enabled, connect, disconnect]);
+  }, [options.enabled, connect, disconnect]);
 
   return {
     ...state,

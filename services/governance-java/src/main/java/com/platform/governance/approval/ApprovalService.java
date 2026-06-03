@@ -64,6 +64,7 @@ public class ApprovalService {
         task.setReviewerId(reviewerId);
         task.setReviewComment(comment);
         task.setReviewedAt(Instant.now());
+        task.setProcessedAt(Instant.now());
         task.setStatus(decision); // approved / rejected
 
         approvalRepository.save(task);

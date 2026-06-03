@@ -22,6 +22,7 @@ import { getTools, enableTool, disableTool } from '@/services/tools';
 import { usePermission } from '@/hooks/usePermission';
 import { LoadingState } from '@/components/feedback/LoadingState';
 import { EmptyState } from '@/components/feedback/EmptyState';
+import { PageLayout } from '@/components/layout/PageLayout';
 import { ROUTES } from '@/constants/routes';
 import type { ToolDefinition, ToolStatus } from '@/types/tools';
 import dayjs from 'dayjs';
@@ -199,10 +200,11 @@ export default function ToolsPage() {
   );
 
   if (isLoading) {
-    return <LoadingState tip="加载工具列表..." />;
+    return <PageLayout><LoadingState tip="加载工具列表..." /></PageLayout>;
   }
 
   return (
+    <PageLayout>
     <div className="space-y-4">
       <Card>
         <div className="flex items-center justify-between mb-4">
@@ -328,5 +330,6 @@ export default function ToolsPage() {
         />
       </Card>
     </div>
+    </PageLayout>
   );
 }

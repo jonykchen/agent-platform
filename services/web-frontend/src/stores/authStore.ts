@@ -47,7 +47,8 @@ export const useAuthStore = create<AuthState>()(
           tenant: null,
           isAuthenticated: false,
         });
-        localStorage.clear();
+        // 仅清除 auth 相关的 localStorage key，避免误删其他应用数据
+        localStorage.removeItem('auth-storage');
       },
 
       refreshTokens: (tokens) => {

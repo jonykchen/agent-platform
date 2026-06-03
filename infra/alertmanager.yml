@@ -34,12 +34,10 @@ receivers:
         send_resolved: true
 
   - name: 'critical-alerts'
-    # 钉钉 webhook（需配置）
+    # 钉钉 + 企业微信 webhook（合并到同一个 webhook_configs 数组）
     webhook_configs:
       - url: '${DINGTALK_WEBHOOK_URL}'
         send_resolved: true
-    # 企业微信 webhook（需配置）
-    webhook_configs:
       - url: '${WECOM_WEBHOOK_URL}'
         send_resolved: true
 

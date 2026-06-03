@@ -39,10 +39,9 @@ public class CreateSessionRequest {
      *   <li>workflow - 工作流会话</li>
      * </ul>
      *
-     * <p>【验证规则】必填项
+     * <p>【验证规则】可选，默认为 chat
      */
-    @NotBlank(message = "会话类型不能为空")
-    private String sessionType;
+    private String sessionType = "chat";
 
     /**
      * 会话标题

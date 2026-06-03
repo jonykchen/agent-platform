@@ -15,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -104,8 +105,18 @@ public class TenantContextFilter implements Filter {
     private static final String USER_ID_HEADER = "X-User-ID";
     private static final String REQUEST_ID_HEADER = "X-Request-ID";
 
+    // 开发环境默认值
+    private static final String DEFAULT_TENANT_ID = "tenant_001";
+    private static final String DEFAULT_USER_ID = "user_001";
+
     private final TenantContextService tenantContextService;
     private final ObjectMapper objectMapper;
+
+    @Value("${auth.dev-bypass.enabled:false}")
+    private boolean devBypassEnabled;
+
+    @Value("${spring.profiles.active:prod}")
+    private String activeProfile;
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -114,24 +125,38 @@ public class TenantContextFilter implements Filter {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
-        // 提取 tenant_id
-        String tenantId = httpRequest.getHeader(TENANT_ID_HEADER);
-        if (tenantId == null || tenantId.isBlank()) {
-            // 允许健康检查、认证路径和公开 API 跳过租户检查
-            String path = httpRequest.getRequestURI();
-            if (isPublicPath(path)) {
-                chain.doFilter(request, response);
-                return;
-            }
-            log.warn("Missing tenant_id header");
-            writeErrorResponse(httpResponse, ErrorCode.ERR_INVALID_REQUEST, "Missing X-Tenant-ID header");
+        String path = httpRequest.getRequestURI();
+
+        // 公开路径跳过租户检查
+        if (isPublicPath(path)) {
+            chain.doFilter(request, response);
             return;
         }
 
-        // 提取 user_id（可选）
+        // 提取 tenant_id
+        String tenantId = httpRequest.getHeader(TENANT_ID_HEADER);
         String userId = httpRequest.getHeader(USER_ID_HEADER);
-        if (userId == null || userId.isBlank()) {
-            userId = "anonymous";
+
+        // 开发环境：允许使用默认值
+        if (isDevBypassEnabled()) {
+            if (tenantId == null || tenantId.isBlank()) {
+                tenantId = DEFAULT_TENANT_ID;
+                log.debug("Using default tenant_id for dev environment: {}", tenantId);
+            }
+            if (userId == null || userId.isBlank()) {
+                userId = DEFAULT_USER_ID;
+                log.debug("Using default user_id for dev environment: {}", userId);
+            }
+        } else {
+            // 生产环境：必须提供 tenant_id
+            if (tenantId == null || tenantId.isBlank()) {
+                log.warn("Missing tenant_id header");
+                writeErrorResponse(httpResponse, ErrorCode.ERR_INVALID_REQUEST, "Missing X-Tenant-ID header");
+                return;
+            }
+            if (userId == null || userId.isBlank()) {
+                userId = "anonymous";
+            }
         }
 
         // 提取 request_id（可选）
@@ -148,6 +173,15 @@ public class TenantContextFilter implements Filter {
         } finally {
             tenantContextService.clear();
         }
+    }
+
+    /**
+     * 判断是否启用开发模式绕过
+     */
+    private boolean isDevBypassEnabled() {
+        return devBypassEnabled &&
+               !"prod".equals(activeProfile) &&
+               !"production".equals(activeProfile);
     }
 
     /**

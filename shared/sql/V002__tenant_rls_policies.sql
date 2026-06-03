@@ -3,6 +3,16 @@
 --  实现行级安全隔离
 -- ============================================================
 
+-- 创建应用角色（必须在 RLS 策略之前创建，因为策略引用了 app_user）
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
+        CREATE ROLE app_user NOLOGIN;
+    END IF;
+END $$;
+GRANT USAGE ON SCHEMA public TO app_user;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_user;
+
 -- 启用 RLS
 ALTER TABLE agent_session ENABLE ROW LEVEL SECURITY;
 ALTER TABLE agent_run ENABLE ROW LEVEL SECURITY;
@@ -56,16 +66,6 @@ CREATE POLICY tenant_isolation_kd_doc ON knowledge_document
 CREATE POLICY tenant_isolation_kd_chunk ON knowledge_chunk
     FOR ALL TO app_user
     USING (tenant_id = current_tenant_id());
-
--- 创建应用角色（如果不存在）
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_user') THEN
-        CREATE ROLE app_user NOLOGIN;
-    END IF;
-END $$;
-GRANT USAGE ON SCHEMA public TO app_user;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_user;
 
 -- 注释
 COMMENT ON FUNCTION set_tenant_context IS '设置当前会话的租户上下文';

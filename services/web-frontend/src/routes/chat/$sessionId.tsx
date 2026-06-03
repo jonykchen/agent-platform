@@ -18,9 +18,9 @@ import {
 import { useState, useCallback } from 'react';
 import { sessionService } from '@/services/session';
 import { useChat } from '@/hooks/useChat';
-import { useChatStore } from '@/stores/chatStore';
 import { MessageList, InputBox, StepVisualizer } from '@/components/chat';
 import { LoadingState } from '@/components/feedback/LoadingState';
+import { PageLayout } from '@/components/layout/PageLayout';
 
 const { Title, Text } = Typography;
 
@@ -38,10 +38,6 @@ function ChatDetailPage() {
     queryFn: () => sessionService.get(sessionId),
     staleTime: 60000,
   });
-
-  // 获取历史消息（从 store 中）
-  const getSessionState = useChatStore((state) => state.getSessionState);
-  const sessionState = getSessionState(sessionId);
 
   // Chat hook
   const {
@@ -128,7 +124,7 @@ function ChatDetailPage() {
       icon: <Trash2 className="w-4 h-4" />,
       label: '清空消息',
       onClick: () => {
-        clearMessages(sessionId);
+        clearMessages();
         message.success('消息已清空');
       },
     },
@@ -142,11 +138,15 @@ function ChatDetailPage() {
   ];
 
   if (sessionLoading) {
-    return <LoadingState />;
+    return <PageLayout><LoadingState /></PageLayout>;
   }
 
+  // 过滤掉 undefined 的步骤
+  const validSteps = currentSteps.filter((step): step is NonNullable<typeof step> => step !== undefined);
+
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <PageLayout>
+    <div className="flex flex-col h-[calc(100vh-120px)] bg-gray-50 -m-6">
       {/* Header */}
       <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -182,10 +182,10 @@ function ChatDetailPage() {
         </div>
       </div>
 
-      {/* 步骤可视化 */}
-      {currentSteps.length > 0 && (
-        <div className="bg-blue-50 border-b px-4 py-2">
-          <StepVisualizer steps={currentSteps} />
+      {/* 步骤可视化 - 思考过程 */}
+      {validSteps.length > 0 && (
+        <div className="bg-blue-50 border-b px-4 py-2 max-h-48 overflow-y-auto">
+          <StepVisualizer steps={validSteps} />
         </div>
       )}
 
@@ -201,18 +201,18 @@ function ChatDetailPage() {
       </div>
 
       {/* 输入区域 */}
-      <div className="bg-white border-t px-4 py-3">
+      <div className="bg-white border-t">
         <InputBox
           value={inputValue}
           onChange={setInputValue}
           onSend={handleSend}
           disabled={isStreaming}
-          loading={isStreaming}
+          isStreaming={isStreaming}
           placeholder="输入消息..."
-          maxLength={4000}
+          onCancel={handleCancel}
         />
         {!isStreaming && messages.length > 0 && (
-          <div className="mt-2 flex justify-center">
+          <div className="mt-2 flex justify-center pb-2">
             <Button
               type="link"
               size="small"
@@ -225,6 +225,7 @@ function ChatDetailPage() {
         )}
       </div>
     </div>
+    </PageLayout>
   );
 }
 
