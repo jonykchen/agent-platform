@@ -24,3 +24,17 @@ datasources:
     editable: false
     jsonData:
       maxLines: 1000
+      # 日志 → 追踪关联：从日志的 trace_id 跳转到 Jaeger
+      derivedFields:
+        - name: TraceID
+          matcherRegex: "trace_id=(\\w+)"
+          url: "$${__value.raw}"
+          datasourceUid: jaeger
+
+  # Jaeger (分布式追踪)
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false

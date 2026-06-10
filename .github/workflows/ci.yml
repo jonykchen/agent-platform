@@ -153,12 +153,34 @@ jobs:
             p/owasp-top-ten
           publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
 
-  # ====== Build Docker Images (Optional) ======
+  # ====== Build / Push / SBOM / Sign Docker Images (全部 7 个服务) ======
   docker-build:
-    name: Build Docker Images
+    name: Build & Sign Images
     runs-on: ubuntu-latest
     needs: [test, security-scan]
+    # PR 仅构建验证（不推送）；master push 时推送 + 签名 + SBOM
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    permissions:
+      contents: read
+      packages: write       # 推送镜像到 GHCR
+      id-token: write        # cosign keyless 签名（OIDC）
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - gateway-java
+          - orchestrator-python
+          - model-gateway-python
+          - knowledge-python
+          - tool-bus-java
+          - governance-java
+          - web-frontend
+
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}/${{ matrix.service }}
 
     steps:
       - name: Checkout
@@ -167,25 +189,65 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Gateway
-        uses: docker/build-push-action@v5
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          context: services/gateway-java
-          file: services/gateway-java/Dockerfile
-          tags: agent-platform/gateway:${{ github.sha }}
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Orchestrator
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        id: build
         uses: docker/build-push-action@v5
         with:
-          context: services/orchestrator-python
-          file: services/orchestrator-python/Dockerfile
-          tags: agent-platform/orchestrator:${{ github.sha }}
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          context: services/${{ matrix.service }}
+          file: services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.service }}.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.service }}
+          path: sbom-${{ matrix.service }}.spdx.json
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless / OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          cosign sign --yes \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+
+      - name: Attach SBOM attestation
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          cosign attest --yes \
+            --predicate sbom-${{ matrix.service }}.spdx.json \
+            --type spdxjson \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
 
   # ====== Coverage Report ======
   coverage:
@@ -222,3 +284,39 @@ jobs:
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MINIMUM_COVERAGE: 80
+
+  # ====== CD: 部署到 K8s（kustomize） ======
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # 通过 GitHub Environment 施加部署门禁（人工审批/保护规则）
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Validate kustomize build
+        run: kubectl kustomize infra/kubernetes/overlays/prod > /tmp/manifests.yaml
+
+      - name: Apply manifests
+        run: kubectl apply -f /tmp/manifests.yaml
+
+      - name: Wait for rollout
+        run: |
+          for d in gateway orchestrator model-gateway tool-bus governance knowledge; do
+            kubectl rollout status deployment/$d -n agent-platform --timeout=180s || exit 1
+          done

@@ -20,6 +20,17 @@ exporters:
     endpoint: 0.0.0.0:8888
     namespace: agent_platform
 
+  # 分布式追踪导出到 Jaeger（OTLP gRPC）
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # 日志导出到 Loki（OTLP HTTP）。与 Promtail 采集互补：
+  # 应用主动上报走此路径，容器 stdout 由 Promtail 采集。
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+
   logging:
     loglevel: info
 
@@ -28,7 +39,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [otlp/jaeger, logging]
     metrics:
       receivers: [otlp]
       processors: [batch]
@@ -36,4 +47,4 @@ service:
     logs:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [otlphttp/loki, logging]

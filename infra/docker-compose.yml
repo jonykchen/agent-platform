@@ -210,6 +210,66 @@ services:
     networks:
       - agent-network
 
+  # ====== Loki (日志聚合) ======
+  loki:
+    image: grafana/loki:2.9.4
+    container_name: agent-loki
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki_data:/loki
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.125'
+    networks:
+      - agent-network
+
+  # ====== Promtail (日志采集) ======
+  promtail:
+    image: grafana/promtail:2.9.4
+    container_name: agent-promtail
+    command: ["-config.file=/etc/promtail/promtail-config.yaml"]
+    volumes:
+      - ./loki/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+    networks:
+      - agent-network
+
+  # ====== Jaeger (分布式追踪) ======
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: agent-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "14250:14250"   # gRPC (collector)
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.125'
+    networks:
+      - agent-network
+
   # ====== Grafana ======
   grafana:
     image: grafana/grafana:10.2.0
@@ -225,6 +285,8 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
+      - loki
+      - jaeger
     deploy:
       resources:
         limits:
@@ -245,6 +307,7 @@ volumes:
   kafka_data:
   prometheus_data:
   grafana_data:
+  loki_data:
 
 networks:
   agent-network:
