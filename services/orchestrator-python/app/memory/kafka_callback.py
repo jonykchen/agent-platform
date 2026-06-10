@@ -476,9 +476,11 @@ class ApprovalCallbackHandler:
 
             self._graph = get_agent_graph()
 
+        # thread_id 必须与原始执行一致（chat.py 用 request_id==run_id），
+        # 否则 LangGraph 找不到中断线程的 checkpoint，无法从断点恢复。
         config = {
             "configurable": {
-                "thread_id": checkpoint.get("session_id", run_id),
+                "thread_id": run_id,
             }
         }
 

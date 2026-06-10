@@ -73,8 +73,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 
@@ -99,7 +99,7 @@ class MemoryEntry:
     user_query: str
     agent_response_summary: str
     key_entities: dict[str, str] = field(default_factory=dict)  # {"order_id": "ORD-123", "user_id": "U001"}
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     importance_score: float = 0.5  # 0.0-1.0，由 LLM 评估或规则计算
     embedding: list[float] | None = None  # 向量嵌入（可选）
 
@@ -117,7 +117,7 @@ class MemoryEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MemoryEntry":
+    def from_dict(cls, data: dict[str, Any]) -> MemoryEntry:
         return cls(
             entry_id=data["entry_id"],
             session_id=data["session_id"],
@@ -149,9 +149,11 @@ class LongTermMemoryStore:
     def __init__(
         self,
         db_url: str | None = None,
-        embedding_dim: int = 1536,
+        embedding_dim: int = 1024,
         decay_factor: float = 0.95,  # 时间衰减系数
         max_retrieve: int = 10,
+        embedding_service_url: str = "http://localhost:8002/v1",
+        embedding_model: str = "text-embedding-v3",
     ):
         """初始化长时记忆存储
 
@@ -160,6 +162,8 @@ class LongTermMemoryStore:
             embedding_dim: 向量维度（与模型匹配）
             decay_factor: 时间衰减因子（每过一天乘以此系数）
             max_retrieve: 最大检索数量
+            embedding_service_url: Embedding 服务地址（Model Gateway 的 /embeddings）
+            embedding_model: Embedding 模型名称
         """
         self.db_url = db_url
         self.embedding_dim = embedding_dim
@@ -167,12 +171,14 @@ class LongTermMemoryStore:
         self.max_retrieve = max_retrieve
         self._pool = None
         self._embedding_client = None
+        self._embedding_service_url = embedding_service_url
+        self._embedding_model = embedding_model
 
     async def _get_pool(self):
         """获取数据库连接池"""
         if self._pool is None:
             try:
-                from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+                from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
                 from sqlalchemy.orm import sessionmaker
 
                 engine = create_async_engine(self.db_url or "postgresql+asyncpg://localhost/agent_platform")
@@ -198,12 +204,20 @@ class LongTermMemoryStore:
             # 内存存储（开发测试）
             return await self._save_in_memory(entry)
 
+        # 计算向量嵌入（若调用方未提供）。
+        # 向量化用户问题 + 回答摘要，使后续语义检索可命中两侧内容。
+        if not entry.embedding:
+            text_to_embed = f"{entry.user_query}\n{entry.agent_response_summary}".strip()
+            entry.embedding = await self._get_embedding(text_to_embed)
+
         # PostgreSQL 存储
         async with pool() as session:
             try:
                 from sqlalchemy import text
 
                 # 插入记忆
+                # embedding 以 pgvector 文本字面量 "[v1,v2,...]" 绑定后 ::vector 转换，
+                # 避免将 typmod（维度）作为 SQL 绑定参数（PostgreSQL 不支持）。
                 await session.execute(
                     text("""
                         INSERT INTO agent_memory (
@@ -214,7 +228,7 @@ class LongTermMemoryStore:
                             :entry_id, :session_id, :tenant_id, :user_id,
                             :user_query, :agent_response_summary, :key_entities,
                             :timestamp, :importance_score,
-                            :embedding::vector(:dim)
+                            :embedding::vector
                         )
                     """),
                     {
@@ -227,8 +241,7 @@ class LongTermMemoryStore:
                         "key_entities": json.dumps(entry.key_entities),
                         "timestamp": entry.timestamp,
                         "importance_score": entry.importance_score,
-                        "embedding": entry.embedding or [],
-                        "dim": self.embedding_dim,
+                        "embedding": self._to_vector_literal(entry.embedding),
                     },
                 )
                 await session.commit()
@@ -282,16 +295,16 @@ class LongTermMemoryStore:
             try:
                 from sqlalchemy import text
 
-                # 向量检索 + 时间衰减
+                # 向量检索 + 时间衰减。query_embedding 以 pgvector 文本字面量绑定。
                 sql = text("""
                     SELECT
                         entry_id, session_id, tenant_id, user_id,
                         user_query, agent_response_summary, key_entities,
                         timestamp, importance_score, embedding,
-                        1 - (embedding <=> :query_embedding::vector(:dim)) as similarity
+                        1 - (embedding <=> :query_embedding::vector) as similarity
                     FROM agent_memory
                     WHERE tenant_id = :tenant_id
-                    ORDER BY embedding <=> :query_embedding::vector(:dim)
+                    ORDER BY embedding <=> :query_embedding::vector
                     LIMIT :limit
                 """)
 
@@ -301,18 +314,17 @@ class LongTermMemoryStore:
                             entry_id, session_id, tenant_id, user_id,
                             user_query, agent_response_summary, key_entities,
                             timestamp, importance_score, embedding,
-                            1 - (embedding <=> :query_embedding::vector(:dim)) as similarity
+                            1 - (embedding <=> :query_embedding::vector) as similarity
                         FROM agent_memory
                         WHERE tenant_id = :tenant_id AND user_id = :user_id
-                        ORDER BY embedding <=> :query_embedding::vector(:dim)
+                        ORDER BY embedding <=> :query_embedding::vector
                         LIMIT :limit
                     """)
 
                 result = await session.execute(
                     sql,
                     {
-                        "query_embedding": query_embedding or [],
-                        "dim": self.embedding_dim,
+                        "query_embedding": self._to_vector_literal(query_embedding),
                         "tenant_id": tenant_id,
                         "user_id": user_id,
                         "limit": top_k,
@@ -352,39 +364,65 @@ class LongTermMemoryStore:
                 logger.error("memory_retrieve_failed", error=str(e))
                 return []
 
-    async def _get_embedding(self, text: str) -> list[float] | None:
+    @staticmethod
+    def _to_vector_literal(vector: list[float] | None) -> str:
+        """将浮点列表转为 pgvector 文本字面量 "[v1,v2,...]"。
+
+        用于以绑定参数方式安全传入向量（再由 SQL 中的 ::vector 转换），
+        避免维度作为 typmod 参数（PostgreSQL 不支持参数化 typmod）。
+        """
+        if not vector:
+            return "[]"
+        return "[" + ",".join(repr(float(x)) for x in vector) + "]"
+
+    async def _get_embedding(self, text: str) -> list[float]:
         """获取文本的向量嵌入
+
+        调用 Model Gateway 的 OpenAI 兼容 /embeddings 接口。
+
+        【重要】失败时显式抛出异常，绝不返回零向量降级值——
+        零向量会让余弦相似度检索退化为随机召回，使长时记忆形同虚设。
+        由上层（memory_manager）决定是否优雅降级（跳过本次记忆操作）。
 
         Args:
             text: 输入文本
 
         Returns:
-            向量列表
+            向量列表（维度为 self.embedding_dim）
+
+        Raises:
+            RuntimeError: embedding 服务不可用或返回异常
         """
-        # 尝试调用 embedding 服务
+        import httpx
+
+        embedding_url = self._embedding_service_url.rstrip("/")
         try:
-            import httpx
-
-            # 使用配置的服务地址（支持动态配置）
-            embedding_url = getattr(
-                self,
-                "_embedding_service_url",
-                "http://localhost:8001",
-            )
-
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
                     f"{embedding_url}/embeddings",
-                    json={"input": text, "model": "text-embedding-ada-002"},
+                    json={"input": text, "model": self._embedding_model},
                 )
-                if response.status_code == 200:
-                    data = response.json()
-                    return data.get("embedding", [])
-        except Exception as e:
-            logger.warning("embedding_failed", error=str(e), fallback="zero_vector")
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPError as e:
+            logger.error("embedding_request_failed", error=str(e), url=embedding_url)
+            raise RuntimeError(f"embedding 服务请求失败: {e}") from e
 
-        # 回退：返回零向量（用于开发测试）
-        return [0.0] * self.embedding_dim
+        # 解析 OpenAI 兼容响应：{"data": [{"embedding": [...]}], ...}
+        items = data.get("data") or []
+        if not items or "embedding" not in items[0]:
+            logger.error("embedding_response_invalid", url=embedding_url)
+            raise RuntimeError("embedding 服务返回格式异常")
+
+        vector = items[0]["embedding"]
+        if not vector or len(vector) != self.embedding_dim:
+            logger.error(
+                "embedding_dimension_mismatch",
+                expected=self.embedding_dim,
+                actual=len(vector) if vector else 0,
+            )
+            raise RuntimeError(f"embedding 维度不匹配: 期望 {self.embedding_dim}，实际 {len(vector) if vector else 0}")
+        return vector
 
     def _apply_time_decay(self, entries: list[MemoryEntry]) -> list[MemoryEntry]:
         """应用时间衰减
@@ -398,11 +436,11 @@ class LongTermMemoryStore:
         Returns:
             排序后的记忆列表
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         for entry in entries:
             days_passed = (now - entry.timestamp).days
-            decayed_score = entry.importance_score * (self.decay_factor ** days_passed)
+            decayed_score = entry.importance_score * (self.decay_factor**days_passed)
             entry.importance_score = decayed_score
 
         # 按衰减后分数排序
@@ -458,7 +496,7 @@ def get_long_term_memory() -> LongTermMemoryStore:
             embedding_dim=config.embedding_dim,
             decay_factor=config.memory_decay_factor,
             max_retrieve=config.memory_retrieve_top_k,
+            embedding_service_url=config.embedding_service_url,
+            embedding_model=getattr(config, "embedding_model", "text-embedding-v3"),
         )
-        # 设置 embedding 服务地址（从配置读取）
-        _store._embedding_service_url = config.embedding_service_url
     return _store

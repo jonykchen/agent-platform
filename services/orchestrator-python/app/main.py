@@ -50,6 +50,7 @@ FastAPI 的优势：
 - ASGI 规范: https://asgi.readthedocs.io/
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import structlog
@@ -58,19 +59,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 from redis.asyncio import Redis
 
-from app.api.v1 import agent, chat, health, session
 from app.api.middleware.error_handler import ErrorHandlerMiddleware
 from app.api.middleware.otel_middleware import OtelMiddleware
 from app.api.middleware.rate_limit_middleware import RateLimitMiddleware
 from app.api.middleware.request_context import RequestContextMiddleware
 from app.api.middleware.tracing_middleware import TracingMiddleware
+from app.api.v1 import agent, chat, health, session
 from app.core.config import config
 from app.core.feature_flags import FeatureFlagClient
 from app.core.health_checker import init_health_checker
 from app.core.logging import setup_logging
 from app.core.metrics import RequestMetricsMiddleware
 from app.core.step_buffer import StepBuffer
-from app.infrastructure.redis_client import init_redis, close_redis, get_redis
+from app.infrastructure.redis_client import close_redis, init_redis
 
 logger = structlog.get_logger()
 
@@ -86,6 +87,8 @@ logger = structlog.get_logger()
 redis_client: Redis | None = None
 feature_flags: FeatureFlagClient | None = None
 step_buffer: StepBuffer | None = None
+approval_handler = None
+approval_consumer_task: asyncio.Task | None = None
 
 
 @asynccontextmanager
@@ -108,6 +111,7 @@ async def lifespan(app: FastAPI):
     6. gRPC 客户端（ToolBus 依赖）
     """
     global redis_client, feature_flags, step_buffer
+    global approval_handler, approval_consumer_task
 
     # ─────────────────────────────────────────────────────────────────────
     # Startup: 初始化资源
@@ -118,6 +122,7 @@ async def lifespan(app: FastAPI):
 
     # 1.5 初始化追踪系统
     from app.core.tracing import setup_tracing
+
     setup_tracing("orchestrator-python")
 
     logger.info(
@@ -139,6 +144,7 @@ async def lifespan(app: FastAPI):
     # 4. 缓存管理器（工具 Schema、模型列表缓存）
     # 多级缓存：本地内存 + Redis
     from app.core.cache import init_cache_manager
+
     init_cache_manager(redis_client)
     logger.info("Cache manager initialized")
 
@@ -148,18 +154,38 @@ async def lifespan(app: FastAPI):
 
     # 6. 数据库连接池（使用 asyncpg）
     from app.infrastructure.database import init_database_pool
+
     await init_database_pool()
     logger.info("Database pool initialized")
 
     # 7. gRPC 客户端（连接 ToolBus）
     from app.infrastructure.grpc_client import init_grpc_client
+
     await init_grpc_client()
     logger.info("gRPC client initialized")
 
     # 8. gRPC 服务端（供 Gateway Java 调用）
     from app.grpc.server import start_grpc_server
+
     await start_grpc_server()
     logger.info("gRPC server started", port=config.grpc_port)
+
+    # 9. 审批回调消费者（Kafka）：审批结果自动恢复 Agent 执行（闭环）
+    if getattr(config, "kafka_enabled", False):
+        from app.memory.kafka_callback import ApprovalCallbackHandler
+
+        approval_handler = ApprovalCallbackHandler(
+            kafka_servers=config.kafka_servers,
+            topic=config.kafka_approval_topic,
+        )
+        # 后台任务运行消费循环（start() 内部为阻塞循环）
+        approval_consumer_task = asyncio.create_task(approval_handler.start())
+        logger.info(
+            "Approval callback consumer started",
+            topic=config.kafka_approval_topic,
+        )
+    else:
+        logger.info("Approval callback consumer disabled (kafka_enabled=false)")
 
     # ─────────────────────────────────────────────────────────────────────
     # Runtime: 处理请求
@@ -171,17 +197,31 @@ async def lifespan(app: FastAPI):
     # ─────────────────────────────────────────────────────────────────────
 
     # 释放顺序与初始化相反
+    # 9. 停止审批回调消费者
+    if approval_consumer_task is not None:
+        approval_consumer_task.cancel()
+        try:
+            await approval_consumer_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning("approval_consumer_stop_error", error=str(e))
+        logger.info("Approval callback consumer stopped")
+
     # 8. 关闭 gRPC 服务端
     from app.grpc.server import stop_grpc_server
+
     await stop_grpc_server()
     logger.info("gRPC server stopped")
 
     # 7. 关闭 gRPC 客户端
     from app.infrastructure.grpc_client import close_grpc_client
+
     await close_grpc_client()
 
     # 6. 关闭数据库连接池
     from app.infrastructure.database import close_database_pool
+
     await close_database_pool()
 
     # 5. Step 缓冲区
@@ -272,6 +312,7 @@ app = create_app()
 # ═══════════════════════════════════════════════════════════════════════════
 # 依赖注入 Getter - 供 FastAPI Depends 使用
 # ═══════════════════════════════════════════════════════════════════════════
+
 
 def get_feature_flags() -> FeatureFlagClient:
     """获取 Feature Flag 客户端

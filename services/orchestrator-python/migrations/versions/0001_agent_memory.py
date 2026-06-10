@@ -7,6 +7,7 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-06-16
 """
+
 from alembic import op
 
 revision = "0001"
@@ -33,23 +34,19 @@ def upgrade() -> None:
             key_entities JSONB,
             timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             importance_score REAL DEFAULT 0.5,
-            embedding VECTOR(1536)
+            embedding VECTOR(1024)
         )
         """
     )
     # 租户/用户过滤索引
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_memory_tenant_user "
-        "ON agent_memory(tenant_id, user_id)"
-    )
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS idx_memory_session ON agent_memory(session_id)"
-    )
-    # 向量相似度索引（IVFFlat + 余弦距离）
+    op.execute("CREATE INDEX IF NOT EXISTS idx_memory_tenant_user ON agent_memory(tenant_id, user_id, timestamp DESC)")
+    op.execute("CREATE INDEX IF NOT EXISTS idx_memory_session ON agent_memory(session_id)")
+    # 向量相似度索引（HNSW + 余弦距离），与 knowledge_chunk / shared/sql V005 保持一致
+    # 维度统一为 1024（通义千问 text-embedding-v3）
     op.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_memory_embedding ON agent_memory
-        USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
+        USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)
         """
     )
 

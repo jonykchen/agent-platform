@@ -170,6 +170,17 @@ def _sse_event(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+# 节点 → 用户可见进度阶段映射（用于流式进度事件）
+_NODE_STAGE_LABELS: dict[str, str] = {
+    "thinking": "思考中",
+    "rag_retrieve": "检索知识库",
+    "risk_check": "安全检查",
+    "tool_call": "调用工具",
+    "approval_wait": "等待审批",
+    "final_answer": "生成回答",
+}
+
+
 async def _stream_chat_sse(
     request: "ChatRequest",
     request_id: str,
@@ -179,17 +190,18 @@ async def _stream_chat_sse(
 ):
     """SSE 流式对话补全生成器
 
-    与非流式 chat_completion 共享同一套 Agent 图执行逻辑，差异仅在于
-    完成后将最终答案按 STREAM_CHUNK_SIZE 切块，以 SSE data 帧逐块下发，
-    最后发送 [DONE] 终止帧。前端 useSSE.ts 据此渲染。
+    生产级 Agent 流式策略：通过 graph.astream(stream_mode="updates") 驱动
+    Agent 图执行，实时推送每个节点的进度事件（思考/检索/工具调用/审批），
+    待最终答案生成后再以 token 块逐帧下发，最后发送 [DONE] 终止帧。
 
-    SSE 帧格式（与前端约定一致）：
+    带工具调用的 Agent 无法对整段对话做纯 token 流式（工具调用会打断生成），
+    因此采用业界通行的「进度事件 + 最终答案流式」方案（与带工具的 ChatGPT 一致）。
+
+    SSE 帧格式（与前端 useSSE.ts 约定一致，额外字段前端忽略）：
+    - 进度：{"delta": "", "finish_reason": null, "stage": "thinking", "node": "..."}
     - 增量：{"delta": "...", "finish_reason": null, "session_id": "..."}
     - 结束：{"delta": "", "finish_reason": "stop"|"pending_approval"|"error", ...}
     - 终止：data: [DONE]
-
-    关于 token 级流式：见 OrchestratorServiceServicer.StreamChatCompletion 注释，
-    当前为答案级流式，后续 thinking 节点接入 LangChain ChatModel 后可升级。
     """
     session_id = get_or_create_session_id(request.session_id, tenant_id, user_id)
     session_store = get_session_store()
@@ -197,6 +209,20 @@ async def _stream_chat_sse(
 
     try:
         history = await session_store.get_history(session_id, limit=10)
+
+        # 注入长时记忆上下文（与非流式路径保持一致）
+        from app.memory.memory_manager import (
+            format_memories_for_context,
+            retrieve_relevant_memories,
+        )
+
+        relevant_memories = await retrieve_relevant_memories(
+            query=request.message,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            top_k=config.memory_retrieve_top_k,
+        )
+        memory_context = format_memories_for_context(relevant_memories)
 
         initial_state = create_initial_state(
             input=request.message,
@@ -207,69 +233,137 @@ async def _stream_chat_sse(
             max_steps=config.max_agent_steps,
         )
         initial_state["messages"] = history
+        if memory_context:
+            initial_state["messages"].append({"role": "system", "content": memory_context})
 
         graph = get_agent_graph()
         graph_config = {"configurable": {"thread_id": request_id}}
 
-        result = await graph.invoke(initial_state, config=graph_config)
+        # 累积最终状态：astream(updates) 每次产出 {node_name: state_delta}
+        final_output = ""
+        approval_id = None
+        error = None
+        last_state: dict = {}
+        seen_stages: set[str] = set()
 
-        output = result.get("output", "")
-        approval_id = result.get("approval_id")
-        error = result.get("error")
+        async for chunk in graph.astream(initial_state, config=graph_config, stream_mode="updates"):
+            for node_name, update in chunk.items():
+                if not isinstance(update, dict):
+                    continue
+                last_state.update(update)
+
+                # 推送节点进度事件（每个阶段仅推一次，避免循环刷屏）
+                stage = _NODE_STAGE_LABELS.get(node_name)
+                if stage and node_name not in seen_stages:
+                    seen_stages.add(node_name)
+                    yield _sse_event(
+                        {
+                            "delta": "",
+                            "finish_reason": None,
+                            "session_id": session_id,
+                            "request_id": request_id,
+                            "node": node_name,
+                            "stage": stage,
+                        }
+                    )
+                    await asyncio.sleep(0)
+
+                if update.get("output"):
+                    final_output = update["output"]
+                if update.get("approval_id"):
+                    approval_id = update["approval_id"]
+                if update.get("error"):
+                    error = update["error"]
+
+        # 审批中断：astream 在 interrupt_before=approval_wait 处暂停，
+        # 通过 graph 状态快照获取 approval_id 并保存 checkpoint
+        if approval_id is None:
+            try:
+                snapshot = await graph.aget_state(graph_config)
+                approval_id = (snapshot.values or {}).get("approval_id")
+                if approval_id and not final_output:
+                    final_output = (snapshot.values or {}).get("output", "")
+            except Exception:
+                pass
 
         # 持久化会话消息
         await session_store.append_message(session_id, "user", request.message)
-        if output:
-            await session_store.append_message(session_id, "assistant", output)
+        if final_output and not approval_id:
+            await session_store.append_message(session_id, "assistant", final_output)
 
         # 审批中断
         if approval_id:
-            await checkpoint_store.save(request_id, result)
-            yield _sse_event({
-                "delta": output or "",
-                "finish_reason": "pending_approval",
-                "session_id": session_id,
-                "request_id": request_id,
-                "approval_id": approval_id,
-            })
+            await checkpoint_store.save(request_id, last_state)
+            yield _sse_event(
+                {
+                    "delta": final_output or "",
+                    "finish_reason": "pending_approval",
+                    "session_id": session_id,
+                    "request_id": request_id,
+                    "approval_id": approval_id,
+                }
+            )
             yield "data: [DONE]\n\n"
             return
 
         # 业务错误
         if error:
-            yield _sse_event({
-                "delta": "",
-                "finish_reason": "error",
-                "session_id": session_id,
-                "request_id": request_id,
-                "error": str(error)[:500],
-            })
+            yield _sse_event(
+                {
+                    "delta": "",
+                    "finish_reason": "error",
+                    "session_id": session_id,
+                    "request_id": request_id,
+                    "error": str(error)[:500],
+                }
+            )
             yield "data: [DONE]\n\n"
             return
 
-        # 正常输出按块下发
-        text = output or ""
+        # 正常输出按块下发（打字机效果）
+        text = final_output or ""
         total = len(text)
         for offset in range(0, total, STREAM_CHUNK_SIZE):
             delta = text[offset : offset + STREAM_CHUNK_SIZE]
             is_last = offset + STREAM_CHUNK_SIZE >= total
-            yield _sse_event({
-                "delta": delta,
-                "finish_reason": "stop" if is_last else None,
-                "session_id": session_id,
-                "request_id": request_id,
-            })
+            yield _sse_event(
+                {
+                    "delta": delta,
+                    "finish_reason": "stop" if is_last else None,
+                    "session_id": session_id,
+                    "request_id": request_id,
+                }
+            )
             await asyncio.sleep(0)
 
         if total == 0:
-            yield _sse_event({
-                "delta": "",
-                "finish_reason": "stop",
-                "session_id": session_id,
-                "request_id": request_id,
-            })
+            yield _sse_event(
+                {
+                    "delta": "",
+                    "finish_reason": "stop",
+                    "session_id": session_id,
+                    "request_id": request_id,
+                }
+            )
 
         yield "data: [DONE]\n\n"
+
+        # 流式完成后写入长时记忆（与非流式路径一致）
+        if final_output:
+            from app.memory.memory_manager import (
+                extract_key_entities_from_tool_results,
+                save_to_long_term_memory,
+            )
+
+            key_entities = extract_key_entities_from_tool_results(last_state.get("tool_results", []))
+            await save_to_long_term_memory(
+                session_id=session_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                user_query=request.message,
+                agent_response=final_output,
+                key_entities=key_entities,
+            )
 
         logger.info(
             "stream_request_completed",
@@ -285,13 +379,15 @@ async def _stream_chat_sse(
             request_id=request_id,
             error=str(e),
         )
-        yield _sse_event({
-            "delta": "",
-            "finish_reason": "error",
-            "session_id": session_id,
-            "request_id": request_id,
-            "error": str(e)[:500],
-        })
+        yield _sse_event(
+            {
+                "delta": "",
+                "finish_reason": "error",
+                "session_id": session_id,
+                "request_id": request_id,
+                "error": str(e)[:500],
+            }
+        )
         yield "data: [DONE]\n\n"
 
 
@@ -415,10 +511,12 @@ async def chat_completion(request: ChatRequest, req: Request):
 
     # 添加记忆上下文（如果有）
     if memory_context:
-        initial_state["messages"].append({
-            "role": "system",
-            "content": memory_context,
-        })
+        initial_state["messages"].append(
+            {
+                "role": "system",
+                "content": memory_context,
+            }
+        )
         logger.debug(
             "memory_context_injected",
             request_id=request_id,
@@ -465,9 +563,7 @@ async def chat_completion(request: ChatRequest, req: Request):
             )
 
             # 提取关键实体（从工具结果中）
-            key_entities = extract_key_entities_from_tool_results(
-                result.get("tool_results", [])
-            )
+            key_entities = extract_key_entities_from_tool_results(result.get("tool_results", []))
 
             # 存储对话到长时记忆
             await save_to_long_term_memory(

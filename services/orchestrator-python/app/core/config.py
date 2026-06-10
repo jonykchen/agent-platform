@@ -220,7 +220,7 @@ class AppConfig(BaseSettings):
 
     # 单次调用超时
     model_call_timeout_s: int = 30  # LLM 调用通常 5-30 秒
-    tool_call_timeout_s: int = 15   # 工具调用通常较快
+    tool_call_timeout_s: int = 15  # 工具调用通常较快
 
     # ─────────────────────────────────────────────────────────────────────────
     # 熔断器配置 - 故障隔离
@@ -304,10 +304,25 @@ class AppConfig(BaseSettings):
     # 技术实现：PostgreSQL pgvector + 语义检索 + 时间衰减
 
     long_term_memory_enabled: bool = Field(default=True, description="是否启用长时记忆")
-    embedding_service_url: str = Field(default="http://localhost:8001", description="Embedding 服务地址")
+    # Embedding 服务地址：指向 Model Gateway 的 OpenAI 兼容接口（/embeddings）
+    # 注意：必须是 Model Gateway（8002），而非 Orchestrator 自身（8001）
+    embedding_service_url: str = Field(
+        default="http://localhost:8002/v1", description="Embedding 服务地址（Model Gateway）"
+    )
+    embedding_model: str = Field(default="text-embedding-v3", description="Embedding 模型名称")
     memory_retrieve_top_k: int = Field(default=5, description="检索相关记忆数量")
     memory_decay_factor: float = Field(default=0.95, description="记忆时间衰减系数（每天）")
-    embedding_dim: int = Field(default=1536, description="向量维度（与 embedding 模型匹配）")
+    # 向量维度：必须与 Model Gateway embedding_dimension 及数据库 vector(dim) 一致
+    embedding_dim: int = Field(default=1024, description="向量维度（与 embedding 模型匹配）")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Kafka 审批回调配置 - 审批结果自动恢复 Agent 执行
+    # ─────────────────────────────────────────────────────────────────────────
+    # 启用后，Orchestrator 启动一个后台消费者监听审批结果事件，
+    # 收到 approved/rejected 后自动从 checkpoint 恢复中断的 Agent 执行（闭环）。
+    kafka_enabled: bool = Field(default=False, description="是否启用 Kafka 审批回调消费者")
+    kafka_servers: str = Field(default="localhost:9092", description="Kafka 集群地址")
+    kafka_approval_topic: str = Field(default="agent-platform.approval", description="审批事件 Topic")
 
     # ─────────────────────────────────────────────────────────────────────────
     # 配额限制配置 - 防止资源滥用

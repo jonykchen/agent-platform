@@ -156,7 +156,7 @@ class ContextManager:
 
         # 2. 分离消息类型
         recent_messages = messages[-(self.recent_turns * 2) :]  # 每轮包含 user + assistant
-        older_messages = messages[:-(self.recent_turns * 2)] if len(messages) > self.recent_turns * 2 else []
+        older_messages = messages[: -(self.recent_turns * 2)] if len(messages) > self.recent_turns * 2 else []
 
         # 3. 添加最近对话
         for msg in recent_messages:
@@ -180,10 +180,13 @@ class ContextManager:
         if older_messages and current_tokens < self.available_tokens - 500:
             summary = self._generate_summary(older_messages)
             if summary:
-                result.insert(1, {  # 插入到 system prompt 之后
-                    "role": "system",
-                    "content": f"[历史对话摘要]\n{summary}",
-                })
+                result.insert(
+                    1,
+                    {  # 插入到 system prompt 之后
+                        "role": "system",
+                        "content": f"[历史对话摘要]\n{summary}",
+                    },
+                )
 
         # 检查是否需要截断
         total_tokens = self.counter.count_messages(result)
@@ -236,8 +239,8 @@ class ContextManager:
         if len(messages) == 0:
             return result
 
-        recent_messages = messages[-(self.recent_turns * 2):]
-        older_messages = messages[:-(self.recent_turns * 2)] if len(messages) > self.recent_turns * 2 else []
+        recent_messages = messages[-(self.recent_turns * 2) :]
+        older_messages = messages[: -(self.recent_turns * 2)] if len(messages) > self.recent_turns * 2 else []
 
         for msg in recent_messages:
             msg_tokens = self.counter.count_messages([msg])
@@ -258,10 +261,13 @@ class ContextManager:
         if older_messages and current_tokens < self.available_tokens - 500:
             summary = await self._generate_summary_async(older_messages)
             if summary:
-                result.insert(1, {
-                    "role": "system",
-                    "content": f"[历史对话摘要]\n{summary}",
-                })
+                result.insert(
+                    1,
+                    {
+                        "role": "system",
+                        "content": f"[历史对话摘要]\n{summary}",
+                    },
+                )
 
         total_tokens = self.counter.count_messages(result)
         if total_tokens > self.max_tokens - self.response_reserved:
@@ -389,5 +395,17 @@ def truncate_context(
     messages: list[dict],
     system_prompt: str | None = None,
 ) -> list[dict]:
-    """便捷函数：截断上下文"""
+    """便捷函数：截断上下文（同步，历史摘要为抽取式）"""
     return get_context_manager().truncate(messages, system_prompt)
+
+
+async def truncate_context_async(
+    messages: list[dict],
+    system_prompt: str | None = None,
+) -> list[dict]:
+    """便捷函数：截断上下文（异步，历史摘要走 LLM，质量更高）
+
+    在 async 节点（如 thinking）中应优先使用此版本，使被截断的历史
+    通过 LLM 生成高质量摘要而非简单截取前若干字符。
+    """
+    return await get_context_manager().truncate_async(messages, system_prompt)

@@ -63,7 +63,6 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime
-from typing import Any
 
 import structlog
 
@@ -119,9 +118,7 @@ async def save_to_long_term_memory(
         entry_id = f"mem_{uuid.uuid4().hex[:16]}"
 
         # 截断过长的响应（保留关键信息）
-        response_summary = (
-            agent_response[:500] if len(agent_response) > 500 else agent_response
-        )
+        response_summary = agent_response[:500] if len(agent_response) > 500 else agent_response
 
         # 计算重要性分数（基于简单规则）
         importance_score = _calculate_importance(user_query, agent_response)
@@ -135,7 +132,7 @@ async def save_to_long_term_memory(
             user_query=user_query,
             agent_response_summary=response_summary,
             key_entities=key_entities or {},
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             importance_score=importance_score,
         )
 
@@ -258,9 +255,7 @@ def format_memories_for_context(memories: list[MemoryEntry]) -> str:
         lines.append(f"{i}. 用户意图：{query_preview}")
         lines.append(f"   处理结果：{response_preview}")
         if mem.key_entities:
-            entities_str = ", ".join(
-                f"{k}:{v}" for k, v in mem.key_entities.items()
-            )
+            entities_str = ", ".join(f"{k}:{v}" for k, v in mem.key_entities.items())
             lines.append(f"   关键实体：{entities_str}")
 
     return "\n".join(lines)

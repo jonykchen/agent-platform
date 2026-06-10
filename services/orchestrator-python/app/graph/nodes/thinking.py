@@ -175,7 +175,7 @@ async def thinking_node(state: AgentState) -> dict:
         }
 
     # 构建对话消息
-    messages = _build_messages(state)
+    messages = await _build_messages(state)
 
     # 调用模型网关进行推理
     try:
@@ -278,7 +278,7 @@ def _extract_arguments(input: str) -> dict:
     return {}
 
 
-def _build_messages(state: AgentState) -> list[dict]:
+async def _build_messages(state: AgentState) -> list[dict]:
     """构建对话消息
 
     消息结构：
@@ -306,11 +306,13 @@ def _build_messages(state: AgentState) -> list[dict]:
             if content:
                 doc_blocks.append(f"[{source}]\n{content}")
         if doc_blocks:
-            messages.append({
-                "role": "system",
-                "content": "以下是与用户问题相关的知识库检索结果，请优先依据这些资料作答：\n\n"
-                           + "\n\n".join(doc_blocks),
-            })
+            messages.append(
+                {
+                    "role": "system",
+                    "content": "以下是与用户问题相关的知识库检索结果，请优先依据这些资料作答：\n\n"
+                    + "\n\n".join(doc_blocks),
+                }
+            )
 
     # 添加对话历史
     if state.get("messages"):
@@ -321,23 +323,26 @@ def _build_messages(state: AgentState) -> list[dict]:
     # 添加工具结果（如果有）
     if state.get("tool_results"):
         for result in state["tool_results"]:
-            messages.append({
-                "role": "tool",
-                "tool_call_id": result.get("call_id", ""),
-                "content": result.get("result_json", ""),
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": result.get("call_id", ""),
+                    "content": result.get("result_json", ""),
+                }
+            )
 
     # 添加当前输入
     messages.append({"role": "user", "content": state["input"]})
 
     # 【S-AGENT-03】上下文截断：防止 token 超限
     from app.core.config import config
-    from app.core.context_manager import truncate_context
+    from app.core.context_manager import truncate_context_async
 
     max_context_tokens = getattr(config, "max_context_window_tokens", 128000)
 
     # 检查是否需要截断
     from app.core.token_counter import count_message_tokens
+
     current_tokens = count_message_tokens(messages)
 
     if current_tokens > max_context_tokens - 8000:  # 预留 8000 给响应
@@ -347,7 +352,8 @@ def _build_messages(state: AgentState) -> list[dict]:
             max_tokens=max_context_tokens,
             request_id=state.get("request_id"),
         )
-        messages = truncate_context(messages[1:], SYSTEM_PROMPT)  # 排除已添加的 system
+        # 异步版：被截断的历史走 LLM 生成高质量摘要（thinking 节点为 async）
+        messages = await truncate_context_async(messages[1:], SYSTEM_PROMPT)  # 排除已添加的 system
         messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
 
         logger.info(
@@ -489,11 +495,13 @@ def _parse_model_response(
             except json.JSONDecodeError:
                 arguments = {}
 
-            tool_calls.append({
-                "call_id": tc.get("id", f"call_{step_count}"),
-                "tool_name": function.get("name", ""),
-                "arguments": arguments,
-            })
+            tool_calls.append(
+                {
+                    "call_id": tc.get("id", f"call_{step_count}"),
+                    "tool_name": function.get("name", ""),
+                    "arguments": arguments,
+                }
+            )
 
         logger.debug(
             "parsed_tool_calls",

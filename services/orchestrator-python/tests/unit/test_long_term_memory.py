@@ -86,3 +86,102 @@ class TestTimeDecay:
 
         store = get_long_term_memory()
         assert store.decay_factor == config.memory_decay_factor
+
+
+class TestEmbedding:
+    """embedding 获取与解析（P0：修复零向量静默降级）"""
+
+    @pytest.fixture
+    def store(self):
+        return LongTermMemoryStore(
+            embedding_dim=4,
+            embedding_service_url="http://model-gateway:8002/v1",
+            embedding_model="text-embedding-v3",
+        )
+
+    def test_vector_literal_format(self, store):
+        # 浮点列表转 pgvector 文本字面量
+        assert store._to_vector_literal([1.0, 2.5, 3.0]) == "[1.0,2.5,3.0]"
+        assert store._to_vector_literal([]) == "[]"
+        assert store._to_vector_literal(None) == "[]"
+
+    async def test_get_embedding_parses_openai_response(self, store, monkeypatch):
+        """正确解析 OpenAI 兼容 {"data":[{"embedding":[...]}]} 响应。"""
+        import httpx
+
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"data": [{"embedding": [0.1, 0.2, 0.3, 0.4]}]}
+
+        class _Client:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, *a, **k):
+                return _Resp()
+
+        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+        vec = await store._get_embedding("你好")
+        assert vec == [0.1, 0.2, 0.3, 0.4]
+
+    async def test_get_embedding_raises_no_zero_vector_on_failure(self, store, monkeypatch):
+        """服务失败时显式抛错，绝不返回零向量。"""
+        import httpx
+
+        class _Client:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, *a, **k):
+                raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+        with pytest.raises(RuntimeError):
+            await store._get_embedding("你好")
+
+    async def test_get_embedding_raises_on_dim_mismatch(self, store, monkeypatch):
+        """维度不匹配时抛错（防止脏向量写入）。"""
+        import httpx
+
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"data": [{"embedding": [0.1, 0.2]}]}  # dim=2 != 4
+
+        class _Client:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def post(self, *a, **k):
+                return _Resp()
+
+        monkeypatch.setattr(httpx, "AsyncClient", _Client)
+        with pytest.raises(RuntimeError):
+            await store._get_embedding("你好")
