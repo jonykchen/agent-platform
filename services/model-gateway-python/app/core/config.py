@@ -202,6 +202,92 @@ class AppConfig(BaseSettings):
         description="HTTP 请求超时（秒）",
     )
 
+    # 模型调用超时别名（与 Provider 中 model_call_timeout_s 引用对齐）
+    model_call_timeout_s: int = Field(
+        default=30,
+        description="单次模型调用超时（秒）",
+    )
+
+    # 流式调用超时：流式响应允许更长的总时长（首 token 后持续输出）
+    stream_timeout_s: int = Field(
+        default=120,
+        description="流式响应总超时（秒）",
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Embedding 配置 - 向量化服务
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # 默认 embedding 模型（通义千问 text-embedding-v3）
+    # 用于知识库 RAG 与 Orchestrator 长时记忆的向量化
+    embedding_model: str = Field(
+        default="text-embedding-v3",
+        description="默认 embedding 模型名称",
+    )
+
+    # 向量维度：text-embedding-v3 默认 1024，需与数据库 vector(dim) 一致
+    embedding_dimension: int = Field(
+        default=1024,
+        description="embedding 向量维度",
+    )
+
+    # 单次 embedding 批量上限（DashScope text-embedding-v3 上限为 10）
+    embedding_max_batch: int = Field(
+        default=10,
+        description="单次 embedding 请求的最大文本条数",
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 分布式限流配置 - 防止单租户/单 Provider 流量打爆
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # 是否启用分布式限流（基于 Redis 滑动窗口）
+    rate_limit_enabled: bool = Field(
+        default=True,
+        description="是否启用分布式限流",
+    )
+
+    # 默认每分钟请求数上限（租户未配置专属策略时使用）
+    rate_limit_default_rpm: int = Field(
+        default=120,
+        description="默认每租户每分钟请求数上限（RPM）",
+    )
+
+    # 限流窗口（秒）
+    rate_limit_window_s: int = Field(
+        default=60,
+        description="限流滑动窗口大小（秒）",
+    )
+
+    # 限流失败时是否放行（fail-open）：Redis 故障时默认放行，避免限流组件自身成为单点
+    rate_limit_fail_open: bool = Field(
+        default=True,
+        description="限流后端故障时是否放行（fail-open）",
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 内容安全过滤配置
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # 是否启用内容过滤
+    content_filter_enabled: bool = Field(
+        default=True,
+        description="是否启用内容安全过滤",
+    )
+
+    # 内容过滤词库文件路径（JSON，格式 {category: [words]}）。为空则使用内置基础词表。
+    content_filter_blocklist_path: str = Field(
+        default="",
+        description="内容过滤词库文件路径（JSON），支持动态加载",
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 缓存配置
+    # ─────────────────────────────────────────────────────────────────────────
+
+    cache_default_ttl: int = Field(default=600, description="响应缓存 TTL（秒）")
+    cache_max_temperature: float = Field(default=0.3, description="可缓存请求的最大 temperature")
+
     @lru_cache
     def get_config(self) -> AppConfig:
         """获取配置单例

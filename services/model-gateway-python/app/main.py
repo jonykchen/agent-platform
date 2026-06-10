@@ -120,9 +120,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
-from app.api.v1 import chat, models
+from app.api.v1 import chat, embeddings, models
 from app.core.config import config
 from app.core.logging import setup_logging
+from app.core.rate_limiter import init_rate_limiter
 from app.router.model_router import get_model_router
 
 logger = structlog.get_logger()
@@ -273,6 +274,15 @@ async def lifespan(app: FastAPI):
     # - socket_connect_timeout: 5s
     redis_client = Redis.from_url(config.redis_url)
     logger.info("Redis connected", url=config.redis_url.split("@")[-1])  # 脱敏
+
+    # 初始化分布式限流器（共用同一 Redis 连接）
+    if getattr(config, "rate_limit_enabled", True):
+        init_rate_limiter(redis_client)
+        logger.info(
+            "Rate limiter initialized",
+            default_rpm=getattr(config, "rate_limit_default_rpm", 120),
+            window_s=getattr(config, "rate_limit_window_s", 60),
+        )
 
     # ─────────────────────────────────────────────────────────────────────
     # 3. Provider 注册
@@ -465,6 +475,19 @@ def create_app() -> FastAPI:
     # POST /v1/chat/completions - 对话补全
     app.include_router(chat.router, prefix="/v1", tags=["chat"])
 
+    # OpenAI 兼容的 Embeddings API
+    # POST /v1/embeddings - 文本向量化（供 Knowledge RAG / 长时记忆调用）
+    app.include_router(embeddings.router, prefix="/v1", tags=["embeddings"])
+
+    # Prometheus 指标端点
+    @app.get("/metrics", tags=["observability"])
+    async def metrics():
+        """暴露 Prometheus 指标供抓取。"""
+        from fastapi import Response
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+        return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
     # 健康检查端点（容器 healthcheck + K8s liveness/readiness 探针）
     @app.get("/health", tags=["health"])
     async def health():
@@ -478,6 +501,7 @@ def create_app() -> FastAPI:
         provider_count = len(getattr(router, "_providers", {}))
         if provider_count == 0:
             from fastapi import Response
+
             return Response(
                 content='{"status":"not_ready","reason":"no_providers"}',
                 media_type="application/json",

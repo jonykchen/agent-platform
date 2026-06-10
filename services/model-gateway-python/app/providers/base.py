@@ -130,7 +130,8 @@ class QwenProvider(BaseLLMProvider):
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -425,6 +426,41 @@ class ChatCompletionResponse(BaseModel):
     usage: ChatCompletionUsage
 
 
+class EmbeddingRequest(BaseModel):
+    """Embedding 请求 - OpenAI 兼容格式
+
+    - input: 待向量化文本（单条或批量）
+    - model: embedding 模型名称（如 text-embedding-v3）
+    """
+
+    input: list[str]
+    model: str | None = None
+
+
+class EmbeddingData(BaseModel):
+    """单条 embedding 结果"""
+
+    index: int
+    embedding: list[float]
+
+
+class EmbeddingResponse(BaseModel):
+    """Embedding 响应 - OpenAI 兼容格式
+
+    {
+        "object": "list",
+        "data": [{"object": "embedding", "index": 0, "embedding": [...]}],
+        "model": "text-embedding-v3",
+        "usage": {"prompt_tokens": N, "total_tokens": N}
+    }
+    """
+
+    object: str = "list"
+    data: list[EmbeddingData]
+    model: str
+    usage: dict
+
+
 class BaseLLMProvider(ABC):
     """LLM 提供商基类
 
@@ -706,6 +742,22 @@ class BaseLLMProvider(ABC):
         """
         pass
 
+    @property
+    def supports_embeddings(self) -> bool:
+        """是否支持 embedding（默认不支持，embedding 能力的 Provider 覆写为 True）"""
+        return False
+
+    async def create_embeddings(self, request: "EmbeddingRequest") -> "EmbeddingResponse":
+        """生成文本向量（默认未实现）
+
+        embedding 能力的 Provider 需覆写本方法，调用其向量化 API 并返回
+        OpenAI 兼容的 EmbeddingResponse。
+
+        Raises:
+            NotImplementedError: 该 Provider 不支持 embedding
+        """
+        raise NotImplementedError(f"Provider '{self.provider_name}' does not support embeddings")
+
     def supports_model(self, model: str) -> bool:
         """检查是否支持指定模型
 
@@ -926,17 +978,13 @@ class BaseLLMProvider(ABC):
 
         # 校验模型
         if request.model and not self.supports_model(request.model):
-            errors.append(
-                f"Model '{request.model}' is not supported by provider '{self.provider_name}'"
-            )
+            errors.append(f"Model '{request.model}' is not supported by provider '{self.provider_name}'")
 
         # 校验 max_tokens
         if request.model:
             model_info = self.get_model_info(request.model)
             if model_info and request.max_tokens > model_info.max_output_tokens:
-                errors.append(
-                    f"max_tokens ({request.max_tokens}) exceeds model limit ({model_info.max_output_tokens})"
-                )
+                errors.append(f"max_tokens ({request.max_tokens}) exceeds model limit ({model_info.max_output_tokens})")
 
         # 校验温度
         if not 0.0 <= request.temperature <= 2.0:

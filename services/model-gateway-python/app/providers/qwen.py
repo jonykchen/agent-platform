@@ -3,18 +3,21 @@
 集成重试和熔断机制，防止无限阻塞。
 """
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import httpx
 import structlog
 
 from app.providers.base import (
     BaseLLMProvider,
+    ChatCompletionChoice,
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ChatCompletionChoice,
     ChatCompletionUsage,
     ChatMessage,
+    EmbeddingData,
+    EmbeddingRequest,
+    EmbeddingResponse,
     ModelInfo,
 )
 from app.resilience.circuit_breaker import CircuitBreaker, CircuitState
@@ -85,6 +88,10 @@ class QwenProvider(BaseLLMProvider):
 
     # 模型名称列表（从 MODEL_INFOS 提取）
     PROVIDER_MODELS = [m.name for m in MODEL_INFOS]
+
+    # 支持的 embedding 模型（DashScope 通义千问向量模型）
+    EMBEDDING_MODELS = ["text-embedding-v3", "text-embedding-v2", "text-embedding-v1"]
+    DEFAULT_EMBEDDING_MODEL = "text-embedding-v3"
 
     # 熔断器配置
     CIRCUIT_FAILURE_THRESHOLD = 10
@@ -254,17 +261,17 @@ class QwenProvider(BaseLLMProvider):
 
     async def _call_with_retry(self, payload: dict) -> httpx.Response:
         """带重试的 HTTP 调用"""
-        import asyncio
         from tenacity import (
             AsyncRetrying,
+            retry_if_exception_type,
             stop_after_attempt,
             wait_exponential,
-            retry_if_exception_type,
         )
 
         # 【P2-配置统一化】从配置读取超时值
         try:
             from app.core.config import config as gateway_config
+
             timeout_seconds = getattr(gateway_config, "model_call_timeout_s", 30)
         except ImportError:
             timeout_seconds = 30
@@ -328,17 +335,19 @@ class QwenProvider(BaseLLMProvider):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream(
+            async with (
+                httpx.AsyncClient(timeout=60.0) as client,
+                client.stream(
                     "POST",
                     f"{self.base_url}/chat/completions",
                     headers=self.headers,
                     json=payload,
-                ) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            yield line
+                ) as response,
+            ):
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        yield line
 
             self._circuit_breaker.record_success()
 
@@ -346,6 +355,101 @@ class QwenProvider(BaseLLMProvider):
             self._circuit_breaker.record_failure()
             logger.error("qwen_stream_error", error=str(e))
             raise
+
+    @property
+    def supports_embeddings(self) -> bool:
+        return True
+
+    async def create_embeddings(self, request: EmbeddingRequest) -> EmbeddingResponse:
+        """生成文本向量（通义千问 text-embedding 系列）
+
+        调用 DashScope OpenAI 兼容的 /embeddings 接口，返回 OpenAI 格式响应。
+        带熔断保护与重试，失败显式抛错（绝不返回零向量等降级值）。
+        """
+        model = request.model or self.DEFAULT_EMBEDDING_MODEL
+
+        if not self._circuit_breaker.is_available():
+            raise CircuitBreakerOpenError("qwen")
+
+        # 读取目标维度（与数据库 vector(dim) 对齐）
+        try:
+            from app.core.config import config as gateway_config
+
+            dimension = getattr(gateway_config, "embedding_dimension", 1024)
+            timeout_seconds = getattr(gateway_config, "model_call_timeout_s", 30)
+        except ImportError:
+            dimension = 1024
+            timeout_seconds = 30
+
+        payload = {
+            "model": model,
+            "input": request.input,
+            "encoding_format": "float",
+        }
+        # text-embedding-v3 支持自定义维度
+        if model == "text-embedding-v3":
+            payload["dimension"] = dimension
+
+        from tenacity import (
+            AsyncRetrying,
+            retry_if_exception_type,
+            stop_after_attempt,
+            wait_exponential,
+        )
+
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(self.RETRY_MAX_ATTEMPTS),
+            wait=wait_exponential(multiplier=1, min=self.RETRY_MIN_WAIT, max=self.RETRY_MAX_WAIT),
+            retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
+            reraise=True,
+        ):
+            with attempt:
+                try:
+                    async with httpx.AsyncClient(timeout=float(timeout_seconds)) as client:
+                        response = await client.post(
+                            f"{self.base_url}/embeddings",
+                            headers=self.headers,
+                            json=payload,
+                        )
+                        response.raise_for_status()
+                        data = response.json()
+
+                        self._circuit_breaker.record_success()
+
+                        embeddings = [
+                            EmbeddingData(
+                                index=item.get("index", i),
+                                embedding=item["embedding"],
+                            )
+                            for i, item in enumerate(data.get("data", []))
+                        ]
+                        if not embeddings:
+                            raise ValueError("embedding response contains no data")
+
+                        return EmbeddingResponse(
+                            data=embeddings,
+                            model=data.get("model", model),
+                            usage=data.get("usage", {}),
+                        )
+
+                except (httpx.NetworkError, httpx.TimeoutException) as e:
+                    logger.warning(
+                        "qwen_embedding_retry",
+                        attempt=attempt.retry_state.attempt_number,
+                        error=str(e),
+                    )
+                    self._circuit_breaker.record_failure()
+                    raise
+                except httpx.HTTPStatusError as e:
+                    self._circuit_breaker.record_failure()
+                    logger.error(
+                        "qwen_embedding_http_error",
+                        status_code=e.response.status_code,
+                        error=str(e),
+                    )
+                    raise
+
+        raise RuntimeError("Embedding retry exhausted without result")
 
 
 class CircuitBreakerOpenError(Exception):

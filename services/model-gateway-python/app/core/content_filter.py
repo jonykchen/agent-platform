@@ -82,18 +82,64 @@ class ContentFilter:
                 raise ModelContentFilteredError(reason=f"输入命中敏感内容类目: {category}")
 
 
+def _load_blocklist_from_file(path: str) -> dict[str, list[str]] | None:
+    """从 JSON 文件加载敏感词库。
+
+    文件格式：{"category": ["word1", "word2"], ...}
+    加载失败返回 None（调用方回退到内置词表）。
+    """
+    import json
+    from pathlib import Path
+
+    try:
+        content = Path(path).read_text(encoding="utf-8")
+        data = json.loads(content)
+        if not isinstance(data, dict):
+            raise ValueError("blocklist 根节点必须是对象")
+        # 规整为 {str: [str]}
+        result: dict[str, list[str]] = {}
+        for category, words in data.items():
+            if isinstance(words, list):
+                result[str(category)] = [str(w) for w in words if w]
+        logger.info(
+            "content_filter_blocklist_loaded",
+            path=path,
+            categories=len(result),
+            total_words=sum(len(v) for v in result.values()),
+        )
+        return result
+    except Exception as e:
+        logger.error("content_filter_blocklist_load_failed", path=path, error=str(e))
+        return None
+
+
 _content_filter: ContentFilter | None = None
 
 
 def get_content_filter() -> ContentFilter:
-    """获取全局内容过滤器单例"""
+    """获取全局内容过滤器单例
+
+    若配置了 content_filter_blocklist_path，则从该 JSON 文件动态加载词库；
+    加载失败回退到内置基础词表，保证过滤始终可用。
+    """
     global _content_filter
     if _content_filter is None:
+        enabled = True
+        blocklist = None
         try:
             from app.core.config import config
 
             enabled = getattr(config, "content_filter_enabled", True)
+            path = getattr(config, "content_filter_blocklist_path", "")
+            if path:
+                blocklist = _load_blocklist_from_file(path)
         except Exception:
             enabled = True
-        _content_filter = ContentFilter(enabled=enabled)
+        _content_filter = ContentFilter(blocklist=blocklist, enabled=enabled)
     return _content_filter
+
+
+def reset_content_filter() -> None:
+    """重置全局过滤器（用于词库热更新或测试）。"""
+    global _content_filter
+    _content_filter = None

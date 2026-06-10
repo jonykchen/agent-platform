@@ -100,9 +100,9 @@
 
 import structlog
 
+from app.core.exceptions import AllProvidersDownError
 from app.providers.base import BaseLLMProvider, ChatCompletionRequest
 from app.resilience.circuit_breaker import CircuitBreaker
-from app.core.exceptions import AllProvidersDownError
 
 logger = structlog.get_logger()
 
@@ -136,6 +136,37 @@ class ModelRouter:
     def get_provider(self, name: str) -> BaseLLMProvider | None:
         """获取提供商"""
         return self._providers.get(name)
+
+    def get_embedding_provider(self, model: str | None = None) -> tuple[BaseLLMProvider, "CircuitBreaker"] | None:
+        """获取一个支持 embedding 且当前可用的 Provider。
+
+        优先选择支持指定 embedding 模型的 Provider，否则返回首个可用的
+        embedding Provider。全部不可用时返回 None。
+
+        Args:
+            model: embedding 模型名称（可选）
+
+        Returns:
+            (provider, circuit_breaker) 或 None
+        """
+        fallback: tuple[BaseLLMProvider, CircuitBreaker] | None = None
+        for name, provider in self._providers.items():
+            if not getattr(provider, "supports_embeddings", False):
+                continue
+            cb = self._circuit_breakers.get(name)
+            if not (cb and cb.is_available()):
+                continue
+            # 记录首个可用的 embedding Provider 作为兜底
+            if fallback is None:
+                fallback = (provider, cb)
+            # 优先返回支持指定模型的 Provider
+            if model:
+                embedding_models = getattr(provider, "EMBEDDING_MODELS", [])
+                if embedding_models and model not in embedding_models:
+                    continue
+            return provider, cb
+        # 无 Provider 精确支持该模型时，回退到任一可用 embedding Provider
+        return fallback
 
     def get_circuit_breaker(self, name: str) -> CircuitBreaker | None:
         """获取熔断器"""
@@ -271,6 +302,7 @@ class ModelRouter:
         if tenant_id:
             try:
                 from redis.asyncio import Redis
+
                 from app.core.config import config
 
                 redis = Redis.from_url(config.redis_url)
@@ -279,6 +311,7 @@ class ModelRouter:
                 policy_data = await redis.get(policy_key)
                 if policy_data:
                     import json
+
                     policy = json.loads(policy_data)
                     await redis.close()
 
@@ -311,12 +344,14 @@ class ModelRouter:
         models = []
         for name, provider in self._providers.items():
             cb = self._circuit_breakers.get(name)
-            models.append({
-                "name": name,
-                "provider": provider.provider_name,
-                "available": cb.is_available() if cb else False,
-                "supported": provider.supported_models,
-            })
+            models.append(
+                {
+                    "name": name,
+                    "provider": provider.provider_name,
+                    "available": cb.is_available() if cb else False,
+                    "supported": provider.supported_models,
+                }
+            )
         return models
 
     def get_health_status(self) -> dict:
