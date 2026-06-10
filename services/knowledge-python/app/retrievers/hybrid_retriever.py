@@ -33,13 +33,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import structlog
 from typing import Any
 
-import numpy as np
+import structlog
 
 try:
     import asyncpg
+
     HAS_ASYNCPG = True
 except ImportError:
     HAS_ASYNCPG = False
@@ -113,8 +113,13 @@ class HybridRetriever:
         top_k: int = 10,
         alpha: float = 0.5,
         use_parallel: bool = True,
+        enable_rerank: bool | None = None,
+        enable_rewrite: bool | None = None,
     ) -> list[dict]:
-        """混合检索
+        """混合检索（含可选 Query 改写与 Cross-Encoder 重排序）
+
+        完整召回链路：
+        Query 改写(可选) → 向量+关键词并行召回 → RRF 融合 → Rerank 精排(可选) → Top-K
 
         【并行检索策略】
         使用 asyncio.gather 并行执行 BM25 和向量检索：
@@ -125,13 +130,41 @@ class HybridRetriever:
             query: 查询文本
             tenant_id: 租户 ID
             doc_ids: 可选，限定文档范围
-            top_k: 返回数量
+            top_k: 最终返回数量
             alpha: 向量检索权重 (1-alpha 为 BM25 权重)，用于 RRF 融合
             use_parallel: 是否并行执行（默认 True）
+            enable_rerank: 是否重排序（None 时读配置 enable_rerank）
+            enable_rewrite: 是否 Query 改写（None 时读配置 enable_query_rewrite）
 
         Returns:
             检索结果列表
         """
+        if enable_rerank is None:
+            enable_rerank = getattr(config, "enable_rerank", True)
+        if enable_rewrite is None:
+            enable_rewrite = getattr(config, "enable_query_rewrite", False)
+
+        # 候选召回数：开启 rerank 时多召回候选，交由精排压缩到 top_k
+        candidate_k = getattr(config, "rerank_top_k", 20) if enable_rerank else top_k
+
+        # Query 改写：用改写后的查询做向量化检索，原查询用于 rerank 评分
+        search_query = query
+        if enable_rewrite:
+            try:
+                from app.retrievers.query_rewriter import get_query_rewriter
+
+                rewrite_result = await get_query_rewriter().rewrite(query)
+                rewritten = rewrite_result.get("rewritten_query")
+                if rewritten:
+                    search_query = rewritten
+                    logger.info(
+                        "query_rewritten_for_search",
+                        original=query[:50],
+                        rewritten=search_query[:50],
+                    )
+            except Exception as e:
+                logger.warning("query_rewrite_skipped", error=str(e))
+
         pool = await self._get_pool()
 
         if pool is None:
@@ -142,16 +175,12 @@ class HybridRetriever:
             if use_parallel:
                 # 【并行检索】两路同时执行
                 vector_results, keyword_results = await self._parallel_search(
-                    pool, query, tenant_id, doc_ids, top_k * 2
+                    pool, search_query, tenant_id, doc_ids, candidate_k * 2
                 )
             else:
                 # 串行执行（调试用）
-                vector_results = await self._vector_search(
-                    pool, query, tenant_id, doc_ids, top_k * 2
-                )
-                keyword_results = await self._keyword_search(
-                    pool, query, tenant_id, doc_ids, top_k * 2
-                )
+                vector_results = await self._vector_search(pool, search_query, tenant_id, doc_ids, candidate_k * 2)
+                keyword_results = await self._keyword_search(pool, search_query, tenant_id, doc_ids, candidate_k * 2)
 
             # 检查是否有有效结果
             if not vector_results and not keyword_results:
@@ -163,9 +192,7 @@ class HybridRetriever:
                 return self._mock_search(query, top_k)
 
             # 混合排序 (RRF)
-            merged_results = self._reciprocal_rank_fusion(
-                vector_results, keyword_results, alpha
-            )
+            merged_results = self._reciprocal_rank_fusion(vector_results, keyword_results, alpha)
 
             logger.info(
                 "hybrid_search_complete",
@@ -174,7 +201,25 @@ class HybridRetriever:
                 merged_count=len(merged_results),
             )
 
-            return merged_results[:top_k]
+            candidates = merged_results[:candidate_k]
+
+            # Cross-Encoder 重排序（用原始 query 评分，提升精度）
+            if enable_rerank and candidates:
+                try:
+                    from app.retrievers.reranker import get_reranker
+
+                    reranked = await get_reranker().rerank(query, candidates, top_k)
+                    logger.info(
+                        "rerank_applied",
+                        candidate_count=len(candidates),
+                        returned=len(reranked),
+                    )
+                    return reranked
+                except Exception as e:
+                    logger.warning("rerank_skipped", error=str(e))
+                    return candidates[:top_k]
+
+            return candidates[:top_k]
 
         except Exception as e:
             logger.error(

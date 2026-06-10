@@ -128,28 +128,28 @@ class AppConfig(BaseSettings):
     embedding_service_url: str = "http://localhost:8002"
     """Embedding 服务地址，指向 Model Gateway 统一管理"""
 
-    embedding_model: str = "text-embedding-ada-002"
+    embedding_model: str = "text-embedding-v3"
     """
     Embedding 模型名称
 
+    平台统一使用通义千问 text-embedding-v3（国内 LLM，1024 维），
+    与 Model Gateway / Orchestrator 长时记忆保持一致。
+
     可选模型：
-    - text-embedding-ada-002: OpenAI，1536 维，性价比高
-    - text-embedding-3-small: OpenAI，1536 维，性能提升
-    - text-embedding-3-large: OpenAI，3072 维，最高质量
+    - text-embedding-v3: 通义千问，1024 维（平台默认）
     - bge-large-zh: 国产，1024 维，中文效果好
 
-    注意：更换模型需同步更新 embedding_dimension
+    注意：更换模型需同步更新 embedding_dimension 与数据库 vector(dim)
     """
 
-    embedding_dimension: int = 1536
+    embedding_dimension: int = 1024
     """
-    向量维度，必须与 embedding_model 匹配
+    向量维度，必须与 embedding_model 及数据库 knowledge_chunk.embedding 维度一致
 
     常见模型维度：
+    - text-embedding-v3: 1024（平台默认）
+    - bge-large-zh / glm-embedding: 1024
     - ada-002: 1536
-    - text-embedding-3-large: 3072
-    - bge-large-zh: 1024
-    - glm-embedding: 1024
     """
 
     embedding_batch_size: int = 100
@@ -226,6 +226,12 @@ class AppConfig(BaseSettings):
     3. 重排序模型精排
     4. 返回 top_k 个最终结果
     """
+
+    enable_rerank: bool = True
+    """是否在混合检索后自动执行 Cross-Encoder 重排序（默认开启，提升召回精度）"""
+
+    enable_query_rewrite: bool = False
+    """是否在检索前对查询做 LLM 改写/扩展（默认关闭，开启会增加一次 LLM 调用延迟）"""
 
     # ==================== 存储配置 ====================
 
