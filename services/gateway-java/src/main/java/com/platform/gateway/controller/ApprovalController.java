@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -116,6 +117,7 @@ public class ApprovalController {
      * @return 分页的审批任务列表
      */
     @GetMapping
+    @PreAuthorize("hasRole('admin') or hasAuthority('approval:read')")
     public ResponseEntity<PagedResponse<ApprovalTaskResponse>> listApprovals(ApprovalListRequest request) {
         String requestId = RequestIdGenerator.getCurrent();
         String tenantId = tenantContextService.getCurrentTenantId();
@@ -151,6 +153,7 @@ public class ApprovalController {
      * @throws BusinessException 当审批任务不存在或无权访问时抛出
      */
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('admin') or hasAuthority('approval:read')")
     public ResponseEntity<ApprovalTaskResponse> getApproval(@PathVariable String id) {
         String requestId = RequestIdGenerator.getCurrent();
         String tenantId = tenantContextService.getCurrentTenantId();
@@ -189,6 +192,7 @@ public class ApprovalController {
      * @throws BusinessException 当审批任务不存在、状态不允许审批或无权限时抛出
      */
     @PostMapping("/{id}/approve")
+    @PreAuthorize("hasRole('admin') or hasAuthority('approval:approve')")
     @AuditLog(
         type = "tool.approved",
         category = "security",
@@ -238,6 +242,7 @@ public class ApprovalController {
      * @throws BusinessException 当审批任务不存在、状态不允许审批或无权限时抛出
      */
     @PostMapping("/{id}/reject")
+    @PreAuthorize("hasRole('admin') or hasAuthority('approval:approve')")
     @AuditLog(
         type = "tool.rejected",
         category = "security",

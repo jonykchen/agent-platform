@@ -14,6 +14,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -26,6 +27,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/audit")
 @RequiredArgsConstructor
+@PreAuthorize("hasRole('admin')")  // 审计日志查看为管理员专属
 public class AuditController {
 
     private final AuditService auditService;

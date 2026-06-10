@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.context.SecurityContext;
@@ -21,6 +22,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -61,6 +64,7 @@ import java.util.List;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity  // 启用方法级 @PreAuthorize 鉴权
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -94,6 +98,30 @@ public class SecurityConfig {
 
                 // 禁用 CSRF（无状态 REST API）
                 .csrf(AbstractHttpConfigurer::disable)
+
+                // 安全响应头（防点击劫持/MIME 嗅探/降级攻击）
+                // 注意：生产环境 TLS 在 LB/Ingress 终止，到达 Gateway 的是 HTTP，
+                // 默认不会下发 HSTS，故显式开启并通过 LB 透传到客户端。
+                .headers(headers -> headers
+                        // X-Content-Type-Options: nosniff
+                        .contentTypeOptions(contentType -> {})
+                        // X-Frame-Options: DENY（禁止被 iframe 嵌入，防点击劫持）
+                        .frameOptions(frame -> frame.deny())
+                        // Strict-Transport-Security: 强制 HTTPS（含子域，预加载）
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .preload(true)
+                                .maxAgeInSeconds(31536000))
+                        // Referrer-Policy: 跨域不泄露完整 URL
+                        .referrerPolicy(referrer -> referrer
+                                .policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN))
+                        // Content-Security-Policy: 仅 API 服务，禁止任何资源加载与框架嵌入
+                        .contentSecurityPolicy(csp -> csp
+                                .policyDirectives("default-src 'none'; frame-ancestors 'none'"))
+                        // Permissions-Policy: 关闭敏感浏览器能力
+                        .addHeaderWriter(new StaticHeadersWriter(
+                                "Permissions-Policy",
+                                "geolocation=(), microphone=(), camera=()")))
 
                 // 无状态会话
                 .sessionManagement(session -> session

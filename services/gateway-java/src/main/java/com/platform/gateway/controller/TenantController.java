@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -247,6 +248,7 @@ public class TenantController {
      * @throws BusinessException 当租户不存在、无权访问或参数校验失败时抛出
      */
     @PatchMapping("/{tenantId}/settings")
+    @PreAuthorize("hasRole('admin') or hasAuthority('tenant:write')")
     public ResponseEntity<Void> updateSettings(
             @PathVariable String tenantId,
             @Valid @RequestBody UpdateSettingsRequest request) {
@@ -294,6 +296,7 @@ public class TenantController {
      * @throws BusinessException 当租户不存在或无权访问时抛出
      */
     @PostMapping("/{tenantId}/settings/reset")
+    @PreAuthorize("hasRole('admin') or hasAuthority('tenant:write')")
     public ResponseEntity<Void> resetSettings(@PathVariable String tenantId) {
         String requestId = RequestIdGenerator.getCurrent();
         String currentTenantId = tenantContextService.getCurrentTenantId();

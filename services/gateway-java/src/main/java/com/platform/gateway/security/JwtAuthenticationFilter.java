@@ -1,5 +1,6 @@
 package com.platform.gateway.security;
 
+import com.platform.gateway.service.RolePermissionService;
 import com.platform.gateway.service.TenantContextService;
 import com.platform.gateway.util.JwtUtil;
 import jakarta.servlet.DispatcherType;
@@ -17,8 +18,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.security.core.GrantedAuthority;
 
 /**
  * JWT 认证过滤器
@@ -45,6 +47,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final TenantContextService tenantContextService;
+    private final RolePermissionService rolePermissionService;
 
     @Override
     protected void doFilterInternal(
@@ -98,12 +101,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // 构建 Authentication 对象
         UserPrincipal principal = new UserPrincipal(userId, username, tenantId);
 
+        // 授予两类权限：
+        // 1) ROLE_<role>：供 hasRole(...) 与角色级 @PreAuthorize 使用
+        // 2) 细粒度权限（domain:action）：从 role_permission 表解析，供 hasAuthority(...) 使用
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        for (String role : roles) {
+            authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
+        }
+        for (String permission : rolePermissionService.resolvePermissions(roles)) {
+            authorities.add(new SimpleGrantedAuthority(permission));
+        }
+
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 principal,
                 null,
-                Arrays.stream(roles)
-                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
-                    .collect(Collectors.toList())
+                authorities
         );
 
         // 设置 Security Context
