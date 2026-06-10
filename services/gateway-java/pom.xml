@@ -193,6 +193,12 @@
             <artifactId>bucket4j-core</artifactId>
             <version>8.10.1</version>
         </dependency>
+        <!-- 分布式限流：基于 Redis (Lettuce) 的 ProxyManager，多实例共享配额 -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-redis</artifactId>
+            <version>8.10.1</version>
+        </dependency>
 
         <!-- Redis for distributed rate limiting and caching -->
         <dependency>

@@ -4,6 +4,7 @@ import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.BucketConfiguration;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -117,14 +118,16 @@ public class RateLimitConfig {
     }
 
     /**
-     * 本地内存 Bucket 存储
+     * 本地内存 Bucket 存储（默认，单实例）。
      *
-     * <p>适用于单实例部署或本地测试。生产环境多实例部署建议使用 Redis 分布式方案。
+     * <p>仅当 {@code rate-limit.distributed.enabled} 未开启时生效；
+     * 开启分布式限流时由 {@link RedisRateLimitConfig} 提供 Redis 实现。
      *
      * @return Bucket 管理器
      */
     @Bean
-    public LocalBucketManager localBucketManager() {
+    @ConditionalOnProperty(name = "rate-limit.distributed.enabled", havingValue = "false", matchIfMissing = true)
+    public BucketManager localBucketManager() {
         return new LocalBucketManager();
     }
 
@@ -134,7 +137,7 @@ public class RateLimitConfig {
      * <p>用于单实例场景，使用 ConcurrentHashMap 存储 Bucket。
      * 线程安全，支持高并发访问。
      */
-    public static class LocalBucketManager {
+    public static class LocalBucketManager implements BucketManager {
 
         private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
 
@@ -145,6 +148,7 @@ public class RateLimitConfig {
          * @param configuration Bucket 配置
          * @return Bucket 实例
          */
+        @Override
         public Bucket getUserBucket(String userId, BucketConfiguration configuration) {
             String key = "user:" + userId;
             return buckets.computeIfAbsent(key, k -> {
@@ -167,6 +171,7 @@ public class RateLimitConfig {
          * @param configuration Bucket 配置
          * @return Bucket 实例
          */
+        @Override
         public Bucket getTenantBucket(String tenantId, BucketConfiguration configuration) {
             String key = "tenant:" + tenantId;
             return buckets.computeIfAbsent(key, k -> {

@@ -1,0 +1,54 @@
+# ============================================================
+#  RBAC - 每个服务独立的 ServiceAccount + 最小权限
+#
+#  默认禁用 automountServiceAccountToken，遵循最小权限原则：
+#  本平台服务不需要访问 K8s API，故不绑定任何 Role。
+#  如后续需要（如服务发现/配置热加载），再按需绑定最小 Role。
+# ============================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway-sa
+  labels:
+    app: gateway
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: orchestrator-sa
+  labels:
+    app: orchestrator
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: model-gateway-sa
+  labels:
+    app: model-gateway
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tool-bus-sa
+  labels:
+    app: tool-bus
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: governance-sa
+  labels:
+    app: governance
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: knowledge-sa
+  labels:
+    app: knowledge
+automountServiceAccountToken: false

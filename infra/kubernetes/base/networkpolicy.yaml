@@ -1,0 +1,149 @@
+# ============================================================
+#  NetworkPolicy - East-West 流量隔离（零信任）
+#  默认拒绝所有入站，再按服务拓扑显式放行
+#  拓扑: Gateway → Orchestrator → Model Gateway
+#                       ↓
+#                  Tool Bus → Governance
+#                       ↓
+#                  Knowledge
+# ============================================================
+
+# 默认拒绝所有 Pod 的入站流量（基线）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Gateway：允许来自 Ingress Controller 的入站（外部入口）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gateway-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Orchestrator：仅允许来自 Gateway 的 gRPC/HTTP
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orchestrator-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: orchestrator
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 50051
+---
+# Model Gateway：仅允许来自 Orchestrator
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: model-gateway-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: model-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: orchestrator
+      ports:
+        - protocol: TCP
+          port: 8001
+---
+# Tool Bus：仅允许来自 Orchestrator（gRPC）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tool-bus-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: tool-bus
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: orchestrator
+      ports:
+        - protocol: TCP
+          port: 8082
+        - protocol: TCP
+          port: 50051
+---
+# Governance：允许来自 Tool Bus 与 Gateway（审批查询/决策）
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: governance-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: governance
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: tool-bus
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8083
+---
+# Knowledge：仅允许来自 Orchestrator 与 Gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: knowledge-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: knowledge
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: orchestrator
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8002

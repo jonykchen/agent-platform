@@ -48,15 +48,22 @@ OpenAI 兼容接口：
 
 """
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
 import time
 import uuid
-import structlog
 
-from app.providers.base import ChatCompletionRequest, ChatCompletionResponse
+import structlog
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from app.core.content_filter import get_content_filter
+from app.core.exceptions import (
+    AllProvidersDownError,
+    ModelContentFilteredError,
+    ModelTimeoutError,
+)
+from app.core.response_cache import get_response_cache
+from app.providers.base import ChatCompletionRequest
 from app.router.model_router import get_model_router
-from app.core.exceptions import AllProvidersDownError, ModelTimeoutError
 
 router = APIRouter()
 logger = structlog.get_logger()
@@ -129,6 +136,20 @@ async def chat_completion(request: ChatRequest):
         )
 
     try:
+        # 内容安全过滤（前置）：命中敏感内容直接拒绝，不发往 Provider
+        get_content_filter().check_messages(request.messages, request_id)
+
+        # 响应缓存：低温度非流式请求命中缓存直接返回
+        cache = get_response_cache()
+        cacheable = cache.is_cacheable(request.temperature, request.stream)
+        if cacheable:
+            cached = await cache.get(
+                request.model, request.messages, request.temperature, request.max_tokens
+            )
+            if cached:
+                logger.info("request_served_from_cache", request_id=request_id)
+                return ChatResponse(**cached)
+
         # 获取模型路由器
         model_router = get_model_router()
 
@@ -173,7 +194,7 @@ async def chat_completion(request: ChatRequest):
             completion_tokens=response.usage.completion_tokens,
         )
 
-        return ChatResponse(
+        chat_response = ChatResponse(
             id=response.id,
             created=response.created,
             model=response.model,
@@ -195,7 +216,32 @@ async def chat_completion(request: ChatRequest):
             },
         )
 
-    except AllProvidersDownError as e:
+        # 写入响应缓存（低温度非流式请求）
+        if cacheable:
+            await cache.set(
+                request.model, request.messages, request.temperature,
+                request.max_tokens, chat_response.model_dump(),
+            )
+
+        return chat_response
+
+    except ModelContentFilteredError:
+        latency_ms = int((time.time() - start_time) * 1000)
+        logger.warning(
+            "content_filtered_rejected",
+            request_id=request_id,
+            latency_ms=latency_ms,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "ERR_MODEL_CONTENT_FILTERED",
+                "message": "输入内容未通过安全审查，请调整后重试",
+                "request_id": request_id,
+            },
+        )
+
+    except AllProvidersDownError:
         latency_ms = int((time.time() - start_time) * 1000)
         logger.error(
             "all_providers_down",

@@ -153,6 +153,10 @@ grpc:
 # ====== Rate Limiting 配置 ======
 rate-limit:
   enabled: ${RATE_LIMIT_ENABLED:true}
+  # 分布式限流开关：多实例部署必须开启，配额经 Redis 全局共享
+  # 关闭时使用本地内存（仅适合单实例）
+  distributed:
+    enabled: ${RATE_LIMIT_DISTRIBUTED:false}
   user:
     rpm: ${RATE_LIMIT_USER_RPM:60}  # 每用户每分钟请求数限制
   tenant:
@@ -238,6 +242,11 @@ spring:
 app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+
+# 生产环境默认启用分布式限流（多副本部署）
+rate-limit:
+  distributed:
+    enabled: ${RATE_LIMIT_DISTRIBUTED:true}
 
 logging:
   level:

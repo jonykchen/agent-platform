@@ -72,7 +72,7 @@ public class RateLimitingFilter implements Filter {
     private static final String RATE_LIMIT_RESET_HEADER = "X-RateLimit-Reset";
     private static final String RETRY_AFTER_HEADER = "Retry-After";
 
-    private final RateLimitConfig.LocalBucketManager bucketManager;
+    private final com.platform.gateway.config.BucketManager bucketManager;
     private final RateLimitConfig rateLimitConfig;
     private final TenantContextService tenantContextService;
 

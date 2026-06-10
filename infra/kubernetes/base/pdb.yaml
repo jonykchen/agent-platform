@@ -1,0 +1,63 @@
+# ============================================================
+#  PodDisruptionBudget - 保障滚动更新/节点维护时的最小可用副本
+#  避免自愿驱逐（node drain、升级）导致服务整体不可用
+# ============================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  labels:
+    app: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: orchestrator-pdb
+  labels:
+    app: orchestrator
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: model-gateway-pdb
+  labels:
+    app: model-gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: model-gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tool-bus-pdb
+  labels:
+    app: tool-bus
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: tool-bus
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: governance-pdb
+  labels:
+    app: governance
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: governance

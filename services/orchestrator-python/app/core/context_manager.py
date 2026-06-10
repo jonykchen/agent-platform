@@ -74,7 +74,6 @@ WHY 这个顺序？
 from __future__ import annotations
 
 import structlog
-from typing import Any
 
 from app.core.config import config
 from app.core.token_counter import get_token_counter
@@ -215,11 +214,88 @@ class ContextManager:
 
         return result
 
-    def _generate_summary(self, messages: list[dict]) -> str | None:
-        """生成对话摘要（简单版本）
+    async def truncate_async(
+        self,
+        messages: list[dict],
+        system_prompt: str | None = None,
+        important_tool_results: list[str] | None = None,
+    ) -> list[dict]:
+        """截断消息列表（异步：旧消息使用 LLM 高质量摘要）
 
-        生产环境应调用 LLM 生成摘要。
-        当前实现为简单的关键信息提取。
+        与同步 truncate 逻辑一致，区别在于历史摘要走 LLM（_generate_summary_async），
+        在保留更多语义的同时压缩 token。适用于可 await 的调用路径（如 API/节点）。
+        """
+        if not messages:
+            return messages
+
+        result: list[dict] = []
+        if system_prompt:
+            result.append({"role": "system", "content": system_prompt})
+
+        current_tokens = self.counter.count_messages(result)
+        if len(messages) == 0:
+            return result
+
+        recent_messages = messages[-(self.recent_turns * 2):]
+        older_messages = messages[:-(self.recent_turns * 2)] if len(messages) > self.recent_turns * 2 else []
+
+        for msg in recent_messages:
+            msg_tokens = self.counter.count_messages([msg])
+            if current_tokens + msg_tokens <= self.available_tokens:
+                result.append(msg)
+                current_tokens += msg_tokens
+            else:
+                break
+
+        if important_tool_results and current_tokens < self.available_tokens:
+            for msg in older_messages:
+                if msg.get("role") == "tool" and msg.get("tool_call_id") in important_tool_results:
+                    msg_tokens = self.counter.count_messages([msg])
+                    if current_tokens + msg_tokens <= self.available_tokens:
+                        result.append(msg)
+                        current_tokens += msg_tokens
+
+        if older_messages and current_tokens < self.available_tokens - 500:
+            summary = await self._generate_summary_async(older_messages)
+            if summary:
+                result.insert(1, {
+                    "role": "system",
+                    "content": f"[历史对话摘要]\n{summary}",
+                })
+
+        total_tokens = self.counter.count_messages(result)
+        if total_tokens > self.max_tokens - self.response_reserved:
+            logger.warning(
+                "context_still_too_long",
+                total_tokens=total_tokens,
+                max_tokens=self.max_tokens,
+                message_count=len(result),
+            )
+            result = [result[0]] if result else []
+            if messages:
+                last_user_msg = next(
+                    (m for m in reversed(messages) if m.get("role") == "user"),
+                    None,
+                )
+                if last_user_msg:
+                    result.append(last_user_msg)
+
+        logger.info(
+            "context_truncated_async",
+            original_count=len(messages),
+            truncated_count=len(result),
+            original_tokens=self.counter.count_messages(messages),
+            truncated_tokens=self.counter.count_messages(result),
+        )
+
+        return result
+
+    def _generate_summary(self, messages: list[dict]) -> str | None:
+        """生成对话摘要（同步：提取式）
+
+        同步路径复用 SummaryGenerator 的提取式摘要（保留用户意图与关键实体），
+        优于此前仅截取前 50 字符的实现。需要 LLM 高质量摘要时使用异步的
+        truncate_async（见下）。
 
         Args:
             messages: 需要摘要的消息列表
@@ -230,19 +306,46 @@ class ContextManager:
         if not messages:
             return None
 
-        # 提取用户消息中的关键词
-        user_messages = [m.get("content", "") for m in messages if m.get("role") == "user"]
+        try:
+            from app.memory.summary_generator import get_summary_generator
 
-        if not user_messages:
+            # 同步上下文下不调用 LLM，使用提取式摘要（无网络/事件循环依赖）
+            generator = get_summary_generator()
+            summary = generator._generate_extractive(messages)
+            return summary or None
+        except Exception:
+            # 兜底：极简提取，保证截断流程不被摘要失败阻断
+            user_messages = [m.get("content", "") for m in messages if m.get("role") == "user"]
+            if not user_messages:
+                return None
+            parts = []
+            for i, msg in enumerate(user_messages[:5]):
+                preview = msg[:50] + "..." if len(msg) > 50 else msg
+                parts.append(f"{i + 1}. 用户询问: {preview}")
+            return "\n".join(parts)
+
+    async def _generate_summary_async(self, messages: list[dict]) -> str | None:
+        """生成对话摘要（异步：优先 LLM）
+
+        在异步路径中调用 SummaryGenerator，有 LLM 客户端时生成高质量摘要，
+        失败自动回退提取式。
+
+        Args:
+            messages: 需要摘要的消息列表
+
+        Returns:
+            摘要文本
+        """
+        if not messages:
             return None
+        try:
+            from app.memory.summary_generator import get_summary_generator
 
-        # 简单摘要：用户提问了什么
-        summary_parts = []
-        for i, msg in enumerate(user_messages[:5]):  # 最多 5 条
-            preview = msg[:50] + "..." if len(msg) > 50 else msg
-            summary_parts.append(f"{i+1}. 用户询问: {preview}")
-
-        return "\n".join(summary_parts)
+            generator = get_summary_generator()
+            summary = await generator.generate(messages)
+            return summary or None
+        except Exception:
+            return self._generate_summary(messages)
 
     def get_remaining_tokens(self, messages: list[dict]) -> int:
         """获取剩余可用 token 数

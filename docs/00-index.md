@@ -154,4 +154,5 @@
 | [06-operability-guide.md](./06-operability-guide.md) | 运维指南 |
 | [07-scalability-patterns.md](./07-scalability-patterns.md) | 扩展性设计 |
 | [09-frontend-design.md](./09-frontend-design.md) | 前端设计 |
+| [13-runtime-principles.md](./13-runtime-principles.md) | 运行原理（流式/审批/工具/限流/RAG/迁移/部署加固） |
 | [14-testing-strategy.md](./14-testing-strategy.md) | 测试体系与质量保障 |

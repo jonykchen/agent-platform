@@ -91,21 +91,22 @@
 import asyncio
 
 import structlog
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph
 
 from app.core.config import config
 from app.core.constants import (
     MAX_CONCURRENT_MODEL_CALLS,
     MAX_CONCURRENT_TOOL_CALLS,
 )
-from app.graph.state import AgentState
 from app.graph.nodes import (
-    thinking_node,
-    tool_call_node,
-    risk_check_node,
     approval_wait_node,
     final_answer_node,
+    rag_retrieve_node,
+    risk_check_node,
+    thinking_node,
+    tool_call_node,
 )
+from app.graph.state import AgentState
 
 logger = structlog.get_logger()
 
@@ -174,6 +175,8 @@ def build_agent_graph():
     graph.add_node("tool_call", _tool_call_with_limit)
     graph.add_node("approval_wait", approval_wait_node)
     graph.add_node("final_answer", final_answer_node)
+    # RAG 检索节点：调用 Knowledge 服务检索相关文档，检索后返回 thinking 继续推理
+    graph.add_node("rag_retrieve", rag_retrieve_node)
 
     # 设置入口点 - 所有请求从 thinking 开始
     graph.set_entry_point("thinking")
@@ -186,12 +189,16 @@ def build_agent_graph():
         {
             "tool_call": "risk_check",  # 注意：tool_call 先进入 risk_check
             "risk_check": "risk_check",
+            "rag_retrieve": "rag_retrieve",  # 需要知识检索 → RAG 节点
             "final_answer": "final_answer",
             "max_steps_exceeded": "final_answer",
             "max_consecutive_errors": "final_answer",  # S-AGENT-11 连续失败终止
             "error": "final_answer",
         },
     )
+
+    # RAG 检索完成后返回 thinking 继续推理（带检索到的文档上下文）
+    graph.add_edge("rag_retrieve", "thinking")
 
     # 条件边 - risk_check 后的路由
     # 根据风险等级决定：继续执行、等待审批、或拒绝
@@ -336,16 +343,16 @@ def route_after_thinking(state: AgentState) -> str:
         )
         return "risk_check"
 
-    # RAG 检索（暂不实现，直接返回）
+    # RAG 检索 - 进入知识库检索节点
     if current_step == "rag_retrieve":
         logger.info(
             "route_decision",
             from_node="thinking",
-            to_node="final_answer",
-            reason="rag_not_implemented",
+            to_node="rag_retrieve",
+            reason="rag_retrieve_required",
             request_id=state.get("request_id"),
         )
-        return "final_answer"
+        return "rag_retrieve"
 
     # 直接回答 - 默认路径
     logger.info(

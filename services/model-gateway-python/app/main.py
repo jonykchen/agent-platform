@@ -465,6 +465,26 @@ def create_app() -> FastAPI:
     # POST /v1/chat/completions - 对话补全
     app.include_router(chat.router, prefix="/v1", tags=["chat"])
 
+    # 健康检查端点（容器 healthcheck + K8s liveness/readiness 探针）
+    @app.get("/health", tags=["health"])
+    async def health():
+        """存活探针：进程可响应即健康"""
+        return {"status": "ok", "service": "model-gateway"}
+
+    @app.get("/ready", tags=["health"])
+    async def ready():
+        """就绪探针：至少注册了一个可用 Provider 才就绪"""
+        router = get_model_router()
+        provider_count = len(getattr(router, "_providers", {}))
+        if provider_count == 0:
+            from fastapi import Response
+            return Response(
+                content='{"status":"not_ready","reason":"no_providers"}',
+                media_type="application/json",
+                status_code=503,
+            )
+        return {"status": "ready", "providers": provider_count}
+
     return app
 
 

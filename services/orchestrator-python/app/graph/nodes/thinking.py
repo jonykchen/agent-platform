@@ -68,11 +68,12 @@ Plan-and-Execute 更适合：数据分析、报告生成、多步骤自动化工
 """
 
 import json
+
 import structlog
 
-from app.graph.state import AgentState
 from app.core.config import config
-from app.core.exceptions import ModelTimeoutError, AllProvidersDownError
+from app.core.exceptions import AllProvidersDownError, ModelTimeoutError
+from app.graph.state import AgentState
 
 logger = structlog.get_logger()
 
@@ -150,6 +151,27 @@ async def thinking_node(state: AgentState) -> dict:
             "current_step": "max_steps_exceeded",
             "error": f"超过最大步骤数 {max_steps}",
             "error_code": "ERR_AGENT_MAX_STEPS_EXCEEDED",
+        }
+
+    # RAG 检索门：知识型问题且尚未检索时，先走 RAG 节点补充上下文，再回到 thinking。
+    # 检索后 retrieved_docs 被填充，避免再次触发，杜绝 thinking↔rag_retrieve 死循环。
+    enable_rag = state.get("enable_rag", True)
+    already_retrieved = bool(state.get("retrieved_docs"))
+    if (
+        enable_rag
+        and not already_retrieved
+        and step_count == 0
+        and state.get("input")
+        and _is_rag_request(state["input"])
+    ):
+        logger.info(
+            "thinking_route_to_rag",
+            reason="knowledge_request_detected",
+            request_id=request_id,
+        )
+        return {
+            "current_step": "rag_retrieve",
+            "thinking": "检测到知识型问题，先检索知识库",
         }
 
     # 构建对话消息
@@ -275,6 +297,21 @@ def _build_messages(state: AgentState) -> list[dict]:
     """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
+    # 注入 RAG 检索到的知识库文档（作为 system 上下文，供模型据此作答）
+    if state.get("retrieved_docs"):
+        doc_blocks = []
+        for i, doc in enumerate(state["retrieved_docs"][:5]):
+            content = doc.get("content") or doc.get("text") or ""
+            source = doc.get("source") or doc.get("title") or f"doc_{i + 1}"
+            if content:
+                doc_blocks.append(f"[{source}]\n{content}")
+        if doc_blocks:
+            messages.append({
+                "role": "system",
+                "content": "以下是与用户问题相关的知识库检索结果，请优先依据这些资料作答：\n\n"
+                           + "\n\n".join(doc_blocks),
+            })
+
     # 添加对话历史
     if state.get("messages"):
         for msg in state["messages"]:
@@ -294,8 +331,8 @@ def _build_messages(state: AgentState) -> list[dict]:
     messages.append({"role": "user", "content": state["input"]})
 
     # 【S-AGENT-03】上下文截断：防止 token 超限
-    from app.core.context_manager import truncate_context
     from app.core.config import config
+    from app.core.context_manager import truncate_context
 
     max_context_tokens = getattr(config, "max_context_window_tokens", 128000)
 

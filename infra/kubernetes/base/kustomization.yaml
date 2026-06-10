@@ -1,0 +1,20 @@
+# Kustomization - Base
+#
+# 平台所有服务的基础清单。dev/prod overlay 通过 ../../base 引用并按环境覆盖。
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # 工作负载与网络
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  # 生产加固
+  - pdb.yaml              # PodDisruptionBudget：滚动更新/驱逐时保最小可用
+  - networkpolicy.yaml    # NetworkPolicy：East-West 流量零信任隔离
+  - rbac.yaml             # ServiceAccount + 最小权限
+  - secret-template.yaml  # Secret 占位模板（生产用外部 Secret 管理器覆盖）
+
+commonLabels:
+  app.kubernetes.io/part-of: agent-platform
