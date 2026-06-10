@@ -102,21 +102,22 @@ Chat API 是用户与 Agent 系统的主要交互点：
 
 """
 
+import asyncio
+import json
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
-
 import structlog
+from fastapi import APIRouter, Request
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.api.middleware.request_context import get_request_id, get_tenant_id, get_user_id
 from app.core.config import config
 from app.graph.builder import get_agent_graph
 from app.graph.state import create_initial_state
-from app.memory.session_store import get_session_store, SessionStore
-from app.memory.checkpoint_store import get_checkpoint_store, CheckpointStore
-from app.tools.clients import get_model_gateway_client, get_tool_bus_client
+from app.memory.checkpoint_store import get_checkpoint_store
+from app.memory.session_store import get_session_store
 
 logger = structlog.get_logger()
 router = APIRouter()
@@ -160,7 +161,141 @@ def get_or_create_session_id(session_id: str | None, tenant_id: str, user_id: st
     return f"sess_{uuid.uuid4().hex[:16]}_{tenant_id}"
 
 
-@router.post("/chat/completions", response_model=ChatResponse)
+# SSE 流式分块大小（字符数）
+STREAM_CHUNK_SIZE = 24
+
+
+def _sse_event(data: dict) -> str:
+    """格式化为 SSE data 帧"""
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+async def _stream_chat_sse(
+    request: "ChatRequest",
+    request_id: str,
+    tenant_id: str,
+    user_id: str,
+    start_time: float,
+):
+    """SSE 流式对话补全生成器
+
+    与非流式 chat_completion 共享同一套 Agent 图执行逻辑，差异仅在于
+    完成后将最终答案按 STREAM_CHUNK_SIZE 切块，以 SSE data 帧逐块下发，
+    最后发送 [DONE] 终止帧。前端 useSSE.ts 据此渲染。
+
+    SSE 帧格式（与前端约定一致）：
+    - 增量：{"delta": "...", "finish_reason": null, "session_id": "..."}
+    - 结束：{"delta": "", "finish_reason": "stop"|"pending_approval"|"error", ...}
+    - 终止：data: [DONE]
+
+    关于 token 级流式：见 OrchestratorServiceServicer.StreamChatCompletion 注释，
+    当前为答案级流式，后续 thinking 节点接入 LangChain ChatModel 后可升级。
+    """
+    session_id = get_or_create_session_id(request.session_id, tenant_id, user_id)
+    session_store = get_session_store()
+    checkpoint_store = get_checkpoint_store()
+
+    try:
+        history = await session_store.get_history(session_id, limit=10)
+
+        initial_state = create_initial_state(
+            input=request.message,
+            session_id=session_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            request_id=request_id,
+            max_steps=config.max_agent_steps,
+        )
+        initial_state["messages"] = history
+
+        graph = get_agent_graph()
+        graph_config = {"configurable": {"thread_id": request_id}}
+
+        result = await graph.invoke(initial_state, config=graph_config)
+
+        output = result.get("output", "")
+        approval_id = result.get("approval_id")
+        error = result.get("error")
+
+        # 持久化会话消息
+        await session_store.append_message(session_id, "user", request.message)
+        if output:
+            await session_store.append_message(session_id, "assistant", output)
+
+        # 审批中断
+        if approval_id:
+            await checkpoint_store.save(request_id, result)
+            yield _sse_event({
+                "delta": output or "",
+                "finish_reason": "pending_approval",
+                "session_id": session_id,
+                "request_id": request_id,
+                "approval_id": approval_id,
+            })
+            yield "data: [DONE]\n\n"
+            return
+
+        # 业务错误
+        if error:
+            yield _sse_event({
+                "delta": "",
+                "finish_reason": "error",
+                "session_id": session_id,
+                "request_id": request_id,
+                "error": str(error)[:500],
+            })
+            yield "data: [DONE]\n\n"
+            return
+
+        # 正常输出按块下发
+        text = output or ""
+        total = len(text)
+        for offset in range(0, total, STREAM_CHUNK_SIZE):
+            delta = text[offset : offset + STREAM_CHUNK_SIZE]
+            is_last = offset + STREAM_CHUNK_SIZE >= total
+            yield _sse_event({
+                "delta": delta,
+                "finish_reason": "stop" if is_last else None,
+                "session_id": session_id,
+                "request_id": request_id,
+            })
+            await asyncio.sleep(0)
+
+        if total == 0:
+            yield _sse_event({
+                "delta": "",
+                "finish_reason": "stop",
+                "session_id": session_id,
+                "request_id": request_id,
+            })
+
+        yield "data: [DONE]\n\n"
+
+        logger.info(
+            "stream_request_completed",
+            endpoint="/chat/completions",
+            request_id=request_id,
+            latency_ms=int((time.time() - start_time) * 1000),
+            output_length=total,
+        )
+
+    except Exception as e:
+        logger.exception(
+            "stream_request_failed",
+            request_id=request_id,
+            error=str(e),
+        )
+        yield _sse_event({
+            "delta": "",
+            "finish_reason": "error",
+            "session_id": session_id,
+            "request_id": request_id,
+            "error": str(e)[:500],
+        })
+        yield "data: [DONE]\n\n"
+
+
+@router.post("/chat/completions")
 async def chat_completion(request: ChatRequest, req: Request):
     """对话补全
 
@@ -206,6 +341,18 @@ async def chat_completion(request: ChatRequest, req: Request):
         stream=request.stream,
     )
 
+    # 流式输出：返回 SSE 响应（text/event-stream）
+    if request.stream:
+        return StreamingResponse(
+            _stream_chat_sse(request, request_id, tenant_id, user_id, start_time),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲，确保实时下发
+            },
+        )
+
     # 获取或创建会话
     session_id = get_or_create_session_id(request.session_id, tenant_id, user_id)
 
@@ -232,8 +379,8 @@ async def chat_completion(request: ChatRequest, req: Request):
 
     # 检索相关长时记忆（跨会话召回）
     from app.memory.memory_manager import (
-        retrieve_relevant_memories,
         format_memories_for_context,
+        retrieve_relevant_memories,
     )
 
     relevant_memories = await retrieve_relevant_memories(
@@ -313,8 +460,8 @@ async def chat_completion(request: ChatRequest, req: Request):
 
             # 保存到长时记忆（跨会话召回）
             from app.memory.memory_manager import (
-                save_to_long_term_memory,
                 extract_key_entities_from_tool_results,
+                save_to_long_term_memory,
             )
 
             # 提取关键实体（从工具结果中）

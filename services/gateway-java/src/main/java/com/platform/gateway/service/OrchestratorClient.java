@@ -24,8 +24,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PreDestroy;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -154,6 +156,69 @@ public class OrchestratorClient {
 
             handleGrpcException(e, requestId);
             return null;  // unreachable
+        }
+    }
+
+    /**
+     * 发送流式对话请求到 Orchestrator（gRPC server-streaming）
+     *
+     * <p>调用 Orchestrator 的 StreamChatCompletion，逐块通过 {@code onChunk}
+     * 回调下发。Gateway Controller 据此转为 SSE 实时推送给前端，实现端到端
+     * 真流式（替代此前"整段响应当单块发送"的伪流式）。
+     *
+     * @param request 对话请求 DTO
+     * @param onChunk 每收到一个流式块时的回调
+     */
+    public void streamChatRequest(ChatRequest request, Consumer<com.platform.gateway.ChatStreamChunk> onChunk) {
+        initChannel();
+
+        String requestId = RequestIdGenerator.getCurrent();
+        String tenantId = getTenantId();
+        String userId = getUserId();
+
+        log.info("Streaming chat request to Orchestrator: requestId={}, tenantId={}, userId={}",
+                requestId, tenantId, userId);
+
+        RequestContext context = RequestContext.newBuilder()
+                .setRequestId(requestId)
+                .setTenantId(tenantId)
+                .setUserId(userId)
+                .setTraceId(requestId)
+                .build();
+
+        List<Message> historyProto = request.getHistory()
+                .stream()
+                .map(h -> Message.newBuilder()
+                        .setRole(h.getRole())
+                        .setContent(h.getContent())
+                        .build())
+                .collect(Collectors.toList());
+
+        com.platform.gateway.ChatRequest grpcRequest = com.platform.gateway.ChatRequest.newBuilder()
+                .setContext(context)
+                .setMessage(request.getMessage())
+                .addAllHistory(historyProto)
+                .setModel(request.getModel() != null ? request.getModel() : "")
+                .setTemperature(request.getTemperature() != null ? request.getTemperature().floatValue() : 0.7f)
+                .setMaxTokens(request.getMaxTokens() != null ? request.getMaxTokens() : 2000)
+                .setEnableTools(true)
+                .setEnableRag(false)
+                .build();
+
+        try {
+            // server-streaming：使用更长的 deadline（流式可能持续数十秒）
+            Iterator<com.platform.gateway.ChatStreamChunk> chunks = stub
+                    .withDeadlineAfter(timeoutMs * 5L, TimeUnit.MILLISECONDS)
+                    .streamChatCompletion(grpcRequest);
+
+            while (chunks.hasNext()) {
+                onChunk.accept(chunks.next());
+            }
+
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC stream call failed: requestId={}, status={}, message={}",
+                    requestId, e.getStatus().getCode(), e.getMessage());
+            handleGrpcException(e, requestId);
         }
     }
 

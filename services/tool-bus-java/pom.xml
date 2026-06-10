@@ -20,7 +20,9 @@
     <properties>
         <java.version>21</java.version>
         <grpc-spring-boot-starter.version>3.1.0.RELEASE</grpc-spring-boot-starter.version>
-        <grpc.version>1.63.0</grpc.version>
+        <!-- 对齐 buf 生成的 proto 代码与 gateway-java：proto stub 使用 1.81 的
+             BlockingClientCall API，旧版 1.63 会编译失败 -->
+        <grpc.version>1.81.0</grpc.version>
         <protobuf.version>4.34.1</protobuf.version>
     </properties>
 

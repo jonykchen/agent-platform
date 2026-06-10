@@ -42,22 +42,22 @@ Gateway Java                Orchestrator Python
 - services/gateway-java/src/main/java/com/platform/gateway/service/OrchestratorClient.java
 """
 
+import asyncio
 import time
 import uuid
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
-import grpc
-from grpc import aio
 import structlog
+from grpc import aio
 
-from app.gen.gateway import orchestrator_pb2, orchestrator_pb2_grpc
-from app.gen.common import error_code_pb2
-from app.grpc.utils.context_extractor import extract_context_from_request
-from app.grpc.utils.error_mapper import map_exception_to_grpc_status, create_error_detail
-from app.graph.builder import get_agent_graph
-from app.graph.state import create_initial_state
 from app.core.config import config
 from app.core.exceptions import BasePlatformException
+from app.gen.common import error_code_pb2
+from app.gen.gateway import orchestrator_pb2, orchestrator_pb2_grpc
+from app.graph.builder import get_agent_graph
+from app.graph.state import create_initial_state
+from app.grpc.utils.context_extractor import extract_context_from_request
+from app.grpc.utils.error_mapper import create_error_detail
 
 logger = structlog.get_logger()
 
@@ -257,27 +257,192 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
 
             return response
 
+    # 流式分块大小（字符数）。答案级流式按此粒度切块下发，
+    # 在"首字延迟"与"块数量"之间取平衡。
+    STREAM_CHUNK_SIZE = 24
+
     async def StreamChatCompletion(
         self,
         request: orchestrator_pb2.ChatRequest,
         context: aio.ServicerContext,
     ) -> AsyncIterator[orchestrator_pb2.ChatStreamChunk]:
-        """流式对话补全
+        """流式对话补全（SSE / gRPC streaming）
 
-        暂未实现，返回单个错误块。
+        【流式策略：答案级流式】
+        完整执行 Agent 图（thinking → risk_check → tool_call → approval_wait →
+        final_answer），确保工具调用、风控、审批等逻辑不被绕过；图执行完成后，
+        将最终答案按 STREAM_CHUNK_SIZE 切块逐块下发，并在最后一块携带
+        finish_reason。
+
+        - 命中审批中断时：发送一个 finish_reason="pending_approval" 的终止块，
+          附带 approval_id，前端据此提示"等待审批"。
+        - 发生错误时：发送 finish_reason="error" 的终止块，附带 ErrorDetail。
+
+        【关于 token 级流式】
+        当前 thinking 节点使用自定义 ModelGatewayClient 而非 LangChain ChatModel，
+        LangGraph 无法自动产出 token 级事件。如需 token 级流式，需将 thinking
+        节点改造为基于 LangChain ChatModel 的 astream（后续优化项），届时本方法
+        切换为消费 graph.astream_events 即可，对外协议（ChatStreamChunk）不变。
+
+        Args:
+            request: ChatRequest 包含消息和历史
+            context: gRPC 上下文
+
+        Yields:
+            ChatStreamChunk 流式响应块
         """
-        yield orchestrator_pb2.ChatStreamChunk(
-            context=request.context,
-            chunk_id="error",
-            chunk_index=0,
-            delta="",
-            finish_reason="error",
-            error=error_code_pb2.ErrorDetail(
-                code=error_code_pb2.ERR_INTERNAL,
-                message="StreamChatCompletion not implemented",
-                user_message="流式输出暂不支持",
-            ),
+        start_time = time.time()
+
+        ctx = extract_context_from_request(request.context)
+        request_id = ctx.get("request_id") or f"req_{uuid.uuid4().hex[:16]}"
+        tenant_id = ctx.get("tenant_id") or "default"
+        user_id = ctx.get("user_id") or "anonymous"
+        session_id = ctx.get("session_id") or f"sess_{uuid.uuid4().hex[:16]}_{tenant_id}"
+
+        logger.info(
+            "grpc_stream_chat_completion_received",
+            request_id=request_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            session_id=session_id,
+            message_length=len(request.message),
+            history_count=len(request.history),
         )
+
+        chunk_index = 0
+
+        try:
+            # 直接使用 request.history（与 ChatCompletion 一致）
+            history = [
+                {"role": msg.role, "content": msg.content}
+                for msg in request.history
+            ]
+
+            initial_state = create_initial_state(
+                input=request.message,
+                session_id=session_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                request_id=request_id,
+                max_steps=config.max_agent_steps,
+            )
+            initial_state["messages"] = history
+
+            graph = get_agent_graph()
+            graph_config = {"configurable": {"thread_id": request_id}}
+
+            # 执行完整 Agent 图（保留工具/风控/审批逻辑）
+            result = await graph.invoke(initial_state, config=graph_config)
+
+            output = result.get("output", "")
+            approval_id = result.get("approval_id")
+            error = result.get("error")
+
+            # 审批中断：发送等待审批终止块
+            if approval_id:
+                yield orchestrator_pb2.ChatStreamChunk(
+                    context=request.context,
+                    chunk_id=f"{request_id}_approval",
+                    chunk_index=chunk_index,
+                    delta=output or "",
+                    finish_reason="pending_approval",
+                )
+                logger.info(
+                    "grpc_stream_pending_approval",
+                    request_id=request_id,
+                    approval_id=approval_id,
+                )
+                return
+
+            # 业务错误：发送错误终止块
+            if error:
+                yield orchestrator_pb2.ChatStreamChunk(
+                    context=request.context,
+                    chunk_id=f"{request_id}_error",
+                    chunk_index=chunk_index,
+                    delta="",
+                    finish_reason="error",
+                    error=error_code_pb2.ErrorDetail(
+                        code=error_code_pb2.ERR_INTERNAL,
+                        message=str(error)[:500],
+                        user_message="处理请求时发生错误",
+                        request_id=request_id,
+                    ),
+                )
+                return
+
+            # 正常输出：按块切分逐块下发
+            text = output or ""
+            total = len(text)
+            for offset in range(0, total, self.STREAM_CHUNK_SIZE):
+                delta = text[offset : offset + self.STREAM_CHUNK_SIZE]
+                is_last = offset + self.STREAM_CHUNK_SIZE >= total
+                yield orchestrator_pb2.ChatStreamChunk(
+                    context=request.context,
+                    chunk_id=f"{request_id}_{chunk_index}",
+                    chunk_index=chunk_index,
+                    delta=delta,
+                    finish_reason="stop" if is_last else "",
+                )
+                chunk_index += 1
+                # 让出事件循环，使下游能及时收到块（避免一次性刷出）
+                await asyncio.sleep(0)
+
+            # 空输出兜底：仍需发送一个带 finish_reason 的终止块
+            if total == 0:
+                yield orchestrator_pb2.ChatStreamChunk(
+                    context=request.context,
+                    chunk_id=f"{request_id}_empty",
+                    chunk_index=chunk_index,
+                    delta="",
+                    finish_reason="stop",
+                )
+
+            logger.info(
+                "grpc_stream_chat_completion_completed",
+                request_id=request_id,
+                latency_ms=int((time.time() - start_time) * 1000),
+                chunks=chunk_index,
+                output_length=total,
+            )
+
+        except BasePlatformException as e:
+            logger.error(
+                "grpc_stream_business_error",
+                request_id=request_id,
+                error_code=e.code,
+                message=e.message,
+            )
+            error_detail = create_error_detail(e, request_id)
+            chunk = orchestrator_pb2.ChatStreamChunk(
+                context=request.context,
+                chunk_id=f"{request_id}_error",
+                chunk_index=chunk_index,
+                delta="",
+                finish_reason="error",
+            )
+            chunk.error.CopyFrom(error_detail)
+            yield chunk
+
+        except Exception as e:
+            logger.exception(
+                "grpc_stream_chat_completion_error",
+                request_id=request_id,
+                error=str(e),
+            )
+            yield orchestrator_pb2.ChatStreamChunk(
+                context=request.context,
+                chunk_id=f"{request_id}_error",
+                chunk_index=chunk_index,
+                delta="",
+                finish_reason="error",
+                error=error_code_pb2.ErrorDetail(
+                    code=error_code_pb2.ERR_INTERNAL,
+                    message=str(e)[:500],
+                    user_message="处理请求时发生错误",
+                    request_id=request_id,
+                ),
+            )
 
     async def ExecuteAgent(
         self,

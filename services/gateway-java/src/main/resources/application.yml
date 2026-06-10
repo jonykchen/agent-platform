@@ -87,6 +87,13 @@ management:
       export:
         enabled: true
 
+# ====== 应用通用配置 ======
+app:
+  # CORS 白名单（唯一来源，由 SecurityConfig 读取）
+  # 生产环境通过环境变量 CORS_ALLOWED_ORIGINS 指定可信域名，禁止通配符
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:3000}
+
 # ====== Gateway 配置 ======
 gateway:
   fast-path:
@@ -225,6 +232,12 @@ spring:
   config:
     activate:
       on-profile: prod
+
+# 生产环境 CORS 白名单必须通过环境变量显式指定可信域名，
+# 未配置时回退到空（拒绝所有跨域），杜绝通配符泄露。
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
 
 logging:
   level:

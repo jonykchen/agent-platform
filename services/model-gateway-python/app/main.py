@@ -312,36 +312,42 @@ async def lifespan(app: FastAPI):
         )
 
     # ─────────────────────────────────────────────────────────────────────
-    # 3.2 注册其他提供商（可扩展）
+    # 3.2 注册其他提供商（多 Provider 故障转移）
     # ─────────────────────────────────────────────────────────────────────
-    # 预留其他 Provider 注册位，按需启用：
-    #
-    # if config.glm_api_key:
-    #     from app.providers.glm import GLMProvider
-    #     glm_provider = GLMProvider(
-    #         api_key=config.glm_api_key,
-    #         base_url=config.glm_base_url,
-    #     )
-    #     model_router.register_provider("glm", glm_provider)
-    #     logger.info("GLM provider registered")
-    #
-    # if config.moonshot_api_key:
-    #     from app.providers.moonshot import MoonshotProvider
-    #     moonshot_provider = MoonshotProvider(
-    #         api_key=config.moonshot_api_key,
-    #         base_url=config.moonshot_base_url,
-    #     )
-    #     model_router.register_provider("moonshot", moonshot_provider)
-    #     logger.info("Moonshot provider registered")
-    #
-    # if config.deepseek_api_key:
-    #     from app.providers.deepseek import DeepSeekProvider
-    #     deepseek_provider = DeepSeekProvider(
-    #         api_key=config.deepseek_api_key,
-    #         base_url=config.deepseek_base_url,
-    #     )
-    #     model_router.register_provider("deepseek", deepseek_provider)
-    #     logger.info("DeepSeek provider registered")
+    # 各 Provider 仅在配置了对应 API Key 时注册（密钥走环境变量，禁止硬编码）。
+    # 注册多个 Provider 后，ModelRouter 可在某 Provider 熔断/不可用时自动
+    # 故障转移到备用 Provider，避免单点导致 AllProvidersDownError。
+    if config.deepseek_api_key:
+        from app.providers.deepseek import DeepSeekProvider
+
+        deepseek_provider = DeepSeekProvider(
+            api_key=config.deepseek_api_key,
+            base_url=config.deepseek_base_url,
+        )
+        model_router.register_provider("deepseek", deepseek_provider)
+        logger.info(
+            "DeepSeek provider registered",
+            models=deepseek_provider.supported_models,
+            base_url=config.deepseek_base_url,
+        )
+    else:
+        logger.warning("DeepSeek provider skipped", reason="DEEPSEEK_API_KEY not configured")
+
+    if config.glm_api_key:
+        from app.providers.glm import GLMProvider
+
+        glm_provider = GLMProvider(
+            api_key=config.glm_api_key,
+            base_url=config.glm_base_url,
+        )
+        model_router.register_provider("glm", glm_provider)
+        logger.info(
+            "GLM provider registered",
+            models=glm_provider.supported_models,
+            base_url=config.glm_base_url,
+        )
+    else:
+        logger.warning("GLM provider skipped", reason="GLM_API_KEY not configured")
 
     # ─────────────────────────────────────────────────────────────────────
     # 4. 启动完成

@@ -9,7 +9,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,6 +37,75 @@ class ApprovalServiceTest {
     @BeforeEach
     void setUp() {
         approvalService = new ApprovalService(approvalRepository, notificationService);
+        // 注入默认审批人配置（@Value 字段在单测中需手动设置）
+        ReflectionTestUtils.setField(approvalService, "defaultApprovers",
+                List.of("alice", "bob"));
+    }
+
+    @Test
+    @DisplayName("创建审批任务应分配审批人")
+    void createApprovalTask_assignsApprover() {
+        // When
+        ApprovalTask result = approvalService.createApprovalTask(
+                UUID.randomUUID(), UUID.randomUUID(), "tenant_001", "user_001", "reason");
+
+        // Then：审批人应来自配置的默认列表
+        assertNotNull(result.getAssigneeId());
+        assertTrue(List.of("alice", "bob").contains(result.getAssigneeId()));
+    }
+
+    @Test
+    @DisplayName("同一 runId 应稳定分配到同一审批人")
+    void assignApprover_isStableForSameRunId() {
+        UUID runId = UUID.randomUUID();
+
+        ApprovalTask r1 = approvalService.createApprovalTask(
+                runId, UUID.randomUUID(), "t", "u", "reason");
+        ApprovalTask r2 = approvalService.createApprovalTask(
+                runId, UUID.randomUUID(), "t", "u", "reason");
+
+        assertEquals(r1.getAssigneeId(), r2.getAssigneeId());
+    }
+
+    @Test
+    @DisplayName("超时审批任务应被自动拒绝并发布结果")
+    void autoRejectExpiredApprovals_rejectsAndPublishes() {
+        // Given：两个已过期的 pending 任务
+        ApprovalTask expired1 = ApprovalTask.builder()
+                .id(UUID.randomUUID()).runId(UUID.randomUUID())
+                .status("pending").tenantId("t")
+                .expiresAt(Instant.now().minusSeconds(10))
+                .build();
+        ApprovalTask expired2 = ApprovalTask.builder()
+                .id(UUID.randomUUID()).runId(UUID.randomUUID())
+                .status("pending").tenantId("t")
+                .expiresAt(Instant.now().minusSeconds(20))
+                .build();
+
+        when(approvalRepository.findByStatusAndExpiresAtBefore(eq("pending"), any(Instant.class)))
+                .thenReturn(List.of(expired1, expired2));
+
+        // When
+        approvalService.autoRejectExpiredApprovals();
+
+        // Then：两个任务都被置为 rejected 并发布结果事件
+        assertEquals("rejected", expired1.getStatus());
+        assertEquals("rejected", expired2.getStatus());
+        assertEquals("system", expired1.getReviewerId());
+        verify(approvalRepository, times(2)).save(any(ApprovalTask.class));
+        verify(notificationService, times(2)).publishApprovalResult(any(ApprovalTask.class));
+    }
+
+    @Test
+    @DisplayName("无超时任务时不应触发任何操作")
+    void autoRejectExpiredApprovals_noExpired_noOp() {
+        when(approvalRepository.findByStatusAndExpiresAtBefore(eq("pending"), any(Instant.class)))
+                .thenReturn(List.of());
+
+        approvalService.autoRejectExpiredApprovals();
+
+        verify(approvalRepository, never()).save(any());
+        verify(notificationService, never()).publishApprovalResult(any());
     }
 
     @Test

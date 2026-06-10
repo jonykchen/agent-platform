@@ -7,6 +7,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -68,6 +69,16 @@ public class SecurityConfig {
     private final DevAuthenticationFilter devAuthenticationFilter;
 
     /**
+     * CORS 允许的来源列表。
+     *
+     * <p>从配置 {@code app.cors.allowed-origins} 读取（逗号分隔）。
+     * 默认值仅包含本地开发端口；生产环境必须通过环境变量
+     * {@code CORS_ALLOWED_ORIGINS} 显式指定可信域名白名单，禁止通配符。
+     */
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:3000}")
+    private List<String> allowedOrigins;
+
+    /**
      * 初始化 SecurityContext 策略为可继承线程本地变量。
      */
     @PostConstruct
@@ -78,6 +89,9 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                // 启用 CORS（使用上面定义的 corsConfigurationSource）
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
                 // 禁用 CSRF（无状态 REST API）
                 .csrf(AbstractHttpConfigurer::disable)
 
@@ -164,21 +178,20 @@ public class SecurityConfig {
     }
 
     /**
-     * CORS 配置源
+     * CORS 配置源（全局唯一）
+     *
+     * <p>本应用 CORS 策略的<b>唯一来源</b>。历史上曾存在 SimpleCorsFilter、
+     * WebCorsConfig、CorsFilterConfig 三处重复且不一致的配置，已全部删除，
+     * 统一收敛到此处，避免预检请求绕过安全白名单。
+     *
+     * <p>允许来源由 {@link #allowedOrigins} 从配置注入，生产环境禁止通配符。
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // 允许的来源（使用 allowedOrigins 而不是 allowedOriginPatterns）
-        config.setAllowedOrigins(List.of(
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "http://localhost:3000",
-                "http://127.0.0.1:5173",
-                "http://127.0.0.1:5174",
-                "http://127.0.0.1:3000"
-        ));
+        // 允许的来源（从配置读取，使用精确 allowedOrigins，不使用通配符 pattern）
+        config.setAllowedOrigins(allowedOrigins);
 
         // 允许的方法
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));

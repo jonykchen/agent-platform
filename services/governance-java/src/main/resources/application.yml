@@ -34,6 +34,13 @@ logging:
     root: INFO
     com.platform: DEBUG
 
+# 审批配置
+approval:
+  # 默认审批人列表（逗号分隔）。生产环境通过 APPROVAL_DEFAULT_APPROVERS 注入
+  default-approvers: ${APPROVAL_DEFAULT_APPROVERS:admin}
+  # 审批超时扫描间隔（毫秒），默认 1 分钟
+  timeout-scan-interval-ms: ${APPROVAL_TIMEOUT_SCAN_INTERVAL_MS:60000}
+
 # 通知配置
 notification:
   wecom-webhook: ${WECOM_WEBHOOK:}

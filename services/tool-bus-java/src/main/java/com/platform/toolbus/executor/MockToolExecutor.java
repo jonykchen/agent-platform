@@ -5,6 +5,7 @@ import com.platform.toolbus.registry.ToolDefinition;
 import com.platform.toolbus.registry.ToolRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -50,16 +51,23 @@ import java.util.UUID;
  */
 @Slf4j
 @Component
+@Profile({"dev", "local", "test", "default"})
 @RequiredArgsConstructor
-public class MockToolExecutor {
+public class MockToolExecutor implements ToolExecutor {
 
     private final ToolRegistry toolRegistry;
+    private final ToolRiskGate riskGate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
-     * 执行工具调用
+     * 执行工具调用（开发/测试环境 Mock 实现）
+     *
+     * <p>即便在 Mock 模式下，也先经过 {@link ToolRiskGate}：高风险/需审批的
+     * 工具返回 {@code pending_approval}，确保审批闭环在开发环境同样可验证。
      */
-    public ToolExecutionResult execute(String toolName, String version, String argumentsJson) {
+    @Override
+    public ToolExecutionResult execute(String toolName, String version, String argumentsJson,
+                                       String tenantId, String userId, String runId) {
         String callId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         long startTime = System.currentTimeMillis();
 
@@ -76,6 +84,14 @@ public class MockToolExecutor {
 
             ToolDefinition tool = toolOpt.get();
 
+            // 风险闸门：需审批则不执行，返回 pending_approval
+            ToolRiskGate.Decision decision = riskGate.evaluate(tool, toolName, argumentsJson);
+            if (decision.requiresApproval()) {
+                log.info("[Mock] Tool '{}' gated for approval: runId={}, reason={}",
+                        toolName, runId, decision.reason());
+                return riskGate.toPendingApproval(callId, decision);
+            }
+
             // 解析参数
             @SuppressWarnings("unchecked")
             Map<String, Object> args = objectMapper.readValue(argumentsJson, Map.class);
@@ -89,6 +105,7 @@ public class MockToolExecutor {
                     .callId(callId)
                     .status("success")
                     .resultJson(objectMapper.writeValueAsString(result))
+                    .riskLevel(decision.riskLevel())
                     .wasCached(false)
                     .durationMs((int) duration)
                     .build();

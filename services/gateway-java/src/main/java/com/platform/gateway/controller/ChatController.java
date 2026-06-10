@@ -155,41 +155,62 @@ public class ChatController {
 
         executor.execute(() -> {
             try {
-                ChatResponse response;
-
-                // 快速路径判断：简单问答直接透传，不经过完整 Agent 编排
+                // 快速路径判断：简单问答直接透传，不经过完整 Agent 编排（单块下发）
                 if (fastPathService.isFastPath(request)) {
                     log.debug("Fast path detected for request {}", requestId);
-                    response = fastPathService.handleFastPath(request);
-                } else {
-                    // 正常路径：调用 Orchestrator
-                    response = orchestratorClient.sendChatRequest(request);
+                    ChatResponse response = fastPathService.handleFastPath(request);
+
+                    emitter.send(SseEmitter.event()
+                            .name("message")
+                            .data(objectMapper.writeValueAsString(Map.of(
+                                    "delta_content", response.getResponse(),
+                                    "is_final", false
+                            ))));
+                    emitter.send(SseEmitter.event()
+                            .name("message")
+                            .data(objectMapper.writeValueAsString(Map.of(
+                                    "delta_content", "",
+                                    "is_final", true,
+                                    "usage", Map.of(
+                                            "prompt_tokens", response.getPromptTokens(),
+                                            "completion_tokens", response.getCompletionTokens(),
+                                            "total_tokens", response.getTotalTokens()
+                                    )
+                            ))));
+                    emitter.complete();
+                    return;
                 }
 
-                log.info("Chat response: requestId={}, model={}, tokens={}, latency={}ms",
-                        requestId, response.getModelUsed(), response.getTotalTokens(), response.getLatencyMs());
+                // 正常路径：调用 Orchestrator 流式接口，逐块转发为 SSE（端到端真流式）
+                orchestratorClient.streamChatRequest(request, chunk -> {
+                    try {
+                        // 错误块：发送 error 事件并终止
+                        if (chunk.hasError()) {
+                            emitter.send(SseEmitter.event()
+                                    .name("error")
+                                    .data(objectMapper.writeValueAsString(Map.of(
+                                            "error", chunk.getError().getCode().name(),
+                                            "message", chunk.getError().getUserMessage()
+                                    ))));
+                            return;
+                        }
 
-                // 发送流式内容块
-                emitter.send(SseEmitter.event()
-                        .name("message")
-                        .data(objectMapper.writeValueAsString(Map.of(
-                                "delta_content", response.getResponse(),
-                                "is_final", false
-                        ))));
+                        String finishReason = chunk.getFinishReason();
+                        boolean isFinal = finishReason != null && !finishReason.isEmpty();
 
-                // 发送最终块
-                emitter.send(SseEmitter.event()
-                        .name("message")
-                        .data(objectMapper.writeValueAsString(Map.of(
-                                "delta_content", "",
-                                "is_final", true,
-                                "usage", Map.of(
-                                        "prompt_tokens", response.getPromptTokens(),
-                                        "completion_tokens", response.getCompletionTokens(),
-                                        "total_tokens", response.getTotalTokens()
-                                )
-                        ))));
+                        emitter.send(SseEmitter.event()
+                                .name("message")
+                                .data(objectMapper.writeValueAsString(Map.of(
+                                        "delta_content", chunk.getDelta(),
+                                        "is_final", isFinal,
+                                        "finish_reason", finishReason
+                                ))));
+                    } catch (IOException ioe) {
+                        throw new RuntimeException(ioe);
+                    }
+                });
 
+                log.info("Chat stream completed: requestId={}", requestId);
                 emitter.complete();
 
             } catch (BusinessException e) {

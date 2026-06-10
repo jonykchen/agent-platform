@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.common.ErrorDetail;
 import com.platform.common.ErrorCode;
 import com.platform.toolbus.*;
-import com.platform.toolbus.executor.MockToolExecutor;
+import com.platform.toolbus.executor.ToolExecutor;
 import com.platform.toolbus.executor.ToolExecutionResult;
 import com.platform.toolbus.registry.ToolDefinition;
 import com.platform.toolbus.registry.ToolRegistry;
@@ -29,7 +29,8 @@ import java.util.stream.Collectors;
 public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBase {
 
     private final ToolRegistry toolRegistry;
-    private final MockToolExecutor mockToolExecutor;
+    // 由 Spring Profile 注入：dev/local/test → MockToolExecutor，prod → RealToolExecutor
+    private final ToolExecutor toolExecutor;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // 虚拟线程池（Java 21）
@@ -43,10 +44,13 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
         log.info("ExecuteTool request: requestId={}, toolName={}", requestId, toolName);
 
         try {
-            ToolExecutionResult result = mockToolExecutor.execute(
+            ToolExecutionResult result = toolExecutor.execute(
                     toolName,
                     request.getToolVersion(),
-                    request.getArgumentsJson()
+                    request.getArgumentsJson(),
+                    request.getContext().getTenantId(),
+                    request.getContext().getUserId(),
+                    request.getContext().getRunId()
             );
 
             ToolExecuteResponse.Builder responseBuilder = ToolExecuteResponse.newBuilder()
@@ -125,19 +129,27 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
 
     private ToolExecuteResponse executeToolInternal(ToolExecuteRequest toolRequest) {
         try {
-            ToolExecutionResult result = mockToolExecutor.execute(
+            ToolExecutionResult result = toolExecutor.execute(
                     toolRequest.getToolName(),
                     toolRequest.getToolVersion(),
-                    toolRequest.getArgumentsJson()
+                    toolRequest.getArgumentsJson(),
+                    toolRequest.getContext().getTenantId(),
+                    toolRequest.getContext().getUserId(),
+                    toolRequest.getContext().getRunId()
             );
 
-            return ToolExecuteResponse.newBuilder()
+            // 批量执行同样需要传递审批状态（pending_approval）
+            ToolExecuteResponse.Builder builder = ToolExecuteResponse.newBuilder()
                     .setContext(toolRequest.getContext())
                     .setCallId(result.getCallId())
                     .setStatus(result.getStatus())
                     .setResultJson(result.getResultJson() != null ? result.getResultJson() : "")
-                    .setDurationMs(result.getDurationMs())
-                    .build();
+                    .setDurationMs(result.getDurationMs());
+            if ("pending_approval".equals(result.getStatus())) {
+                builder.setApprovalId(result.getApprovalId() != null ? result.getApprovalId() : "");
+                builder.setApprovalReason(result.getApprovalReason() != null ? result.getApprovalReason() : "");
+            }
+            return builder.build();
 
         } catch (Exception e) {
             return buildErrorResponse(toolRequest, ErrorCode.ERR_TOOL_EXECUTION_FAILED, e.getMessage());
