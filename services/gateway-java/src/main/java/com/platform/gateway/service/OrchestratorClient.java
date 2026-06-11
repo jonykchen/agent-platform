@@ -13,6 +13,7 @@ import com.platform.gateway.ToolCall;
 import com.platform.common.ErrorDetail;
 import com.platform.gateway.security.UserPrincipal;
 import com.platform.gateway.util.RequestIdGenerator;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Status;
@@ -90,7 +91,13 @@ public class OrchestratorClient {
 
     /**
      * 发送对话请求到 Orchestrator
+     *
+     * <p>用 Resilience4j 熔断器保护：当 Orchestrator 持续不可用/超时时，
+     * 熔断器打开，快速失败并走 {@link #sendChatRequestFallback} 兜底，
+     * 避免线程堆积拖垮 Gateway。熔断参数见 application.yml 的
+     * {@code resilience4j.circuitbreaker.instances.orchestrator}。
      */
+    @CircuitBreaker(name = "orchestrator", fallbackMethod = "sendChatRequestFallback")
     public ChatResponse sendChatRequest(ChatRequest request) {
         initChannel();
 
@@ -169,6 +176,7 @@ public class OrchestratorClient {
      * @param request 对话请求 DTO
      * @param onChunk 每收到一个流式块时的回调
      */
+    @CircuitBreaker(name = "orchestrator", fallbackMethod = "streamChatRequestFallback")
     public void streamChatRequest(ChatRequest request, Consumer<com.platform.gateway.ChatStreamChunk> onChunk) {
         initChannel();
 
@@ -220,6 +228,40 @@ public class OrchestratorClient {
                     requestId, e.getStatus().getCode(), e.getMessage());
             handleGrpcException(e, requestId);
         }
+    }
+
+    /**
+     * sendChatRequest 的熔断兜底方法
+     *
+     * <p>触发场景：
+     * <ul>
+     *   <li>熔断器打开（CallNotPermittedException）—— 快速失败，不再打 Orchestrator</li>
+     *   <li>下游调用抛出的各类异常被熔断器记录后透传至此</li>
+     * </ul>
+     * 已是 {@link BusinessException} 的（如 UNAVAILABLE/超时已被 handleGrpcException 转译）
+     * 直接重抛，保留原始错误码与用户文案；其余统一转为「服务不可用」。
+     */
+    private ChatResponse sendChatRequestFallback(ChatRequest request, Throwable t) {
+        log.warn("Orchestrator 熔断兜底触发 (sendChatRequest): {}", t.toString());
+        if (t instanceof BusinessException be) {
+            throw be;
+        }
+        throw new BusinessException(ErrorCode.ERR_SERVICE_UNAVAILABLE,
+            "Orchestrator 服务暂时不可用，请稍后重试");
+    }
+
+    /**
+     * streamChatRequest 的熔断兜底方法（签名需与原方法一致 + 末尾 Throwable）
+     */
+    private void streamChatRequestFallback(ChatRequest request,
+                                           Consumer<com.platform.gateway.ChatStreamChunk> onChunk,
+                                           Throwable t) {
+        log.warn("Orchestrator 熔断兜底触发 (streamChatRequest): {}", t.toString());
+        if (t instanceof BusinessException be) {
+            throw be;
+        }
+        throw new BusinessException(ErrorCode.ERR_SERVICE_UNAVAILABLE,
+            "Orchestrator 服务暂时不可用，请稍后重试");
     }
 
     /**

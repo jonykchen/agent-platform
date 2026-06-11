@@ -73,6 +73,7 @@ import structlog
 
 from app.core.config import config
 from app.core.exceptions import AllProvidersDownError, ModelTimeoutError
+from app.core.metrics import record_model_call
 from app.graph.state import AgentState
 
 logger = structlog.get_logger()
@@ -198,6 +199,15 @@ async def thinking_node(state: AgentState) -> dict:
 
         duration_ms = int((time.time() - start_time) * 1000)
 
+        # 记录模型调用指标（成功）：供 model_call_total / model_call_latency_seconds
+        # 告警与看板使用。model/provider 优先取响应回传值，缺省回落到配置默认。
+        record_model_call(
+            model=str(model_response.get("model") or getattr(config, "default_model", "unknown")),
+            provider=str(model_response.get("provider") or "model-gateway"),
+            status="success",
+            latency=duration_ms / 1000.0,
+        )
+
         # 解析模型响应
         result = _parse_model_response(model_response, step_count, request_id, duration_ms)
 
@@ -218,6 +228,15 @@ async def thinking_node(state: AgentState) -> dict:
 
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
+
+        # 记录模型调用指标（失败）：保证 model_call_total{status="error"} 有数据，
+        # 否则错误率告警永远不会触发。
+        record_model_call(
+            model=str(getattr(config, "default_model", "unknown")),
+            provider="model-gateway",
+            status="error",
+            latency=duration_ms / 1000.0,
+        )
 
         # S-AGENT-11: 增加连续失败计数
         new_consecutive_errors = consecutive_errors + 1

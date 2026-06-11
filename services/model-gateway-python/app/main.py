@@ -124,6 +124,7 @@ from app.api.v1 import chat, embeddings, models
 from app.core.config import config
 from app.core.logging import setup_logging
 from app.core.rate_limiter import init_rate_limiter
+from app.core.redis_client import close_redis, set_redis
 from app.router.model_router import get_model_router
 
 logger = structlog.get_logger()
@@ -273,6 +274,9 @@ async def lifespan(app: FastAPI):
     # - socket_timeout: 5s
     # - socket_connect_timeout: 5s
     redis_client = Redis.from_url(config.redis_url)
+    # 注册为全局单例：model_router 租户策略加载、response_cache 等组件统一复用
+    # 此连接池，避免各处 Redis.from_url 反复建连导致连接泄漏。
+    set_redis(redis_client)
     logger.info("Redis connected", url=config.redis_url.split("@")[-1])  # 脱敏
 
     # 初始化分布式限流器（共用同一 Redis 连接）
@@ -384,9 +388,10 @@ async def lifespan(app: FastAPI):
     # - 释放连接池中的所有连接
     # - 等待进行中的命令完成（最多 5s）
     # - 不会断开正在使用的连接（由 ASGI 服务器处理）
-    if redis_client:
-        await redis_client.close()
-        logger.info("Redis connection closed")
+    # 通过全局单例统一关闭（与 set_redis 注册的实例一致），释放连接池
+    await close_redis()
+    redis_client = None
+    logger.info("Redis connection closed")
 
     # ─────────────────────────────────────────────────────────────────────
     # 2. Provider 资源释放

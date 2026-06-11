@@ -8,6 +8,7 @@
 5. 成本与延迟指标上报
 """
 
+import asyncio
 import json
 import time
 import uuid
@@ -17,6 +18,7 @@ from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.core.config import config
 from app.core.content_filter import get_content_filter
 from app.core.exceptions import (
     AllProvidersDownError,
@@ -315,11 +317,57 @@ async def _handle_stream(request: ChatRequest, tenant_id: str, request_id: str, 
         stream=True,
     )
 
+    # 逐块超时上限：防止慢 Provider 在两个 chunk 之间长时间挂起拖死连接
+    chunk_timeout_s = getattr(config, "stream_chunk_timeout_s", 30)
+
     async def event_generator():
         completion_chars = 0
+        # Provider 在流末尾返回的精确 usage（stream_options.include_usage）。
+        # 优先用它结算成本；为 None 时回退到字符数启发式估算。
+        usage_prompt_tokens: int | None = None
+        usage_completion_tokens: int | None = None
         content_filtered = False
+        # 显式持有异步迭代器，以便对「获取下一个 chunk」逐块施加超时
+        stream_iter = provider.stream_chat_completion(chat_request).__aiter__()
         try:
-            async for line in provider.stream_chat_completion(chat_request):
+            while True:
+                # 逐块超时：单块等待超过上限即视为 Provider 卡死，终止流
+                try:
+                    line = await asyncio.wait_for(stream_iter.__anext__(), timeout=chunk_timeout_s)
+                except StopAsyncIteration:
+                    break
+                except TimeoutError:
+                    circuit_breaker.record_failure()
+                    MODEL_CALL_TOTAL.labels(
+                        provider=provider.provider_name,
+                        model=model_name,
+                        status="timeout",
+                        stream="true",
+                    ).inc()
+                    logger.error(
+                        "stream_chunk_timeout",
+                        request_id=request_id,
+                        provider=provider.provider_name,
+                        model=model_name,
+                        timeout_s=chunk_timeout_s,
+                        completion_chars=completion_chars,
+                    )
+                    error_event = {
+                        "error": "ERR_STREAM_TIMEOUT",
+                        "message": f"流式响应超时（单块等待超过 {chunk_timeout_s} 秒）",
+                        "request_id": request_id,
+                    }
+                    yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    # 主动关闭上游迭代器，释放底层连接
+                    aclose = getattr(stream_iter, "aclose", None)
+                    if aclose is not None:
+                        try:
+                            await aclose()
+                        except Exception:
+                            pass
+                    return
+
                 # provider 产出形如 "data: {...}" 的 SSE 行
                 if not line.startswith("data: "):
                     continue

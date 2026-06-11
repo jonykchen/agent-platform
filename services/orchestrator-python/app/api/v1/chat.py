@@ -114,6 +114,8 @@ from pydantic import BaseModel, Field
 
 from app.api.middleware.request_context import get_request_id, get_tenant_id, get_user_id
 from app.core.config import config
+from app.core.exceptions import TimeoutError as PlatformTimeoutError
+from app.core.metrics import record_agent_run
 from app.graph.builder import get_agent_graph
 from app.graph.state import create_initial_state
 from app.memory.checkpoint_store import get_checkpoint_store
@@ -207,6 +209,9 @@ async def _stream_chat_sse(
     session_store = get_session_store()
     checkpoint_store = get_checkpoint_store()
 
+    # 在 try 外初始化，保证异常处理器（含 record_agent_run）始终能安全引用
+    last_state: dict = {}
+
     try:
         history = await session_store.get_history(session_id, limit=10)
 
@@ -243,37 +248,65 @@ async def _stream_chat_sse(
         final_output = ""
         approval_id = None
         error = None
-        last_state: dict = {}
         seen_stages: set[str] = set()
 
-        async for chunk in graph.astream(initial_state, config=graph_config, stream_mode="updates"):
-            for node_name, update in chunk.items():
-                if not isinstance(update, dict):
-                    continue
-                last_state.update(update)
+        # 全局总超时：整个图流式执行不得超过 agent_total_timeout_s。
+        # 超时则中断 astream 迭代，向前端下发明确的超时错误帧。
+        try:
+            async with asyncio.timeout(config.agent_total_timeout_s):
+                async for chunk in graph.astream(initial_state, config=graph_config, stream_mode="updates"):
+                    for node_name, update in chunk.items():
+                        if not isinstance(update, dict):
+                            continue
+                        last_state.update(update)
 
-                # 推送节点进度事件（每个阶段仅推一次，避免循环刷屏）
-                stage = _NODE_STAGE_LABELS.get(node_name)
-                if stage and node_name not in seen_stages:
-                    seen_stages.add(node_name)
-                    yield _sse_event(
-                        {
-                            "delta": "",
-                            "finish_reason": None,
-                            "session_id": session_id,
-                            "request_id": request_id,
-                            "node": node_name,
-                            "stage": stage,
-                        }
-                    )
-                    await asyncio.sleep(0)
+                        # 推送节点进度事件（每个阶段仅推一次，避免循环刷屏）
+                        stage = _NODE_STAGE_LABELS.get(node_name)
+                        if stage and node_name not in seen_stages:
+                            seen_stages.add(node_name)
+                            yield _sse_event(
+                                {
+                                    "delta": "",
+                                    "finish_reason": None,
+                                    "session_id": session_id,
+                                    "request_id": request_id,
+                                    "node": node_name,
+                                    "stage": stage,
+                                }
+                            )
+                            await asyncio.sleep(0)
 
-                if update.get("output"):
-                    final_output = update["output"]
-                if update.get("approval_id"):
-                    approval_id = update["approval_id"]
-                if update.get("error"):
-                    error = update["error"]
+                        if update.get("output"):
+                            final_output = update["output"]
+                        if update.get("approval_id"):
+                            approval_id = update["approval_id"]
+                        if update.get("error"):
+                            error = update["error"]
+        except TimeoutError:
+            timeout_exc = PlatformTimeoutError("Agent 执行", config.agent_total_timeout_s)
+            record_agent_run(
+                status="timeout",
+                step_count=last_state.get("step_count", 0),
+                latency=(time.time() - start_time),
+            )
+            logger.error(
+                "stream_request_timeout",
+                request_id=request_id,
+                error_code=timeout_exc.code,
+                timeout_s=config.agent_total_timeout_s,
+            )
+            yield _sse_event(
+                {
+                    "delta": "",
+                    "finish_reason": "error",
+                    "session_id": session_id,
+                    "request_id": request_id,
+                    "error": timeout_exc.user_message,
+                    "error_code": timeout_exc.code,
+                }
+            )
+            yield "data: [DONE]\n\n"
+            return
 
         # 审批中断：astream 在 interrupt_before=approval_wait 处暂停，
         # 通过 graph 状态快照获取 approval_id 并保存 checkpoint
@@ -365,6 +398,12 @@ async def _stream_chat_sse(
                 key_entities=key_entities,
             )
 
+        record_agent_run(
+            status="error" if error else "success",
+            step_count=last_state.get("step_count", 0),
+            latency=(time.time() - start_time),
+        )
+
         logger.info(
             "stream_request_completed",
             endpoint="/chat/completions",
@@ -374,6 +413,11 @@ async def _stream_chat_sse(
         )
 
     except Exception as e:
+        record_agent_run(
+            status="error",
+            step_count=last_state.get("step_count", 0),
+            latency=(time.time() - start_time),
+        )
         logger.exception(
             "stream_request_failed",
             request_id=request_id,
@@ -543,7 +587,10 @@ async def chat_completion(request: ChatRequest, req: Request):
 
     # 运行 Agent
     try:
-        result = await graph.invoke(initial_state, config=graph_config)
+        # 全局总超时：整个图执行不得超过 agent_total_timeout_s（S-AGENT 总超时）。
+        # 防止个别节点（模型/工具）卡死拖垮请求，超时统一抛出 asyncio.TimeoutError。
+        async with asyncio.timeout(config.agent_total_timeout_s):
+            result = await graph.invoke(initial_state, config=graph_config)
 
         # 提取结果
         output = result.get("output", "")
@@ -603,6 +650,13 @@ async def chat_completion(request: ChatRequest, req: Request):
         elif result.get("error"):
             finish_reason = "error"
 
+        # 记录 Agent 运行指标：供 agent_run_total / agent_run_latency_seconds 告警与看板使用
+        record_agent_run(
+            status="error" if finish_reason == "error" else "success",
+            step_count=step_count,
+            latency=latency_ms / 1000.0,
+        )
+
         logger.info(
             "request_completed",
             endpoint="/chat/completions",
@@ -630,8 +684,38 @@ async def chat_completion(request: ChatRequest, req: Request):
             approval_id=approval_id,
         )
 
+    except TimeoutError:
+        # 全局总超时：整个 Agent 图执行超过 agent_total_timeout_s。
+        # 复用错误码体系的超时类型（ERR_TIMEOUT），返回用户友好提示。
+        latency_ms = int((time.time() - start_time) * 1000)
+        timeout_exc = PlatformTimeoutError("Agent 执行", config.agent_total_timeout_s)
+        record_agent_run(status="timeout", step_count=0, latency=latency_ms / 1000.0)
+
+        logger.error(
+            "request_timeout",
+            endpoint="/chat/completions",
+            request_id=request_id,
+            error_code=timeout_exc.code,
+            timeout_s=config.agent_total_timeout_s,
+            latency_ms=latency_ms,
+        )
+
+        return ChatResponse(
+            request_id=request_id,
+            session_id=session_id,
+            response=timeout_exc.user_message,
+            model_used="timeout",
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            cost_usd=0.0,
+            latency_ms=latency_ms,
+            finish_reason="error",
+        )
+
     except Exception as e:
         latency_ms = int((time.time() - start_time) * 1000)
+        record_agent_run(status="error", step_count=0, latency=latency_ms / 1000.0)
 
         logger.error(
             "request_failed",

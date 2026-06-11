@@ -73,3 +73,12 @@ ALTER TABLE knowledge_chunk ALTER COLUMN embedding TYPE VECTOR(1024) USING NULL;
 -- 重建 HNSW 索引
 CREATE INDEX idx_chunk_embedding ON knowledge_chunk
     USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+
+-- ============================================================
+--  3. knowledge_chunk 全文检索索引（GIN + tsvector）
+--  支撑混合检索（hybrid_retriever）的 BM25/ts_rank 关键词召回，
+--  避免 to_tsvector('simple', content) 查询退化为全表扫描。
+--  与 knowledge-python alembic 0001 的 idx_chunk_content_fts 一致。
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_chunk_content_fts ON knowledge_chunk
+    USING gin (to_tsvector('simple', content));

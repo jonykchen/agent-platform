@@ -301,11 +301,10 @@ class ModelRouter:
         # 如果有租户 ID，尝试从 Redis 加载
         if tenant_id:
             try:
-                from redis.asyncio import Redis
+                from app.core.redis_client import get_redis
 
-                from app.core.config import config
-
-                redis = Redis.from_url(config.redis_url)
+                # 复用全局 Redis 连接池，避免每次缓存未命中都新建连接导致泄漏
+                redis = get_redis()
                 policy_key = f"model_policy:{tenant_id}"
 
                 policy_data = await redis.get(policy_key)
@@ -313,7 +312,6 @@ class ModelRouter:
                     import json
 
                     policy = json.loads(policy_data)
-                    await redis.close()
 
                     logger.debug(
                         "tenant_policy_loaded",
@@ -321,8 +319,6 @@ class ModelRouter:
                         primary_model=policy.get("primary_model"),
                     )
                     return policy
-
-                await redis.close()
 
             except Exception as e:
                 logger.warning(

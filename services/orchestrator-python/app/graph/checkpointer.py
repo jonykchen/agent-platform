@@ -11,7 +11,6 @@ Redis 作为持久化存储，支持分布式部署场景。
 """
 
 import json
-from typing import Any
 
 import structlog
 from redis.asyncio import Redis
@@ -124,10 +123,12 @@ class RedisSaver:
             key = self._get_key(thread_id)
 
             # 序列化存储
-            data = json.dumps({
-                "checkpoint": checkpoint,
-                "metadata": metadata,
-            })
+            data = json.dumps(
+                {
+                    "checkpoint": checkpoint,
+                    "metadata": metadata,
+                }
+            )
 
             await redis.setex(key, self._ttl, data)
 
@@ -149,11 +150,13 @@ class RedisSaver:
     def get(self, config: dict) -> dict | None:
         """同步获取 checkpoint（内部调用异步方法）"""
         import asyncio
+
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 # 在异步上下文中，创建新任务
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(asyncio.run, self.aget(config))
                     return future.result()
@@ -165,10 +168,12 @@ class RedisSaver:
     def put(self, config: dict, checkpoint: dict, metadata: dict | None = None) -> None:
         """同步存储 checkpoint（内部调用异步方法）"""
         import asyncio
+
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(asyncio.run, self.aput(config, checkpoint, metadata))
                     future.result()
@@ -219,17 +224,24 @@ class RedisSaver:
 def get_checkpointer(environment: str, redis_url: str | None = None) -> RedisSaver | "MemorySaver":
     """获取合适的 checkpointer
 
+    环境枚举为 local/dev/test/staging/prod。除 local/dev/test 外（即 staging/prod）
+    一律要求 Redis 持久化，避免重启丢失中断中的审批任务。
+
     Args:
-        environment: 环境标识（development / production）
-        redis_url: Redis 连接 URL（生产环境必需）
+        environment: 环境标识（local/dev/test/staging/prod）
+        redis_url: Redis 连接 URL（持久化环境必需）
 
     Returns:
-        RedisSaver（生产）或 MemorySaver（开发）
+        RedisSaver（staging/prod）或 MemorySaver（local/dev/test）
     """
-    if environment == "production" and redis_url:
+    ephemeral_envs = {"local", "dev", "test"}
+    if environment not in ephemeral_envs:
+        if not redis_url:
+            raise RuntimeError(f"环境 '{environment}' 要求持久化 checkpointer，但未提供 redis_url。")
         logger.info("using_redis_checkpointer", redis_url=redis_url[:50] + "...")
         return RedisSaver(redis_url=redis_url)
     else:
         from app.graph.builder import MemorySaver
-        logger.info("using_memory_checkpointer", reason="non_production_environment")
+
+        logger.info("using_memory_checkpointer", environment=environment)
         return MemorySaver()

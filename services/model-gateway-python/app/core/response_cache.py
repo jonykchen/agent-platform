@@ -24,14 +24,12 @@ class ResponseCache:
         self._redis_url = redis_url
         self._ttl = ttl_seconds
         self._max_temperature = max_temperature
-        self._redis = None
 
     async def _get_redis(self):
-        if self._redis is None:
-            from redis.asyncio import Redis
+        # 复用全局 Redis 连接池，不再为缓存单独建连，避免连接泄漏
+        from app.core.redis_client import get_redis
 
-            self._redis = Redis.from_url(self._redis_url)
-        return self._redis
+        return get_redis()
 
     @staticmethod
     def _build_key(model: str, messages: list[dict], temperature: float, max_tokens: int) -> str:

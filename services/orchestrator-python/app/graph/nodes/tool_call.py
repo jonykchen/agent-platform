@@ -67,11 +67,24 @@
 """
 
 import json
+
 import structlog
 
+from app.core.metrics import record_tool_call
+from app.core.resilience import (
+    CircuitBreakerOpenError,
+    tool_bus_circuit,
+    tool_retry_policy,
+    with_retry_and_circuit,
+)
 from app.graph.state import AgentState
 
 logger = structlog.get_logger()
+
+# ToolBus gRPC 调用的容错包装：复用全局熔断器 + 重试策略（与 ModelGateway 同模式）。
+# 先重试瞬态故障（网络抖动），连续失败累计触发熔断后快速失败，避免 ToolBus 宕机时
+# 每次工具调用都白白等待 gRPC 超时拖垮 Agent。装饰器顺序：熔断（外）→ 重试（内）。
+_resilient_toolbus_call = with_retry_and_circuit(tool_bus_circuit, tool_retry_policy)
 
 # 工具客户端（将在后续实现中注入）
 _tool_bus_client = None
@@ -112,6 +125,7 @@ async def tool_call_node(state: AgentState) -> dict:
 
     start_time = time.time()
     request_id = state["request_id"]
+    tenant_id = state.get("tenant_id", "unknown")
     tool_calls = state.get("tool_calls", [])
 
     logger.info(
@@ -166,6 +180,14 @@ async def tool_call_node(state: AgentState) -> dict:
             # 记录执行结果
             result["duration_ms"] = tool_duration_ms
             tool_results.append(result)
+
+            # 记录工具调用指标：供 tool_call_total / tool_call_latency_seconds 告警与看板使用
+            record_tool_call(
+                tool_name=tool_name or "unknown",
+                tenant_id=tenant_id,
+                status=str(result.get("status", "unknown")),
+                latency=tool_duration_ms / 1000.0,
+            )
 
             logger.info(
                 "tool_completed",
@@ -234,6 +256,12 @@ async def tool_call_node(state: AgentState) -> dict:
         except Exception as e:
             # 工具执行失败 - 记录错误继续尝试其他工具
             tool_duration_ms = int((time.time() - tool_start) * 1000)
+            record_tool_call(
+                tool_name=tool_name or "unknown",
+                tenant_id=tenant_id,
+                status="failed",
+                latency=tool_duration_ms / 1000.0,
+            )
             logger.error(
                 "tool_failed",
                 tool_name=tool_name,
@@ -242,16 +270,20 @@ async def tool_call_node(state: AgentState) -> dict:
                 request_id=request_id,
             )
 
-            errors.append({
-                "tool_name": tool_name,
-                "error": str(e),
-            })
-            tool_results.append({
-                "call_id": call_id,
-                "status": "failed",
-                "error_message": str(e),
-                "duration_ms": tool_duration_ms,
-            })
+            errors.append(
+                {
+                    "tool_name": tool_name,
+                    "error": str(e),
+                }
+            )
+            tool_results.append(
+                {
+                    "call_id": call_id,
+                    "status": "failed",
+                    "error_message": str(e),
+                    "duration_ms": tool_duration_ms,
+                }
+            )
 
     # 分析整体执行结果
     duration_ms = int((time.time() - start_time) * 1000)
@@ -343,22 +375,44 @@ async def _execute_tool(tool_name: str, arguments: dict, state: AgentState) -> d
         }
 
     if _tool_bus_client:
-        # 真实 gRPC 调用
+        # 真实 gRPC 调用（经熔断器 + 重试包裹）
         logger.debug(
             "calling_toolbus",
             tool_name=tool_name,
             request_id=state["request_id"],
         )
-        return await _tool_bus_client.execute_tool(
-            tool_name=tool_name,
-            arguments=validation_result["data"],  # 使用校验后的数据（可能填充了 defaults）
-            context={
-                "request_id": state["request_id"],
-                "tenant_id": state["tenant_id"],
-                "user_id": state["user_id"],
-                "session_id": state["session_id"],
-            },
-        )
+
+        @_resilient_toolbus_call
+        async def _call_toolbus() -> dict:
+            return await _tool_bus_client.execute_tool(
+                tool_name=tool_name,
+                arguments=validation_result["data"],  # 使用校验后的数据（可能填充了 defaults）
+                context={
+                    "request_id": state["request_id"],
+                    "tenant_id": state["tenant_id"],
+                    "user_id": state["user_id"],
+                    "session_id": state["session_id"],
+                },
+            )
+
+        try:
+            return await _call_toolbus()
+        except CircuitBreakerOpenError as e:
+            # 熔断器打开：ToolBus 持续不可用，快速失败而非继续等待 gRPC 超时。
+            # 返回 failed 结果交由上层 tool_call_node 统一处理（不抛异常打断其他工具）。
+            logger.warning(
+                "toolbus_circuit_open",
+                tool_name=tool_name,
+                circuit=e.circuit_name,
+                request_id=state["request_id"],
+                hint="ToolBus 连续失败已熔断，快速失败本次调用",
+            )
+            return {
+                "call_id": "",
+                "status": "failed",
+                "error_code": "ERR_TOOL_EXECUTION_FAILED",
+                "error_message": f"工具服务暂不可用（熔断器已打开）: {tool_name}",
+            }
 
     # Mock 实现 - 开发测试用
     logger.debug(
@@ -474,12 +528,14 @@ async def _mock_execute_tool(tool_name: str, arguments: dict) -> dict:
         return {
             "call_id": call_id,
             "status": "success",
-            "result_json": json.dumps({
-                "order_id": arguments.get("order_id", "unknown"),
-                "status": "已发货",
-                "tracking_number": "SF1234567890",
-                "estimated_delivery": "2026-05-15",
-            }),
+            "result_json": json.dumps(
+                {
+                    "order_id": arguments.get("order_id", "unknown"),
+                    "status": "已发货",
+                    "tracking_number": "SF1234567890",
+                    "estimated_delivery": "2026-05-15",
+                }
+            ),
             "risk_level": "low",
         }
 
@@ -488,12 +544,14 @@ async def _mock_execute_tool(tool_name: str, arguments: dict) -> dict:
         return {
             "call_id": call_id,
             "status": "success",
-            "result_json": json.dumps({
-                "user_id": arguments.get("user_id", "unknown"),
-                "name": "张三",
-                "level": "gold",
-                "points": 12500,
-            }),
+            "result_json": json.dumps(
+                {
+                    "user_id": arguments.get("user_id", "unknown"),
+                    "name": "张三",
+                    "level": "gold",
+                    "points": 12500,
+                }
+            ),
             "risk_level": "low",
         }
 
@@ -518,10 +576,12 @@ async def _mock_execute_tool(tool_name: str, arguments: dict) -> dict:
         return {
             "call_id": call_id,
             "status": "success",
-            "result_json": json.dumps({
-                "operation": arguments.get("operation"),
-                "status": "mock_success",
-            }),
+            "result_json": json.dumps(
+                {
+                    "operation": arguments.get("operation"),
+                    "status": "mock_success",
+                }
+            ),
             "risk_level": "medium",
         }
 

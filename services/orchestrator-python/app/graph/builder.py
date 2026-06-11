@@ -241,18 +241,32 @@ def build_agent_graph():
     # 编译图
     # - checkpointer: 状态持久化，用于恢复中断的执行
     # - interrupt_before: 在 approval_wait 节点前暂停，等待审批
-    # 生产环境使用 Redis，开发环境使用 MemorySaver
+    # checkpointer 持久化策略：
+    # 任何非本地/开发/测试环境（staging/prod）都必须使用 Redis 持久化，
+    # 否则容器重启会丢失所有中断中的审批任务（in-flight approvals）。
+    #
+    # 注意：环境枚举为 local/dev/test/staging/prod（见 config.environment）。
+    # 历史代码误判 "production" 字符串，导致生产环境静默退化为 MemorySaver，此处修正。
     from app.core.config import config
 
-    if hasattr(config, "environment") and config.environment == "production":
+    env = getattr(config, "environment", "local")
+    ephemeral_envs = {"local", "dev", "test"}
+
+    if env not in ephemeral_envs:
+        # 生产/预发：强制 Redis 持久化，缺少 redis_url 时直接失败而非静默退化。
+        redis_url = getattr(config, "redis_url", None)
+        if not redis_url:
+            raise RuntimeError(
+                f"环境 '{env}' 要求持久化 checkpointer，但未配置 redis_url；"
+                "拒绝以 MemorySaver 启动，避免重启丢失中断中的审批任务。"
+            )
         from app.graph.checkpointer import RedisSaver
-        checkpointer = RedisSaver(
-            redis_url=config.redis_url if hasattr(config, "redis_url") else "redis://localhost:6379",
-        )
-        logger.info("Using Redis checkpointer for production")
+
+        checkpointer = RedisSaver(redis_url=redis_url)
+        logger.info("Using Redis checkpointer for persistent environment", environment=env)
     else:
         checkpointer = MemorySaver()
-        logger.info("Using MemorySaver for development")
+        logger.info("Using MemorySaver for ephemeral environment", environment=env)
 
     compiled_graph = graph.compile(
         checkpointer=checkpointer,

@@ -173,6 +173,40 @@ webclient:
   read-timeout-ms: ${WEBCLIENT_READ_TIMEOUT_MS:300000}  # SSE 需要长超时
   write-timeout-ms: ${WEBCLIENT_WRITE_TIMEOUT_MS:30000}
 
+# ====== Resilience4j 熔断器配置 ======
+# 保护 Gateway → Orchestrator 的 gRPC 调用：下游持续失败时快速失败，
+# 避免线程/连接堆积拖垮 Gateway。指标经 actuator/prometheus 暴露。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        # 滑动窗口类型：基于调用次数统计失败率
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        # 至少累计 10 次调用才开始计算失败率（避免冷启动误判）
+        minimum-number-of-calls: 10
+        # 失败率 ≥ 50% 时打开熔断器
+        failure-rate-threshold: 50
+        # 慢调用率 ≥ 80% 视为不健康
+        slow-call-rate-threshold: 80
+        slow-call-duration-threshold: 30s
+        # 打开后等待 30s 进入半开
+        wait-duration-in-open-state: 30s
+        # 半开状态允许 5 个探测调用
+        permitted-number-of-calls-in-half-open-state: 5
+        automatic-transition-from-open-to-half-open-enabled: true
+        # 暴露熔断器健康指示器到 actuator/health
+        register-health-indicator: true
+        # gRPC 业务异常（已转译的 BusinessException）也计入失败统计
+        record-exceptions:
+          - io.grpc.StatusRuntimeException
+          - com.platform.gateway.exception.BusinessException
+    instances:
+      orchestrator:
+        base-config: default
+        # 流式调用慢调用阈值更宽松（SSE 可能持续较久）
+        slow-call-duration-threshold: 60s
+
 # ====== OpenTelemetry 配置 ======
 otel:
   exporter:

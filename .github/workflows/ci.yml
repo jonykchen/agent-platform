@@ -43,6 +43,31 @@ jobs:
       - name: Run Lint
         run: make lint
 
+  # ====== Proto Contract Check (lint + breaking-change 检测) ======
+  proto-check:
+    name: Proto Contract Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # breaking 检测需要与基线分支对比
+
+      - name: Setup Buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Buf Lint
+        run: buf lint
+
+      # 防止 proto 破坏性变更（字段类型变更、服务方法删除等）流入主干。
+      # PR 与目标分支对比；push 与 main 对比。
+      - name: Buf Breaking Change Detection
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.ref || 'main' }}"
+          buf breaking --against ".git#branch=${BASE_REF}"
+
   # ====== Test Job ======
   test:
     name: Unit & Integration Tests

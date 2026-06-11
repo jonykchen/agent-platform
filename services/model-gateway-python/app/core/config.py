@@ -214,6 +214,13 @@ class AppConfig(BaseSettings):
         description="流式响应总超时（秒）",
     )
 
+    # 流式逐块超时：单个 chunk 的最大等待时间，防止慢 Provider 拖死连接
+    # 区别于 stream_timeout_s（总时长）：此项限制「相邻两块之间」的等待上限
+    stream_chunk_timeout_s: int = Field(
+        default=30,
+        description="流式响应单个 chunk 的最大等待时间（秒）",
+    )
+
     # ─────────────────────────────────────────────────────────────────────────
     # Embedding 配置 - 向量化服务
     # ─────────────────────────────────────────────────────────────────────────

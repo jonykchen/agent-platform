@@ -45,7 +45,7 @@ Java 端使用 BusinessException，Python 端使用本模块，
 - HTTP 状态码映射: 4xx 客户端错误, 5xx 服务端错误
 """
 
-from typing import Any, Optional
+from typing import Any
 
 
 class BasePlatformException(Exception):
@@ -73,12 +73,16 @@ class BasePlatformException(Exception):
             return JSONResponse(status_code=400, content=e.to_dict())
     """
 
+    # HTTP 状态码 - 异常处理中间件据此返回对应状态码（默认 400 客户端错误）
+    # 子类可覆盖（如限流/配额超限 → 429，服务不可用 → 503）
+    status_code: int = 400
+
     def __init__(
         self,
         message: str,
         code: str = "ERR_UNKNOWN",
-        user_message: Optional[str] = None,
-        details: Optional[dict[str, Any]] = None,
+        user_message: str | None = None,
+        details: dict[str, Any] | None = None,
     ):
         # 技术信息 - 用于日志和调试
         self.message = message
@@ -105,6 +109,7 @@ class BasePlatformException(Exception):
 
 # ====== 通用错误 (10xxx) ======
 
+
 class InvalidRequestError(BasePlatformException):
     def __init__(self, message: str, details=None):
         super().__init(message, code="ERR_INVALID_REQUEST", user_message="请求参数有误", details=details)
@@ -116,6 +121,8 @@ class UnauthorizedError(BasePlatformException):
 
 
 class RateLimitedError(BasePlatformException):
+    status_code = 429  # Too Many Requests
+
     def __init__(self, retry_after: int = 60):
         super().__init__(
             "请求过于频繁",
@@ -126,6 +133,8 @@ class RateLimitedError(BasePlatformException):
 
 
 class QuotaExceededError(BasePlatformException):
+    status_code = 429  # Too Many Requests
+
     def __init__(self, message: str = "配额已用尽"):
         super().__init__(
             message,
@@ -155,6 +164,7 @@ class ServiceUnavailableError(BasePlatformException):
 
 
 # ====== Agent 编排错误 (20xxx) ======
+
 
 class MaxStepsExceededError(BasePlatformException):
     def __init__(self, max_steps: int):
@@ -188,6 +198,7 @@ class ToolNotFoundError(BasePlatformException):
 
 # ====== 模型网关错误 (30xxx) ======
 
+
 class AllProvidersDownError(BasePlatformException):
     def __init__(self):
         super().__init__(
@@ -218,6 +229,7 @@ class ModelTimeoutError(BasePlatformException):
 
 
 # ====== 工具总线错误 (40xxx) ======
+
 
 class ToolValidationError(BasePlatformException):
     def __init__(self, tool_name: str, reason: str):

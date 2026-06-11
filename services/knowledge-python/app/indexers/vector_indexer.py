@@ -28,13 +28,13 @@ CREATE TABLE knowledge_chunk (
     tenant_id VARCHAR(64) NOT NULL,
     chunk_index INT NOT NULL,
     content TEXT NOT NULL,
-    embedding VECTOR(1536),
+    embedding VECTOR(1024),
     metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_chunk_embedding ON knowledge_chunk
-    USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 
 【参考】
 - pgvector 文档: https://github.com/pgvector/pgvector
@@ -43,15 +43,13 @@ CREATE INDEX idx_chunk_embedding ON knowledge_chunk
 
 from __future__ import annotations
 
-import asyncio
 import json
-import structlog
 import uuid
-from typing import Any
 from datetime import datetime
 
 import asyncpg
 import numpy as np
+import structlog
 
 from app.core.config import config
 from app.core.exceptions import EmbeddingServiceError
@@ -84,7 +82,7 @@ class PgVectorIndexer:
             )
         return self._pool
 
-    async def _get_embedding_client(self) -> "EmbeddingClient":
+    async def _get_embedding_client(self) -> EmbeddingClient:
         """获取 Embedding 客户端"""
         if self._embedding_client is None:
             self._embedding_client = EmbeddingClient(
@@ -188,42 +186,61 @@ class PgVectorIndexer:
             )
             raise EmbeddingServiceError(str(e))
 
-        # 批量插入
-        chunk_ids = []
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-                    chunk_id = str(uuid.uuid4())
-                    chunk_ids.append(chunk_id)
+        # 维度校验：embedding 维度必须与平台统一维度 (config.embedding_dimension)
+        # 及数据库 VECTOR(dim) 一致，否则写入会触发 pgvector 维度错误或数据损坏。
+        # 在写库前快速失败，避免脏数据穿透到数据库。
+        expected_dim = config.embedding_dimension
+        for idx, embedding in enumerate(embeddings):
+            actual_dim = len(embedding)
+            if actual_dim != expected_dim:
+                logger.error(
+                    "embedding_dimension_mismatch",
+                    document_id=document_id,
+                    chunk_index=idx,
+                    expected_dim=expected_dim,
+                    actual_dim=actual_dim,
+                )
+                raise EmbeddingServiceError(
+                    f"Embedding 维度不匹配：期望 {expected_dim} 维（config.embedding_dimension），"
+                    f"实际 {actual_dim} 维（chunk #{idx}）。请检查 embedding 模型与平台配置是否一致。"
+                )
 
-                    await conn.execute(
-                        """
+        # 批量插入 + 文档状态更新在同一事务内，保证原子性：
+        # 避免 chunks 已写入但文档状态仍为 'processing' 的数据不一致。
+        chunk_ids = []
+        async with pool.acquire() as conn, conn.transaction():
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                chunk_id = str(uuid.uuid4())
+                chunk_ids.append(chunk_id)
+
+                await conn.execute(
+                    """
                         INSERT INTO knowledge_chunk
                             (id, document_id, tenant_id, chunk_index, content, embedding, metadata, created_at)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                         """,
-                        chunk_id,
-                        document_id,
-                        tenant_id,
-                        i,
-                        chunk["content"],
-                        embedding.tolist(),
-                        json.dumps(chunk.get("metadata", {})),
-                        datetime.utcnow(),
-                    )
+                    chunk_id,
+                    document_id,
+                    tenant_id,
+                    i,
+                    chunk["content"],
+                    embedding.tolist(),
+                    json.dumps(chunk.get("metadata", {})),
+                    datetime.utcnow(),
+                )
 
-        # 更新文档状态
-        await pool.execute(
-            """
-            UPDATE knowledge_document
-            SET status = $1, chunk_count = $2, updated_at = $3
-            WHERE id = $4
-            """,
-            "ready",
-            len(chunks),
-            datetime.utcnow(),
-            document_id,
-        )
+            # 更新文档状态（同一事务内，与 chunk 写入保持原子性）
+            await conn.execute(
+                """
+                UPDATE knowledge_document
+                SET status = $1, chunk_count = $2, updated_at = $3
+                WHERE id = $4
+                """,
+                "ready",
+                len(chunks),
+                datetime.utcnow(),
+                document_id,
+            )
 
         logger.info(
             "document_indexed",
@@ -322,21 +339,20 @@ class PgVectorIndexer:
         """
         pool = await self._get_pool()
 
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                # 删除块
-                await conn.execute(
-                    "DELETE FROM knowledge_chunk WHERE document_id = $1 AND tenant_id = $2",
-                    document_id,
-                    tenant_id,
-                )
+        async with pool.acquire() as conn, conn.transaction():
+            # 删除块
+            await conn.execute(
+                "DELETE FROM knowledge_chunk WHERE document_id = $1 AND tenant_id = $2",
+                document_id,
+                tenant_id,
+            )
 
-                # 删除文档
-                result = await conn.execute(
-                    "DELETE FROM knowledge_document WHERE id = $1 AND tenant_id = $2",
-                    document_id,
-                    tenant_id,
-                )
+            # 删除文档
+            result = await conn.execute(
+                "DELETE FROM knowledge_document WHERE id = $1 AND tenant_id = $2",
+                document_id,
+                tenant_id,
+            )
 
         logger.info(
             "document_deleted",
@@ -405,7 +421,7 @@ class EmbeddingClient:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             for i in range(0, len(texts), batch_size):
-                batch = texts[i:i + batch_size]
+                batch = texts[i : i + batch_size]
 
                 try:
                     response = await client.post(
@@ -420,9 +436,7 @@ class EmbeddingClient:
 
                     # 按 index 排序
                     embeddings = sorted(data["data"], key=lambda x: x["index"])
-                    all_embeddings.extend(
-                        [np.array(e["embedding"]) for e in embeddings]
-                    )
+                    all_embeddings.extend([np.array(e["embedding"]) for e in embeddings])
 
                 except Exception as e:
                     logger.error(

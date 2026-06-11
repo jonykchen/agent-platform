@@ -23,6 +23,8 @@
         <grpc.version>1.81.0</grpc.version>
         <protobuf.version>4.34.1</protobuf.version>
         <jwt.version>0.12.5</jwt.version>
+        <!-- Resilience4j 2.x 与 Spring Boot 3.2 兼容（Boot 3.x 对应 resilience4j 2.x） -->
+        <resilience4j.version>2.2.0</resilience4j.version>
     </properties>
 
     <dependencies>
@@ -216,6 +218,18 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Resilience4j 熔断器（Spring Boot 3 starter，含 AOP 注解支持 + actuator 指标） -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+        <!-- @CircuitBreaker 等注解依赖 Spring AOP 切面 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
         <!-- Test -->

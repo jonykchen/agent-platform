@@ -35,23 +35,30 @@ scrape_configs:
       - targets: ['host.docker.internal:8000']
     metrics_path: '/metrics'
 
-  # Model Gateway Service (Python)
+  # Model Gateway Service (Python) - 监听 8002（见 Dockerfile uvicorn --port 8002）
   - job_name: 'model-gateway-python'
     static_configs:
-      - targets: ['host.docker.internal:8001']
+      - targets: ['host.docker.internal:8002']
     metrics_path: '/metrics'
 
-  # Knowledge Service (Python)
+  # Knowledge Service (Python) - 监听 8081（见 Dockerfile uvicorn --port 8081）
   - job_name: 'knowledge-python'
     static_configs:
       - targets: ['host.docker.internal:8081']
     metrics_path: '/metrics'
 
-  # Tool Bus Service (Java)
+  # Tool Bus Service (Java) - HTTP 8083，Spring Actuator 暴露指标
+  # （50051 是 gRPC 端口，无 HTTP /metrics，不能用于抓取）
   - job_name: 'tool-bus-java'
     static_configs:
-      - targets: ['host.docker.internal:50051']
-    metrics_path: '/metrics'
+      - targets: ['host.docker.internal:8083']
+    metrics_path: '/actuator/prometheus'
+
+  # Governance Service (Java) - HTTP 8082，Spring Actuator 暴露指标
+  - job_name: 'governance-java'
+    static_configs:
+      - targets: ['host.docker.internal:8082']
+    metrics_path: '/actuator/prometheus'
 
   # Alertmanager
   - job_name: 'alertmanager'

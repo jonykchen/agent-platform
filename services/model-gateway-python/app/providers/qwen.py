@@ -332,6 +332,8 @@ class QwenProvider(BaseLLMProvider):
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": True,
+            # 要求 Provider 在流末尾多发一个含 usage 的 chunk，用于精确计费
+            "stream_options": {"include_usage": True},
         }
 
         try:

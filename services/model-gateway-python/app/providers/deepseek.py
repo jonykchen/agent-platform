@@ -9,16 +9,16 @@ DeepSeek 采用 OpenAI 兼容 API 格式，集成重试和熔断机制。
 参考：https://api-docs.deepseek.com/
 """
 
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import httpx
 import structlog
 
 from app.providers.base import (
     BaseLLMProvider,
+    ChatCompletionChoice,
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ChatCompletionChoice,
     ChatCompletionUsage,
     ChatMessage,
     ModelInfo,
@@ -46,7 +46,7 @@ class DeepSeekProvider(BaseLLMProvider):
         ModelInfo(
             name="deepseek-chat",
             provider="deepseek",
-            input_cost_per_1k=0.001,   # ¥0.001/千token（缓存未命中）
+            input_cost_per_1k=0.001,  # ¥0.001/千token（缓存未命中）
             output_cost_per_1k=0.002,  # ¥0.002/千token
             context_window=65536,
             max_output_tokens=4096,
@@ -191,13 +191,14 @@ class DeepSeekProvider(BaseLLMProvider):
         """带重试的 HTTP 调用"""
         from tenacity import (
             AsyncRetrying,
+            retry_if_exception_type,
             stop_after_attempt,
             wait_exponential,
-            retry_if_exception_type,
         )
 
         try:
             from app.core.config import config as gateway_config
+
             timeout_seconds = getattr(gateway_config, "model_call_timeout_s", 30)
         except ImportError:
             timeout_seconds = 30
@@ -252,20 +253,24 @@ class DeepSeekProvider(BaseLLMProvider):
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
             "stream": True,
+            # 要求 Provider 在流末尾多发一个含 usage 的 chunk，用于精确计费
+            "stream_options": {"include_usage": True},
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream(
+            async with (
+                httpx.AsyncClient(timeout=60.0) as client,
+                client.stream(
                     "POST",
                     f"{self.base_url}/chat/completions",
                     headers=self.headers,
                     json=payload,
-                ) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            yield line
+                ) as response,
+            ):
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        yield line
 
             self._circuit_breaker.record_success()
 
