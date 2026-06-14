@@ -6,12 +6,16 @@ import com.platform.common.ErrorCode;
 import com.platform.toolbus.*;
 import com.platform.toolbus.executor.ToolExecutor;
 import com.platform.toolbus.executor.ToolExecutionResult;
+import com.platform.toolbus.permission.ToolPermissionDeniedException;
+import com.platform.toolbus.permission.ToolPermissionService;
+import com.platform.toolbus.executor.ToolExecutionContext;
 import com.platform.toolbus.registry.ToolDefinition;
 import com.platform.toolbus.registry.ToolRegistry;
 import io.grpc.Status;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.server.service.GrpcService;
+import org.springframework.beans.factory.DisposableBean;
 
 import java.util.List;
 import java.util.Map;
@@ -21,20 +25,28 @@ import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
- * ToolBus gRPC 服务实现 (Mock)
+ * ToolBus gRPC 服务实现
  */
 @Slf4j
 @GrpcService
 @RequiredArgsConstructor
-public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBase {
+public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBase implements DisposableBean {
 
     private final ToolRegistry toolRegistry;
     // 由 Spring Profile 注入：dev/local/test → MockToolExecutor，prod → RealToolExecutor
     private final ToolExecutor toolExecutor;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ToolPermissionService toolPermissionService;
+    // 注入 Spring 管理的 ObjectMapper（复用全局配置）
+    private final ObjectMapper objectMapper;
 
     // 虚拟线程池（Java 21）
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+
+    @Override
+    public void destroy() {
+        log.info("Shutting down virtual thread executor");
+        virtualThreadExecutor.close();
+    }
 
     @Override
     public void executeTool(ToolExecuteRequest request, io.grpc.stub.StreamObserver<ToolExecuteResponse> responseObserver) {
@@ -44,6 +56,20 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
         log.info("ExecuteTool request: requestId={}, toolName={}", requestId, toolName);
 
         try {
+            // 五层权限检查（RBAC → 租户开关 → ABAC → 配额 → 风险等级）
+            ToolExecutionContext userCtx = ToolExecutionContext.builder()
+                    .tenantId(request.getContext().getTenantId())
+                    .userId(request.getContext().getUserId())
+                    .runId(request.getContext().getRunId())
+                    .build();
+            Map<String, Object> parameters;
+            try {
+                parameters = objectMapper.readValue(request.getArgumentsJson(), Map.class);
+            } catch (Exception e) {
+                parameters = Map.of();
+            }
+            toolPermissionService.validatePermission(toolName, userCtx, parameters);
+
             ToolExecutionResult result = toolExecutor.execute(
                     toolName,
                     request.getToolVersion(),
@@ -76,6 +102,10 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
             responseObserver.onNext(responseBuilder.build());
             responseObserver.onCompleted();
 
+        } catch (ToolPermissionDeniedException e) {
+            log.warn("Tool permission denied: requestId={}, toolName={}, reason={}", requestId, toolName, e.getMessage());
+            responseObserver.onNext(buildErrorResponse(request, ErrorCode.ERR_UNAUTHORIZED, e.getMessage()));
+            responseObserver.onCompleted();
         } catch (Exception e) {
             log.error("ExecuteTool failed: requestId={}", requestId, e);
             responseObserver.onNext(buildErrorResponse(request, ErrorCode.ERR_TOOL_EXECUTION_FAILED, e.getMessage()));
@@ -129,6 +159,20 @@ public class ToolBusGrpcService extends ToolBusServiceGrpc.ToolBusServiceImplBas
 
     private ToolExecuteResponse executeToolInternal(ToolExecuteRequest toolRequest) {
         try {
+            // 五层权限检查（批量执行也需要权限校验）
+            ToolExecutionContext userCtx = ToolExecutionContext.builder()
+                    .tenantId(toolRequest.getContext().getTenantId())
+                    .userId(toolRequest.getContext().getUserId())
+                    .runId(toolRequest.getContext().getRunId())
+                    .build();
+            Map<String, Object> parameters;
+            try {
+                parameters = objectMapper.readValue(toolRequest.getArgumentsJson(), Map.class);
+            } catch (Exception e) {
+                parameters = Map.of();
+            }
+            toolPermissionService.validatePermission(toolRequest.getToolName(), userCtx, parameters);
+
             ToolExecutionResult result = toolExecutor.execute(
                     toolRequest.getToolName(),
                     toolRequest.getToolVersion(),

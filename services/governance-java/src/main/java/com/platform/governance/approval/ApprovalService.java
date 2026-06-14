@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -41,6 +42,13 @@ public class ApprovalService {
                            NotificationService notificationService) {
         this.approvalRepository = approvalRepository;
         this.notificationService = notificationService;
+    }
+
+    /**
+     * 根据 ID 查询审批任务
+     */
+    public Optional<ApprovalTask> findById(UUID approvalId) {
+        return approvalRepository.findById(approvalId);
     }
 
     /**
@@ -128,6 +136,19 @@ public class ApprovalService {
 
         if (!"pending".equals(task.getStatus())) {
             throw new IllegalStateException("Approval already processed: " + task.getStatus());
+        }
+
+        // 校验审批人身份：只有指定的审批人才能处理此任务
+        if (!task.getAssigneeId().equals(reviewerId)) {
+            throw new IllegalArgumentException(
+                "Reviewer '" + reviewerId + "' is not the assigned approver for approval " + approvalId
+                + ". Assigned to: " + task.getAssigneeId()
+            );
+        }
+
+        // 校验审批是否已过期
+        if (task.getExpiresAt() != null && task.getExpiresAt().isBefore(Instant.now())) {
+            throw new IllegalStateException("Approval has expired: " + approvalId);
         }
 
         task.setReviewerId(reviewerId);

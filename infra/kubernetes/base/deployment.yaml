@@ -19,12 +19,24 @@ spec:
         app: gateway
         version: v1
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: gateway
           image: agent-platform/gateway:latest
           ports:
             - containerPort: 8080
               name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "kubernetes"
@@ -86,12 +98,24 @@ spec:
         app: orchestrator
         version: v1
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: orchestrator
           image: agent-platform/orchestrator:latest
           ports:
             - containerPort: 8000
               name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
           env:
             - name: ENVIRONMENT
               value: "kubernetes"
@@ -155,12 +179,24 @@ spec:
         app: model-gateway
         version: v1
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: model-gateway
           image: agent-platform/model-gateway:latest
           ports:
             - containerPort: 8001
               name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
           env:
             - name: ENVIRONMENT
               value: "kubernetes"
@@ -220,6 +256,13 @@ spec:
         app: tool-bus
         version: v1
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: tool-bus
           image: agent-platform/tool-bus:latest
@@ -228,6 +271,11 @@ spec:
               name: http
             - containerPort: 50051
               name: grpc
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "kubernetes"
@@ -289,12 +337,24 @@ spec:
         app: governance
         version: v1
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: governance
           image: agent-platform/governance:latest
           ports:
             - containerPort: 8083
               name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "kubernetes"
@@ -354,12 +414,24 @@ spec:
         app: knowledge
         version: v1
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: knowledge
           image: agent-platform/knowledge:latest
           ports:
             - containerPort: 8002
               name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
           env:
             - name: ENVIRONMENT
               value: "kubernetes"

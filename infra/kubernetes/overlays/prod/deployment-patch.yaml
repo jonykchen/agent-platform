@@ -1,0 +1,140 @@
+# Prod Overlay - Deployment Patch
+# 生产环境覆盖：增加副本数、提高资源配额；优雅关闭（preStop + terminationGracePeriodSeconds）
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+spec:
+  replicas: 3
+  template:
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: gateway
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+spec:
+  replicas: 3
+  template:
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: orchestrator
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-gateway
+spec:
+  replicas: 3
+  template:
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: model-gateway
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tool-bus
+spec:
+  replicas: 3
+  template:
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: tool-bus
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: governance
+spec:
+  replicas: 3
+  template:
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: governance
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knowledge
+spec:
+  replicas: 2
+  template:
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: knowledge
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
