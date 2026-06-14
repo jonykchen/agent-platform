@@ -61,3 +61,15 @@ spec:
   selector:
     matchLabels:
       app: governance
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: knowledge-pdb
+  labels:
+    app: knowledge
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: knowledge

@@ -150,6 +150,11 @@ docker-build:
 	@echo "Building Docker images..."
 	@if [ -f services/gateway-java/Dockerfile ]; then docker build -t agent-platform/gateway:latest -f services/gateway-java/Dockerfile services/gateway-java/; fi
 	@if [ -f services/orchestrator-python/Dockerfile ]; then docker build -t agent-platform/orchestrator:latest -f services/orchestrator-python/Dockerfile services/orchestrator-python/; fi
+	@if [ -f services/model-gateway-python/Dockerfile ]; then docker build -t agent-platform/model-gateway:latest -f services/model-gateway-python/Dockerfile services/model-gateway-python/; fi
+	@if [ -f services/knowledge-python/Dockerfile ]; then docker build -t agent-platform/knowledge:latest -f services/knowledge-python/Dockerfile services/knowledge-python/; fi
+	@if [ -f services/tool-bus-java/Dockerfile ]; then docker build -t agent-platform/tool-bus:latest -f services/tool-bus-java/Dockerfile services/tool-bus-java/; fi
+	@if [ -f services/governance-java/Dockerfile ]; then docker build -t agent-platform/governance:latest -f services/governance-java/Dockerfile services/governance-java/; fi
+	@if [ -f services/web-frontend/Dockerfile ]; then docker build -t agent-platform/web-frontend:latest -f services/web-frontend/Dockerfile services/web-frontend/; fi
 
 # ---- Full check (CI 使用) ----
 ci: lint test

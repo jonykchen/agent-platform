@@ -1,24 +1,39 @@
 # ============================================================
 #  Orchestrator Service - Production Dockerfile
+#  多阶段构建：builder 阶段安装依赖 → runtime 阶段仅包含运行时文件
 #  安全加固：非 root 用户、健康检查、最小化镜像
 # ============================================================
 
+# ---- Stage 1: Builder ----
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+# 安装构建工具
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 uv 并下载 Python 依赖
+COPY pyproject.toml .
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system --prefix=/install -e .
+
+# ---- Stage 2: Runtime ----
 FROM python:3.12-slim
+
+# 安装运行时最小依赖（curl 用于健康检查）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # 创建非 root 用户
 RUN groupadd -r app && useradd -r -g app app
 
 WORKDIR /app
 
-# 安装系统依赖（最小化）
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# 安装 Python 依赖（利用 Docker 缓存）
-COPY pyproject.toml .
-RUN pip install --no-cache-dir uv && \
-    uv pip install --system -e .
+# 从 builder 阶段复制已安装的 Python 包
+COPY --from=builder /install /usr/local
 
 # 复制应用代码
 COPY app/ app/
