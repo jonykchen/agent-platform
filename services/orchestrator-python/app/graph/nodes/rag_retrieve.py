@@ -61,12 +61,12 @@
 from __future__ import annotations
 
 import time
-import structlog
 
 import httpx
+import structlog
 
-from app.graph.state import AgentState
 from app.core.config import config
+from app.graph.state import AgentState
 
 logger = structlog.get_logger()
 
@@ -95,7 +95,7 @@ async def rag_retrieve_node(state: AgentState) -> dict:
     Returns:
         状态更新字典
     """
-    start_time = time.time()
+    start_time = time.monotonic()
     request_id = state["request_id"]
     tenant_id = state["tenant_id"]
     query = state["input"]
@@ -117,7 +117,7 @@ async def rag_retrieve_node(state: AgentState) -> dict:
             use_rerank=True,
         )
 
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
 
         # 格式化检索结果
         retrieved_docs = _format_results(results)
@@ -136,7 +136,7 @@ async def rag_retrieve_node(state: AgentState) -> dict:
         }
 
     except Exception as e:
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
 
         logger.error(
             "rag_retrieve_failed",
@@ -223,16 +223,18 @@ def _format_results(results: list[dict]) -> list[dict]:
     """
     formatted = []
     for r in results:
-        formatted.append({
-            "chunk_id": r.get("chunk_id", ""),
-            "document_id": r.get("document_id", ""),
-            "document_name": r.get("document_name", ""),
-            "chunk_index": r.get("chunk_index", 0),
-            "content": r.get("content", ""),
-            "score": r.get("score", 0),
-            "source": r.get("source", "unknown"),
-            "metadata": r.get("metadata", {}),
-        })
+        formatted.append(
+            {
+                "chunk_id": r.get("chunk_id", ""),
+                "document_id": r.get("document_id", ""),
+                "document_name": r.get("document_name", ""),
+                "chunk_index": r.get("chunk_index", 0),
+                "content": r.get("content", ""),
+                "score": r.get("score", 0),
+                "source": r.get("source", "unknown"),
+                "metadata": r.get("metadata", {}),
+            }
+        )
 
     return formatted
 
@@ -255,7 +257,7 @@ def _build_context_string(docs: list[dict], max_length: int = 4000) -> str:
     current_length = 0
 
     for i, doc in enumerate(docs):
-        doc_text = f"[文档{i+1}] {doc.get('document_name', '未知')}\n{doc.get('content', '')}\n"
+        doc_text = f"[文档{i + 1}] {doc.get('document_name', '未知')}\n{doc.get('content', '')}\n"
 
         if current_length + len(doc_text) > max_length:
             break

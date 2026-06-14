@@ -79,7 +79,7 @@ def get_or_create_session_id(session_id: str | None, tenant_id: str, user_id: st
 
 
 @router.post("/agents/{agent_id}/runs", response_model=AgentRunResponse)
-async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request):
+async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request, background_tasks: BackgroundTasks):
     """启动 Agent 运行
 
     执行 Agent 编排流程，支持同步和异步两种模式。
@@ -107,7 +107,23 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request)
     user_id = get_user_id()
     run_id = f"run_{uuid.uuid4().hex[:16]}"
 
-    start_time = time.time()
+    start_time = time.monotonic()
+
+    # Prompt 注入检测 (S-AGENT-01)：在进入 Agent 编排前拦截恶意输入
+    scan_result = prompt_guard.scan(
+        request.task,
+        context={"request_id": request_id, "tenant_id": tenant_id},
+    )
+    if scan_result.get("action") == "block":
+        logger.warning(
+            "prompt_injection_blocked",
+            request_id=request_id,
+            risk_score=scan_result.get("risk_score"),
+            matched_patterns=scan_result.get("matched_patterns"),
+        )
+        raise InvalidRequestError(
+            "检测到潜在的安全风险，请重新表述您的问题",
+        )
 
     logger.info(
         "agent_run_started",
@@ -166,7 +182,7 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request)
             elif result.get("approval_id"):
                 status = AgentRunStatus.PENDING_APPROVAL
 
-            latency_ms = int((time.time() - start_time) * 1000)
+            latency_ms = int((time.monotonic() - start_time) * 1000)
 
             # 构建步骤信息
             steps = None
@@ -205,7 +221,7 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request)
             )
 
         except Exception as e:
-            latency_ms = int((time.time() - start_time) * 1000)
+            latency_ms = int((time.monotonic() - start_time) * 1000)
             logger.error(
                 "agent_run_failed",
                 agent_id=agent_id,
@@ -241,6 +257,16 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request)
             },
         )
         await redis_client.expire(f"run:{run_id}", 86400)  # 24小时过期
+
+        # 调度后台任务执行 Agent
+        background_tasks.add_task(
+            _execute_agent_background,
+            run_id,
+            agent_id,
+            initial_state,
+            graph_config,
+            request.callback_url,
+        )
 
         logger.info(
             "agent_run_queued",

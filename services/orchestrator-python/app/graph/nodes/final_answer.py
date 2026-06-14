@@ -72,6 +72,8 @@
 """
 
 import json
+import time
+
 import structlog
 
 from app.graph.state import AgentState
@@ -101,9 +103,8 @@ async def final_answer_node(state: AgentState) -> dict:
     Returns:
         更新状态字典
     """
-    import time
 
-    start_time = time.time()
+    start_time = time.monotonic()
     request_id = state["request_id"]
     step_count = state.get("step_count", 0)
 
@@ -124,7 +125,7 @@ async def final_answer_node(state: AgentState) -> dict:
         output = _generate_error_response(error, error_code)
         # S-AGENT-04/05: 输出泄露检测
         output = _sanitize_output(output, request_id)
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
 
         logger.warning(
             "node_completed",
@@ -148,7 +149,7 @@ async def final_answer_node(state: AgentState) -> dict:
         output = _generate_tool_summary_response(tool_results)
         # S-AGENT-04/05: 输出泄露检测
         output = _sanitize_output(output, request_id)
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
 
         success_count = sum(1 for r in tool_results if r.get("status") == "success")
         failed_count = len(tool_results) - success_count
@@ -175,7 +176,7 @@ async def final_answer_node(state: AgentState) -> dict:
     if direct_output:
         # S-AGENT-04/05: 输出泄露检测
         output = _sanitize_output(direct_output, request_id)
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
 
         logger.info(
             "node_completed",
@@ -193,7 +194,7 @@ async def final_answer_node(state: AgentState) -> dict:
 
     # 默认响应 - 无法处理的情况
     output = "抱歉，我无法处理您的请求。请稍后重试或联系客服。"
-    duration_ms = int((time.time() - start_time) * 1000)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
 
     logger.warning(
         "node_completed",
@@ -285,18 +286,18 @@ def _format_result_summary(data: dict) -> str:
     if "order_id" in data and "status" in data:
         return f"""📦 **订单信息**
 
-订单号: {data.get('order_id')}
-状态: {data.get('status', '未知')}
-物流单号: {data.get('tracking_number', '暂无')}
-预计送达: {data.get('estimated_delivery', '未知')}"""
+订单号: {data.get("order_id")}
+状态: {data.get("status", "未知")}
+物流单号: {data.get("tracking_number", "暂无")}
+预计送达: {data.get("estimated_delivery", "未知")}"""
 
     # 用户信息
     if "user_id" in data and "name" in data:
         return f"""👤 **用户信息**
 
-用户: {data.get('name')}
-等级: {data.get('level', '普通会员')}
-积分: {data.get('points', 0)}"""
+用户: {data.get("name")}
+等级: {data.get("level", "普通会员")}
+积分: {data.get("points", 0)}"""
 
     # 通用格式化
     lines = []

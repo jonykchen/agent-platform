@@ -155,6 +155,13 @@ class ChatResponse(BaseModel):
     approval_id: str | None = None
 
 
+class ResumeChatRequest(BaseModel):
+    """恢复对话请求（审批通过后）"""
+
+    run_id: str = Field(..., min_length=1, description="运行 ID")
+    approval_status: str = Field(..., pattern="^(approved|rejected)$", description="审批状态")
+
+
 def get_or_create_session_id(session_id: str | None, tenant_id: str, user_id: str) -> str:
     """获取或创建会话 ID"""
     if session_id:
@@ -287,7 +294,7 @@ async def _stream_chat_sse(
             record_agent_run(
                 status="timeout",
                 step_count=last_state.get("step_count", 0),
-                latency=(time.time() - start_time),
+                latency=(time.monotonic() - start_time),
             )
             logger.error(
                 "stream_request_timeout",
@@ -401,14 +408,14 @@ async def _stream_chat_sse(
         record_agent_run(
             status="error" if error else "success",
             step_count=last_state.get("step_count", 0),
-            latency=(time.time() - start_time),
+            latency=(time.monotonic() - start_time),
         )
 
         logger.info(
             "stream_request_completed",
             endpoint="/chat/completions",
             request_id=request_id,
-            latency_ms=int((time.time() - start_time) * 1000),
+            latency_ms=int((time.monotonic() - start_time) * 1000),
             output_length=total,
         )
 
@@ -416,7 +423,7 @@ async def _stream_chat_sse(
         record_agent_run(
             status="error",
             step_count=last_state.get("step_count", 0),
-            latency=(time.time() - start_time),
+            latency=(time.monotonic() - start_time),
         )
         logger.exception(
             "stream_request_failed",
@@ -429,7 +436,7 @@ async def _stream_chat_sse(
                 "finish_reason": "error",
                 "session_id": session_id,
                 "request_id": request_id,
-                "error": str(e)[:500],
+                "error": "处理请求时遇到问题，请稍后重试",
             }
         )
         yield "data: [DONE]\n\n"
@@ -468,7 +475,24 @@ async def chat_completion(request: ChatRequest, req: Request):
     tenant_id = get_tenant_id()
     user_id = get_user_id()
 
-    start_time = time.time()
+    # Prompt 注入检测 (S-AGENT-01)：在进入 Agent 编排前拦截恶意输入
+    scan_result = prompt_guard.scan(
+        request.message,
+        context={"request_id": request_id, "tenant_id": tenant_id},
+    )
+    if scan_result.get("action") == "block":
+        logger.warning(
+            "prompt_injection_blocked",
+            request_id=request_id,
+            risk_score=scan_result.get("risk_score"),
+            matched_patterns=scan_result.get("matched_patterns"),
+        )
+        raise InvalidRequestError(
+            "检测到潜在的安全风险，请重新表述您的问题",
+            details={"matched_patterns": scan_result.get("matched_patterns", [])},
+        )
+
+    start_time = time.monotonic()
 
     logger.info(
         "request_received",
@@ -632,7 +656,7 @@ async def chat_completion(request: ChatRequest, req: Request):
                 reason="approval_required",
             )
 
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
 
         # 获取模型使用信息
         model_used = result.get("model_used", "qwen-max")
@@ -687,7 +711,7 @@ async def chat_completion(request: ChatRequest, req: Request):
     except TimeoutError:
         # 全局总超时：整个 Agent 图执行超过 agent_total_timeout_s。
         # 复用错误码体系的超时类型（ERR_TIMEOUT），返回用户友好提示。
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
         timeout_exc = PlatformTimeoutError("Agent 执行", config.agent_total_timeout_s)
         record_agent_run(status="timeout", step_count=0, latency=latency_ms / 1000.0)
 
@@ -714,7 +738,7 @@ async def chat_completion(request: ChatRequest, req: Request):
         )
 
     except Exception as e:
-        latency_ms = int((time.time() - start_time) * 1000)
+        latency_ms = int((time.monotonic() - start_time) * 1000)
         record_agent_run(status="error", step_count=0, latency=latency_ms / 1000.0)
 
         logger.error(
@@ -729,7 +753,7 @@ async def chat_completion(request: ChatRequest, req: Request):
         return ChatResponse(
             request_id=request_id,
             session_id=session_id,
-            response=f"抱歉，处理您的请求时出现问题：{str(e)}",
+            response="抱歉，处理您的请求时遇到了问题，请稍后重试或联系管理员。",
             model_used="error",
             prompt_tokens=0,
             completion_tokens=0,
@@ -741,17 +765,14 @@ async def chat_completion(request: ChatRequest, req: Request):
 
 
 @router.post("/chat/resume")
-async def resume_chat(request: dict, req: Request):
+async def resume_chat(request: ResumeChatRequest, req: Request):
     """恢复暂停的对话（审批通过后）
 
     Args:
-        request: {"run_id": "...", "approval_status": "approved/rejected"}
+        request: ResumeChatRequest 包含 run_id 和 approval_status
     """
-    run_id = request.get("run_id")
-    approval_status = request.get("approval_status")
-
-    if not run_id or not approval_status:
-        return {"error": "缺少必要参数"}
+    run_id = request.run_id
+    approval_status = request.approval_status
 
     checkpoint_store = get_checkpoint_store()
 

@@ -53,6 +53,8 @@ LangGraph interrupt 机制：
 - current_step: 下一步类型
 """
 
+import time
+
 import structlog
 
 from app.graph.state import AgentState
@@ -85,9 +87,8 @@ async def approval_wait_node(state: AgentState) -> dict:
     Returns:
         更新状态字典
     """
-    import time
 
-    start_time = time.time()
+    start_time = time.monotonic()
     request_id = state["request_id"]
     approval_id = state.get("approval_id")
 
@@ -103,7 +104,7 @@ async def approval_wait_node(state: AgentState) -> dict:
 
     # 审批通过 - 继续执行工具
     if approval_status == "approved":
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
         logger.info(
             "node_completed",
             node="approval_wait",
@@ -120,7 +121,7 @@ async def approval_wait_node(state: AgentState) -> dict:
 
     # 审批拒绝 - 终止执行
     if approval_status == "rejected":
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
         logger.warning(
             "node_completed",
             node="approval_wait",
@@ -142,7 +143,7 @@ async def approval_wait_node(state: AgentState) -> dict:
     if not approval_id:
         approval_id = _generate_approval_id()
 
-    duration_ms = int((time.time() - start_time) * 1000)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
 
     logger.warning(
         "node_completed",
@@ -165,6 +166,7 @@ async def approval_wait_node(state: AgentState) -> dict:
 def _generate_approval_id() -> str:
     """生成审批 ID"""
     import uuid
+
     return f"approval_{uuid.uuid4().hex[:8]}"
 
 

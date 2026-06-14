@@ -72,6 +72,8 @@
 3. 安全与效率平衡：10000 是行业标准阈值参考值
 """
 
+import time
+
 import structlog
 
 from app.graph.state import AgentState
@@ -98,9 +100,8 @@ async def risk_check_node(state: AgentState) -> dict:
     Returns:
         更新状态字典
     """
-    import time
 
-    start_time = time.time()
+    start_time = time.monotonic()
     request_id = state["request_id"]
     tool_calls = state.get("tool_calls", [])
 
@@ -127,7 +128,7 @@ async def risk_check_node(state: AgentState) -> dict:
             decision="tool_call",
             reason="no_tools",
             risk_level="low",
-            duration_ms=int((time.time() - start_time) * 1000),
+            duration_ms=int((time.monotonic() - start_time) * 1000),
             request_id=request_id,
         )
         return {
@@ -168,7 +169,7 @@ async def risk_check_node(state: AgentState) -> dict:
         if assessment.get("requires_approval"):
             requires_approval = True
 
-    duration_ms = int((time.time() - start_time) * 1000)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
 
     # 根据风险等级决定下一步
     if requires_approval:

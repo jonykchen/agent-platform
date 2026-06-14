@@ -67,6 +67,7 @@
 """
 
 import json
+import time
 
 import structlog
 
@@ -121,9 +122,8 @@ async def tool_call_node(state: AgentState) -> dict:
     Returns:
         更新状态字典
     """
-    import time
 
-    start_time = time.time()
+    start_time = time.monotonic()
     request_id = state["request_id"]
     tenant_id = state.get("tenant_id", "unknown")
     tool_calls = state.get("tool_calls", [])
@@ -173,7 +173,7 @@ async def tool_call_node(state: AgentState) -> dict:
             request_id=request_id,
         )
 
-        tool_start = time.time()
+        tool_start = time.monotonic()
 
         try:
             # 执行单个工具
@@ -182,7 +182,7 @@ async def tool_call_node(state: AgentState) -> dict:
                 arguments=arguments,
                 state=state,
             )
-            tool_duration_ms = int((time.time() - tool_start) * 1000)
+            tool_duration_ms = int((time.monotonic() - tool_start) * 1000)
 
             # 记录执行结果
             result["duration_ms"] = tool_duration_ms
@@ -216,7 +216,7 @@ async def tool_call_node(state: AgentState) -> dict:
                     request_id=request_id,
                 )
 
-                duration_ms = int((time.time() - start_time) * 1000)
+                duration_ms = int((time.monotonic() - start_time) * 1000)
                 logger.info(
                     "node_completed",
                     node="tool_call",
@@ -235,7 +235,7 @@ async def tool_call_node(state: AgentState) -> dict:
 
             # 检查风控拒绝 - 安全策略阻止
             if result.get("status") == "rejected":
-                duration_ms = int((time.time() - start_time) * 1000)
+                duration_ms = int((time.monotonic() - start_time) * 1000)
                 logger.warning(
                     "tool_rejected",
                     tool_name=tool_name,
@@ -262,7 +262,7 @@ async def tool_call_node(state: AgentState) -> dict:
 
         except Exception as e:
             # 工具执行失败 - 记录错误继续尝试其他工具
-            tool_duration_ms = int((time.time() - tool_start) * 1000)
+            tool_duration_ms = int((time.monotonic() - tool_start) * 1000)
             record_tool_call(
                 tool_name=tool_name or "unknown",
                 tenant_id=tenant_id,
@@ -293,7 +293,7 @@ async def tool_call_node(state: AgentState) -> dict:
             )
 
     # 分析整体执行结果
-    duration_ms = int((time.time() - start_time) * 1000)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
     success_count = sum(1 for r in tool_results if r.get("status") == "success")
     failed_count = len(tool_results) - success_count
 

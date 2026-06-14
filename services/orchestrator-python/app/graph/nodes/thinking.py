@@ -68,6 +68,7 @@ Plan-and-Execute 更适合：数据分析、报告生成、多步骤自动化工
 """
 
 import json
+import time
 
 import structlog
 
@@ -122,9 +123,8 @@ async def thinking_node(state: AgentState) -> dict:
     Returns:
         更新状态字典
     """
-    import time
 
-    start_time = time.time()
+    start_time = time.monotonic()
     request_id = state["request_id"]
     step_count = state["step_count"]
     max_steps = state["max_steps"]
@@ -204,7 +204,7 @@ async def thinking_node(state: AgentState) -> dict:
             fallback=True,
         )
 
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
 
         # 记录模型调用指标（成功）：供 model_call_total / model_call_latency_seconds
         # 告警与看板使用。model/provider 优先取响应回传值，缺省回落到配置默认。
@@ -234,7 +234,7 @@ async def thinking_node(state: AgentState) -> dict:
         return result
 
     except Exception as e:
-        duration_ms = int((time.time() - start_time) * 1000)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
 
         # 记录模型调用指标（失败）：保证 model_call_total{status="error"} 有数据，
         # 否则错误率告警永远不会触发。
