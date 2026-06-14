@@ -188,7 +188,7 @@ class HealthChecker:
                     latency_ms=latency,
                 )
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             latency = (time.monotonic() - start) * 1000
             return ComponentHealth(
                 name="tool_bus",
@@ -291,6 +291,9 @@ class HealthChecker:
     async def check_readiness(self) -> tuple[bool, dict[str, Any]]:
         """检查就绪状态（用于 Kubernetes readiness probe）
 
+        生产环境额外检查：Mock 模式视为不可就绪，
+        防止因 proto 缺失或配置错误导致静默降级。
+
         Returns:
             (is_ready, details)
         """
@@ -298,15 +301,35 @@ class HealthChecker:
         redis_health = await self.check_redis()
         model_health = await self.check_model_gateway()
 
-        is_ready = (
-            redis_health.status != HealthStatus.UNHEALTHY
-            and model_health.status != HealthStatus.UNHEALTHY
-        )
+        is_ready = redis_health.status != HealthStatus.UNHEALTHY and model_health.status != HealthStatus.UNHEALTHY
 
         details = {
             "redis": redis_health.status.value,
             "model_gateway": model_health.status.value,
         }
+
+        # 生产/staging 环境：Mock 模式视为不可就绪
+        if config.environment in ("prod", "production", "staging"):
+            try:
+                from app.tools.clients.tool_bus_client import MOCK_MODE_ACTIVE
+
+                if MOCK_MODE_ACTIVE:
+                    is_ready = False
+                    details["tool_bus"] = "mock_mode_active_in_production"
+                    logger.error("ToolBus mock mode active in production, marking not ready")
+            except ImportError:
+                pass
+
+            try:
+                from app.tools.clients.model_gateway_client import get_model_gateway_client
+
+                client = get_model_gateway_client()
+                if isinstance(client, object) and hasattr(client, "is_mock") and client.is_mock:
+                    is_ready = False
+                    details["model_gateway"] = "mock_mode_active_in_production"
+                    logger.error("ModelGateway mock mode active in production, marking not ready")
+            except (ImportError, RuntimeError):
+                pass
 
         return is_ready, details
 

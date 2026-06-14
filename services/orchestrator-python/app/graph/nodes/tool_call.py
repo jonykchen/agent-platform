@@ -128,6 +128,13 @@ async def tool_call_node(state: AgentState) -> dict:
     tenant_id = state.get("tenant_id", "unknown")
     tool_calls = state.get("tool_calls", [])
 
+    # 检查取消标志
+    from app.graph.nodes.cancel_check import check_cancel_flag
+
+    cancel_result = await check_cancel_flag(state)
+    if cancel_result:
+        return cancel_result
+
     logger.info(
         "node_started",
         node="tool_call",

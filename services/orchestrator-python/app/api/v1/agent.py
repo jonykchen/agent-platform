@@ -49,15 +49,13 @@ from __future__ import annotations
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-
 import structlog
+from fastapi import APIRouter, HTTPException, Request
 
 from app.api.middleware.request_context import get_request_id, get_tenant_id, get_user_id
 from app.core.config import config
 from app.graph.builder import get_agent_graph
 from app.graph.state import create_initial_state
-from app.memory.session_store import get_session_store
 from app.infrastructure.redis_client import get_redis
 from app.schemas.agent import (
     AgentCancelResponse,
@@ -133,6 +131,7 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request)
         user_id=user_id,
         request_id=request_id,
         max_steps=config.max_agent_steps,
+        run_id=run_id,
     )
 
     # 添加上下文信息
@@ -226,21 +225,21 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request)
 
     # 异步模式：立即返回 run_id，后台执行
     else:
-        from fastapi import BackgroundTasks
-        import json
-
         # 将任务状态存储到 Redis
         redis_client = get_redis()
-        await redis_client.hset(f"run:{run_id}", mapping={
-            "status": "pending",
-            "agent_id": agent_id,
-            "tenant_id": tenant_id,
-            "user_id": user_id,
-            "session_id": session_id,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "request_id": request_id,
-            "task": request.task[:500],  # 截断长任务描述
-        })
+        await redis_client.hset(
+            f"run:{run_id}",
+            mapping={
+                "status": "pending",
+                "agent_id": agent_id,
+                "tenant_id": tenant_id,
+                "user_id": user_id,
+                "session_id": session_id,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "request_id": request_id,
+                "task": request.task[:500],  # 截断长任务描述
+            },
+        )
         await redis_client.expire(f"run:{run_id}", 86400)  # 24小时过期
 
         logger.info(
@@ -274,29 +273,36 @@ async def _execute_agent_background(
         graph_config: 图配置
         callback_url: 回调 URL
     """
-    import httpx
     from datetime import datetime
+
+    import httpx
 
     redis_client = get_redis()
 
     try:
         # 更新状态为 running
-        await redis_client.hset(f"run:{run_id}", mapping={
-            "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await redis_client.hset(
+            f"run:{run_id}",
+            mapping={
+                "status": "running",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
         # 执行 Agent
         graph = get_agent_graph()
         result = await graph.invoke(initial_state, config=graph_config)
 
         # 更新状态为 completed
-        await redis_client.hset(f"run:{run_id}", mapping={
-            "status": "completed",
-            "output": result.get("output", ""),
-            "step_count": str(result.get("step_count", 0)),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await redis_client.hset(
+            f"run:{run_id}",
+            mapping={
+                "status": "completed",
+                "output": result.get("output", ""),
+                "step_count": str(result.get("step_count", 0)),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
         logger.info(
             "agent_background_completed",
@@ -309,11 +315,14 @@ async def _execute_agent_background(
         if callback_url:
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    await client.post(callback_url, json={
-                        "run_id": run_id,
-                        "status": "completed",
-                        "output": result.get("output", ""),
-                    })
+                    await client.post(
+                        callback_url,
+                        json={
+                            "run_id": run_id,
+                            "status": "completed",
+                            "output": result.get("output", ""),
+                        },
+                    )
             except Exception as e:
                 logger.warning(
                     "callback_failed",
@@ -324,11 +333,14 @@ async def _execute_agent_background(
 
     except Exception as e:
         # 更新状态为 failed
-        await redis_client.hset(f"run:{run_id}", mapping={
-            "status": "failed",
-            "error": str(e)[:500],
-            "failed_at": datetime.now(timezone.utc).isoformat(),
-        })
+        await redis_client.hset(
+            f"run:{run_id}",
+            mapping={
+                "status": "failed",
+                "error": str(e)[:500],
+                "failed_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
         logger.error(
             "agent_background_failed",
@@ -341,11 +353,14 @@ async def _execute_agent_background(
         if callback_url:
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    await client.post(callback_url, json={
-                        "run_id": run_id,
-                        "status": "failed",
-                        "error": str(e),
-                    })
+                    await client.post(
+                        callback_url,
+                        json={
+                            "run_id": run_id,
+                            "status": "failed",
+                            "error": str(e),
+                        },
+                    )
             except Exception as callback_error:
                 logger.warning(
                     "callback_failed",
@@ -448,10 +463,35 @@ async def cancel_run(run_id: str, req: Request):
         request_id=request_id,
     )
 
-    # TODO: 实现取消逻辑
-    # 1. 在 Redis 中设置取消标志
-    # 2. Agent 在每个节点检查取消标志
-    # 3. 发现取消标志后优雅停止
+    # 验证运行任务存在
+    redis_client = get_redis()
+    run_data = await redis_client.hgetall(f"run:{run_id}")
+
+    if not run_data:
+        raise HTTPException(
+            status_code=404,
+            detail=f"运行任务 {run_id} 不存在或已过期",
+        )
+
+    current_status = run_data.get("status", "unknown")
+    # 已完成/已失败/已取消的任务无需再次取消
+    terminal_states = {"completed", "failed", "cancelled"}
+    if current_status in terminal_states:
+        return AgentCancelResponse(
+            run_id=run_id,
+            status=AgentRunStatus(current_status),
+            message=f"任务已处于 {current_status} 状态，无需取消",
+        )
+
+    # 在 Redis 中设置取消标志（TTL 24h 与运行任务一致）
+    await redis_client.set(f"run:{run_id}:cancel", "1", ex=86400)
+
+    logger.info(
+        "run_cancel_flag_set",
+        run_id=run_id,
+        request_id=request_id,
+        previous_status=current_status,
+    )
 
     return AgentCancelResponse(
         run_id=run_id,

@@ -12,13 +12,14 @@ import com.platform.gateway.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 认证服务
@@ -59,8 +60,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <h3>技术选型：状态管理</h3>
  * <ul>
  *   <li><b>无状态 JWT</b>：Access Token 无状态，支持水平扩展</li>
- *   <li><b>有状态 Refresh Token</b>：存储在内存 Map 中，支持主动撤销</li>
- *   <li><b>ConcurrentHashMap</b>：MVP 阶段使用内存存储，生产环境应替换为 Redis</li>
+ *   <li><b>有状态 Refresh Token</b>：存储在 Redis 中，支持主动撤销和多实例共享</li>
+ *   <li><b>Redis</b>：分布式存储，支持 TTL 自动过期，多 Gateway 实例共享 Token 状态</li>
  * </ul>
  *
  * <h3>安全策略（S-AGENT-06 合规）</h3>
@@ -103,6 +104,7 @@ public class AuthService {
     private final TenantUserRepository tenantUserRepository;
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
+    private final StringRedisTemplate redisTemplate;
 
     @Value("${auth.jwt.access-token-ttl-seconds:3600}")
     private int accessTokenTtlSeconds;
@@ -110,8 +112,8 @@ public class AuthService {
     @Value("${auth.jwt.refresh-token-ttl-seconds:604800}")
     private int refreshTokenTtlSeconds; // 7天
 
-    /** Token 存储用于登出和刷新 */
-    private final Map<String, String> refreshTokenStore = new ConcurrentHashMap<>();
+    /** Refresh Token Redis key 前缀 */
+    private static final String REFRESH_TOKEN_KEY_PREFIX = "refresh_token:";
 
     // MVP: 权限映射
     private static final Map<String, String[]> ROLE_PERMISSIONS = Map.of(
@@ -198,8 +200,13 @@ public class AuthService {
         String accessToken = jwtUtil.generateAccessToken(user.getUserId(), user.getUsername(), tenantId, roles);
         String refreshToken = jwtUtil.generateRefreshToken(user.getUserId(), user.getUsername());
 
-        // 存储 Refresh Token
-        refreshTokenStore.put(refreshToken, user.getUserId());
+        // 存储 Refresh Token 到 Redis（支持多实例共享，TTL 自动过期）
+        redisTemplate.opsForValue().set(
+            REFRESH_TOKEN_KEY_PREFIX + refreshToken,
+            user.getUserId(),
+            refreshTokenTtlSeconds,
+            TimeUnit.SECONDS
+        );
 
         // 更新登录信息
         userService.updateLoginInfo(tenantId, user.getUserId(), null); // IP 可从请求获取
@@ -277,8 +284,8 @@ public class AuthService {
             throw new BusinessException(ErrorCode.ERR_UNAUTHORIZED, "Invalid refresh token");
         }
 
-        // 验证 Refresh Token 是否在存储中
-        String userId = refreshTokenStore.get(refreshToken);
+        // 验证 Refresh Token 是否在 Redis 中
+        String userId = redisTemplate.opsForValue().get(REFRESH_TOKEN_KEY_PREFIX + refreshToken);
         if (userId == null) {
             throw new BusinessException(ErrorCode.ERR_UNAUTHORIZED, "Refresh token revoked or expired");
         }
@@ -296,7 +303,7 @@ public class AuthService {
         }
 
         // 使旧的 Refresh Token 失效
-        refreshTokenStore.remove(refreshToken);
+        redisTemplate.delete(REFRESH_TOKEN_KEY_PREFIX + refreshToken);
 
         // 获取用户角色
         String[] roles = new String[]{user.getRole()};
@@ -305,8 +312,13 @@ public class AuthService {
         String newAccessToken = jwtUtil.generateAccessToken(user.getUserId(), user.getUsername(), tenantId, roles);
         String newRefreshToken = jwtUtil.generateRefreshToken(user.getUserId(), user.getUsername());
 
-        // 存储新的 Refresh Token
-        refreshTokenStore.put(newRefreshToken, user.getUserId());
+        // 存储新的 Refresh Token 到 Redis
+        redisTemplate.opsForValue().set(
+            REFRESH_TOKEN_KEY_PREFIX + newRefreshToken,
+            user.getUserId(),
+            refreshTokenTtlSeconds,
+            TimeUnit.SECONDS
+        );
 
         return RefreshTokenResponse.builder()
             .tokens(RefreshTokenResponse.TokenInfo.builder()
@@ -339,9 +351,11 @@ public class AuthService {
      * @since 1.0.0
      */
     public void logout(String refreshToken) {
-        if (refreshToken != null && refreshTokenStore.containsKey(refreshToken)) {
-            refreshTokenStore.remove(refreshToken);
-            log.info("User logged out, refresh token revoked");
+        if (refreshToken != null) {
+            Boolean deleted = redisTemplate.delete(REFRESH_TOKEN_KEY_PREFIX + refreshToken);
+            if (Boolean.TRUE.equals(deleted)) {
+                log.info("User logged out, refresh token revoked");
+            }
         }
     }
 

@@ -130,6 +130,13 @@ async def thinking_node(state: AgentState) -> dict:
     max_steps = state["max_steps"]
     consecutive_errors = state.get("consecutive_errors", 0)
 
+    # 检查取消标志
+    from app.graph.nodes.cancel_check import check_cancel_flag
+
+    cancel_result = await check_cancel_flag(state)
+    if cancel_result:
+        return cancel_result
+
     logger.info(
         "node_started",
         node="thinking",

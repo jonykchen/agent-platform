@@ -211,6 +211,7 @@ def create_initial_state(
     user_id: str,
     request_id: str,
     max_steps: int = 10,
+    run_id: str | None = None,
 ) -> AgentState:
     """创建初始状态
 
@@ -227,6 +228,7 @@ def create_initial_state(
         user_id: 用户 ID（用于权限校验）
         request_id: 请求追踪 ID（全链路追踪）
         max_steps: 最大步骤数，防止无限循环（默认 10）
+        run_id: 运行 ID（用于取消标志检查，异步模式必需）
 
     Returns:
         AgentState: 初始化的状态字典
@@ -263,5 +265,5 @@ def create_initial_state(
         error_code=None,
         consecutive_errors=0,
         max_consecutive_errors=3,
-        metadata={},
+        metadata={"run_id": run_id} if run_id else {},
     )

@@ -194,6 +194,7 @@ logger = structlog.get_logger()
 # gRPC stub（延迟导入）
 _stub = None
 _channel = None
+MOCK_MODE_ACTIVE = False  # 生产环境健康检查用：标识是否处于 mock 模式
 
 
 async def get_stub():
@@ -206,10 +207,12 @@ async def get_stub():
     3. 支持运行时动态加载
 
     【错误处理】
-    - ImportError: Proto 文件不存在，返回 "mock" 标记
+    - ImportError: Proto 文件不存在
+      - 生产/staging 环境：直接 raise RuntimeError，禁止静默降级
+      - 其他环境：回退到 Mock 模式，设置 MOCK_MODE_ACTIVE 标志
     - 其他错误: 记录日志并抛出
     """
-    global _stub, _channel
+    global _stub, _channel, MOCK_MODE_ACTIVE
 
     if _stub is None:
         try:
@@ -228,10 +231,21 @@ async def get_stub():
                 ],
             )
             _stub = tool_bus_pb2_grpc.ToolBusServiceStub(_channel)
+            MOCK_MODE_ACTIVE = False
             logger.info("ToolBus gRPC client initialized", addr=config.tool_bus_grpc_addr)
         except ImportError:
+            if config.environment in ("prod", "production", "staging"):
+                logger.error(
+                    "gRPC proto files missing in production environment",
+                    environment=config.environment,
+                )
+                raise RuntimeError(
+                    "ToolBus gRPC proto files not found in production. "
+                    "Ensure proto files are properly generated and packaged."
+                )
             logger.warning("gRPC proto files not found, using mock client")
             _stub = "mock"
+            MOCK_MODE_ACTIVE = True
 
     return _stub
 
@@ -311,11 +325,12 @@ class ToolBusClient:
         - 应用关闭时优雅释放资源
         - 测试完成后清理连接
         """
-        global _channel
+        global _channel, _stub, MOCK_MODE_ACTIVE
         if _channel:
             await _channel.close()
             _channel = None
-            _stub = None
+        _stub = None
+        MOCK_MODE_ACTIVE = False
 
     @tool_bus_circuit
     @tool_retry_policy

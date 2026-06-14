@@ -261,16 +261,28 @@ class ModelGatewayClient:
         Args:
             base_url: Model Gateway 服务地址
                       - None: 从配置读取（config.model_gateway_url）
-                      - "mock": 启用 Mock 模式
+                      - "mock": 启用 Mock 模式（仅限非生产环境）
                       - 其他: 自定义地址
 
         【连接延迟初始化】
         客户端不会立即建立连接，而是在首次调用时懒加载。
         这样可以避免服务未启动时的连接错误。
         """
-        self.base_url = base_url or config.model_gateway_url
+        resolved_url = base_url or config.model_gateway_url
+        # 生产环境禁止 Mock 模式：防止静默降级返回伪造数据
+        if resolved_url == "mock" and config.environment in ("prod", "production", "staging"):
+            raise RuntimeError(
+                "ModelGateway mock mode is not allowed in production/staging environment. "
+                "Set MODEL_GATEWAY_URL to a real service endpoint."
+            )
+        self.base_url = resolved_url
         self._client: httpx.AsyncClient | None = None
         self._call_stats: dict[str, dict[str, Any]] = {}
+
+    @property
+    def is_mock(self) -> bool:
+        """是否处于 Mock 模式"""
+        return self.base_url == "mock"
 
     async def _get_client(self) -> httpx.AsyncClient:
         """获取或创建 HTTP 客户端（懒加载）
