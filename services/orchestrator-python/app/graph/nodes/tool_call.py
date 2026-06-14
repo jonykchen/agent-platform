@@ -430,6 +430,37 @@ async def _execute_tool(tool_name: str, arguments: dict, state: AgentState) -> d
     return await _mock_execute_tool(tool_name, arguments)
 
 
+def _get_tool_schema(tool_name: str) -> dict | None:
+    """获取工具的参数 Schema
+
+    从共享 mock_registry 获取 JSON Schema。
+
+    Args:
+        tool_name: 工具名称
+
+    Returns:
+        JSON Schema 字典，未找到返回 None
+    """
+    from app.tools.mock_registry import MOCK_TOOL_SCHEMAS
+
+    return MOCK_TOOL_SCHEMAS.get(tool_name)
+
+
+async def _mock_execute_tool(tool_name: str, arguments: dict) -> dict:
+    """Mock 工具执行 - 委托给共享 mock_registry
+
+    Args:
+        tool_name: 工具名称
+        arguments: 工具参数
+
+    Returns:
+        Mock 执行结果
+    """
+    from app.tools.mock_registry import execute_mock_tool
+
+    return await execute_mock_tool(tool_name, arguments)
+
+
 def _validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
     """校验工具参数
 
@@ -453,149 +484,3 @@ def _validate_tool_arguments(tool_name: str, arguments: dict) -> dict:
 
     result = validate_tool_arguments(tool_name, arguments, tool_schema)
     return result.to_dict()
-
-
-def _get_tool_schema(tool_name: str) -> dict | None:
-    """获取工具的参数 Schema
-
-    Args:
-        tool_name: 工具名称
-
-    Returns:
-        JSON Schema 字典，未找到返回 None
-    """
-    # 工具 Schema 定义（可从 ToolBus 动态获取或配置文件加载）
-    TOOL_SCHEMAS = {
-        "query_order_status": {
-            "type": "object",
-            "properties": {
-                "order_id": {
-                    "type": "string",
-                    "description": "订单编号",
-                    "pattern": r"^ORD-[\w-]+$",
-                },
-            },
-            "required": ["order_id"],
-        },
-        "get_user_info": {
-            "type": "object",
-            "properties": {
-                "user_id": {
-                    "type": "string",
-                    "description": "用户唯一标识",
-                    "minLength": 1,
-                    "maxLength": 64,
-                },
-            },
-            "required": ["user_id"],
-        },
-        "create_payment": {
-            "type": "object",
-            "properties": {
-                "amount": {
-                    "type": "number",
-                    "description": "支付金额（元）",
-                    "minimum": 0.01,
-                    "maximum": 1000000,
-                },
-                "user_id": {
-                    "type": "string",
-                    "description": "用户唯一标识",
-                },
-            },
-            "required": ["amount", "user_id"],
-        },
-    }
-
-    return TOOL_SCHEMAS.get(tool_name)
-
-
-async def _mock_execute_tool(tool_name: str, arguments: dict) -> dict:
-    """Mock 工具执行 - 开发测试用
-
-    模拟常见工具的执行结果：
-    - query_order_status: 查询订单状态
-    - get_user_info: 查询用户信息
-    - mock_write_operation: 写操作（模拟审批流程）
-
-    Args:
-        tool_name: 工具名称
-        arguments: 工具参数
-
-    Returns:
-        Mock 执行结果
-    """
-
-    import uuid
-
-    call_id = f"call_{uuid.uuid4().hex[:8]}"
-
-    # 查询订单状态 - 低风险查询
-    if tool_name == "query_order_status":
-        return {
-            "call_id": call_id,
-            "status": "success",
-            "result_json": json.dumps(
-                {
-                    "order_id": arguments.get("order_id", "unknown"),
-                    "status": "已发货",
-                    "tracking_number": "SF1234567890",
-                    "estimated_delivery": "2026-05-15",
-                }
-            ),
-            "risk_level": "low",
-        }
-
-    # 查询用户信息 - 低风险查询
-    if tool_name == "get_user_info":
-        return {
-            "call_id": call_id,
-            "status": "success",
-            "result_json": json.dumps(
-                {
-                    "user_id": arguments.get("user_id", "unknown"),
-                    "name": "张三",
-                    "level": "gold",
-                    "points": 12500,
-                }
-            ),
-            "risk_level": "low",
-        }
-
-    # 写操作 - 模拟审批流程
-    # 金额超过阈值时触发审批需求
-    if tool_name == "mock_write_operation":
-        amount = arguments.get("amount", 0)
-        threshold = 10000  # 审批阈值
-
-        if amount > threshold:
-            # 大额操作需要审批
-            approval_id = f"approval_{uuid.uuid4().hex[:8]}"
-            return {
-                "call_id": call_id,
-                "status": "pending_approval",
-                "approval_id": approval_id,
-                "approval_reason": f"金额 {amount} 超过阈值 {threshold}，需要审批",
-                "risk_level": "high",
-            }
-
-        # 小额操作直接执行
-        return {
-            "call_id": call_id,
-            "status": "success",
-            "result_json": json.dumps(
-                {
-                    "operation": arguments.get("operation"),
-                    "status": "mock_success",
-                }
-            ),
-            "risk_level": "medium",
-        }
-
-    # 未知的工具 - 返回失败
-    return {
-        "call_id": call_id,
-        "status": "failed",
-        "error_code": "ERR_AGENT_TOOL_NOT_FOUND",
-        "error_message": f"工具不存在: {tool_name}",
-    }

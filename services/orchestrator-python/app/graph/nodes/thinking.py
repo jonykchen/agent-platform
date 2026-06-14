@@ -396,11 +396,8 @@ async def _build_messages(state: AgentState) -> list[dict]:
 def _get_available_tools(state: AgentState) -> list[dict] | None:
     """获取可用工具定义
 
-    工具定义格式遵循 OpenAI Function Calling 规范：
-    - type: "function"
-    - function.name: 工具名称
-    - function.description: 工具描述
-    - function.parameters: JSON Schema 格式的参数定义
+    工具定义格式遵循 OpenAI Function Calling 规范。
+    从共享 mock_registry 获取定义，确保与 tool_call 节点一致。
 
     Args:
         state: Agent 状态（可从中获取租户特定的工具列表）
@@ -408,65 +405,9 @@ def _get_available_tools(state: AgentState) -> list[dict] | None:
     Returns:
         工具定义列表，或 None（无可用工具）
     """
-    # 从状态或配置获取工具列表
-    # 当前返回默认工具集
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": "query_order_status",
-                "description": "查询订单状态，包括物流信息和预计到达时间",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "order_id": {
-                            "type": "string",
-                            "description": "订单编号，格式如 ORD-20240101-XXXXX",
-                        },
-                    },
-                    "required": ["order_id"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "get_user_info",
-                "description": "获取用户基本信息，包括姓名、联系方式、账户余额",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "user_id": {
-                            "type": "string",
-                            "description": "用户唯一标识",
-                        },
-                    },
-                    "required": ["user_id"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "create_payment",
-                "description": "创建支付订单",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "amount": {
-                            "type": "number",
-                            "description": "支付金额（单位：元）",
-                        },
-                        "user_id": {
-                            "type": "string",
-                            "description": "用户唯一标识",
-                        },
-                    },
-                    "required": ["amount", "user_id"],
-                },
-            },
-        },
-    ]
+    from app.tools.mock_registry import MOCK_TOOL_DEFINITIONS
+
+    return MOCK_TOOL_DEFINITIONS
 
 
 def _parse_model_response(

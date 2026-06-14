@@ -644,94 +644,17 @@ class ToolBusClient:
     async def _mock_execute(self, tool_name: str, arguments: dict, context: dict) -> dict:
         """Mock 工具执行（用于开发测试）
 
-        【设计说明】
-        提供预设的工具响应，用于：
-        1. 本地开发无需启动 Java 服务
-        2. 单元测试隔离外部依赖
-        3. 快速原型验证
-
-        【扩展方式】
-        添加新的 Mock 工具：
-        ```python
-        if tool_name == "new_tool":
-            return {
-                "call_id": call_id,
-                "status": "success",
-                "result_json": json.dumps({...}),
-                "risk_level": "low",
-                "duration_ms": 100,
-            }
-        ```
+        委托给共享 mock_registry 执行，确保与 tool_call 节点一致。
         """
-        import uuid
+        from app.tools.mock_registry import execute_mock_tool
 
-        call_id = f"call_{uuid.uuid4().hex[:8]}"
-
-        if tool_name == "query_order_status":
-            return {
-                "call_id": call_id,
-                "status": "success",
-                "result_json": json.dumps(
-                    {
-                        "order_id": arguments.get("order_id", "unknown"),
-                        "status": "已发货",
-                        "tracking_number": "SF1234567890",
-                    }
-                ),
-                "risk_level": "low",
-                "duration_ms": 150,
-            }
-
-        if tool_name == "get_user_info":
-            return {
-                "call_id": call_id,
-                "status": "success",
-                "result_json": json.dumps(
-                    {
-                        "user_id": arguments.get("user_id", "unknown"),
-                        "name": "张三",
-                        "level": "gold",
-                    }
-                ),
-                "risk_level": "low",
-                "duration_ms": 100,
-            }
-
-        return {
-            "call_id": call_id,
-            "status": "failed",
-            "error_code": "ERR_AGENT_TOOL_NOT_FOUND",
-            "error_message": f"工具不存在: {tool_name}",
-        }
+        return await execute_mock_tool(tool_name, arguments)
 
     def _mock_list_tools(self) -> list[dict]:
-        """Mock 工具列表"""
-        return [
-            {
-                "name": "query_order_status",
-                "version": "1.0",
-                "category": "query",
-                "description": "查询订单状态",
-                "risk_level": "low",
-                "requires_approval": False,
-            },
-            {
-                "name": "get_user_info",
-                "version": "1.0",
-                "category": "query",
-                "description": "获取用户信息",
-                "risk_level": "low",
-                "requires_approval": False,
-            },
-            {
-                "name": "mock_write_operation",
-                "version": "1.0",
-                "category": "write",
-                "description": "模拟写操作",
-                "risk_level": "high",
-                "requires_approval": True,
-            },
-        ]
+        """Mock 工具列表（委托给共享 mock_registry）"""
+        from app.tools.mock_registry import MOCK_TOOL_LIST
+
+        return MOCK_TOOL_LIST
 
     def _update_stats(self, tool_name: str, success: bool, duration: float = 0.0):
         """更新调用统计

@@ -105,7 +105,6 @@ Chat API 是用户与 Agent 系统的主要交互点：
 import asyncio
 import json
 import time
-import uuid
 
 import structlog
 from fastapi import APIRouter, Request
@@ -113,6 +112,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.middleware.request_context import get_request_id, get_tenant_id, get_user_id
+from app.api.utils import get_or_create_session_id
 from app.core.config import config
 from app.core.exceptions import TimeoutError as PlatformTimeoutError
 from app.core.metrics import record_agent_run
@@ -160,14 +160,6 @@ class ResumeChatRequest(BaseModel):
 
     run_id: str = Field(..., min_length=1, description="运行 ID")
     approval_status: str = Field(..., pattern="^(approved|rejected)$", description="审批状态")
-
-
-def get_or_create_session_id(session_id: str | None, tenant_id: str, user_id: str) -> str:
-    """获取或创建会话 ID"""
-    if session_id:
-        return session_id
-    # 生成新会话 ID
-    return f"sess_{uuid.uuid4().hex[:16]}_{tenant_id}"
 
 
 # SSE 流式分块大小（字符数）

@@ -395,15 +395,18 @@ class LongTermMemoryStore:
         """
         import httpx
 
+        # 复用连接池：避免每次调用创建/销毁 HTTP 客户端
+        if self._embedding_client is None:
+            self._embedding_client = httpx.AsyncClient(timeout=10.0)
+
         embedding_url = self._embedding_service_url.rstrip("/")
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    f"{embedding_url}/embeddings",
-                    json={"input": text, "model": self._embedding_model},
-                )
-                response.raise_for_status()
-                data = response.json()
+            response = await self._embedding_client.post(
+                f"{embedding_url}/embeddings",
+                json={"input": text, "model": self._embedding_model},
+            )
+            response.raise_for_status()
+            data = response.json()
         except httpx.HTTPError as e:
             logger.error("embedding_request_failed", error=str(e), url=embedding_url)
             raise RuntimeError(f"embedding 服务请求失败: {e}") from e
@@ -475,6 +478,20 @@ class LongTermMemoryStore:
                         results.append(entry)
 
         return results[:top_k]
+
+    async def close(self) -> None:
+        """关闭资源连接
+
+        释放 embedding HTTP 客户端和数据库连接池。
+        在应用关闭时调用（由 GracefulShutdown 管理）。
+        """
+        if self._embedding_client is not None:
+            await self._embedding_client.aclose()
+            self._embedding_client = None
+
+        if self._pool is not None:
+            await self._pool.dispose()
+            self._pool = None
 
 
 # 全局实例

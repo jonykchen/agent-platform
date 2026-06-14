@@ -53,6 +53,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Request
 
 from app.api.middleware.request_context import get_request_id, get_tenant_id, get_user_id
+from app.api.utils import get_or_create_session_id
 from app.core.config import config
 from app.graph.builder import get_agent_graph
 from app.graph.state import create_initial_state
@@ -69,13 +70,6 @@ from app.schemas.agent import (
 
 logger = structlog.get_logger()
 router = APIRouter()
-
-
-def get_or_create_session_id(session_id: str | None, tenant_id: str, user_id: str) -> str:
-    """获取或创建会话 ID"""
-    if session_id:
-        return session_id
-    return f"sess_{uuid.uuid4().hex[:16]}_{tenant_id}"
 
 
 @router.post("/agents/{agent_id}/runs", response_model=AgentRunResponse)
