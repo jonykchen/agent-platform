@@ -37,8 +37,11 @@ class TracingMiddleware(BaseHTTPMiddleware):
             },
         ) as span:
             # 注入 trace_id 到 context
-            trace_id = format(span.context.trace_id, "032x")
-            span_id = format(span.context.span_id, "016x")
+            # NOTE: Use get_span_context() instead of span.context —
+            # NonRecordingSpan (used when OTel is not initialized) lacks .context
+            ctx = span.get_span_context()
+            trace_id = format(ctx.trace_id, "032x")
+            span_id = format(ctx.span_id, "016x")
 
             # 设置到请求上下文
             _trace_id.set(trace_id)

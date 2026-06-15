@@ -139,8 +139,8 @@ public class SecurityConfig {
                         .requestMatchers("/health", "/ready", "/actuator/**").permitAll()
                         // 认证端点公开
                         .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh").permitAll()
-                        // 内部管理接口 - 开发环境允许访问
-                        .requestMatchers("/api/v1/internal/**").permitAll()
+                        // 内部管理接口 - 需要 internal:access 权限（admin 角色自动获得）
+                        .requestMatchers("/api/v1/internal/**").hasAuthority("internal:access")
                         // API 端点需要认证
                         .requestMatchers("/api/**").authenticated()
                         // 其他请求

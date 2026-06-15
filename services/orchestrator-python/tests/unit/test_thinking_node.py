@@ -1,11 +1,12 @@
 """测试 Thinking 节点 - 模型推理调用"""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
+import pytest
+
+from app.core.exceptions import AllProvidersDownError, ModelTimeoutError
 from app.graph.nodes.thinking import thinking_node
 from app.graph.state import create_initial_state
-from app.core.exceptions import ModelTimeoutError, AllProvidersDownError
 
 
 @pytest.fixture
@@ -26,21 +27,25 @@ def mock_model_response():
     """创建 Mock 模型响应"""
     return {
         "id": "chat-001",
-        "choices": [{
-            "message": {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "id": "call_001",
-                    "type": "function",
-                    "function": {
-                        "name": "query_order_status",
-                        "arguments": '{"order_id": "ORD-12345"}',
-                    },
-                }],
-            },
-            "finish_reason": "tool_calls",
-        }],
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_001",
+                            "type": "function",
+                            "function": {
+                                "name": "query_order_status",
+                                "arguments": '{"order_id": "ORD-12345"}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
         "usage": {
             "prompt_tokens": 50,
             "completion_tokens": 20,
@@ -59,7 +64,7 @@ class TestThinkingNodeWithModel:
         mock_client.chat_completion = AsyncMock(return_value=mock_model_response)
 
         with patch(
-            "app.graph.nodes.thinking.get_model_gateway_client",
+            "app.tools.clients.model_gateway_client.get_model_gateway_client",
             return_value=mock_client,
         ):
             result = await thinking_node(mock_state)
@@ -74,13 +79,15 @@ class TestThinkingNodeWithModel:
         """测试模型返回直接回答"""
         mock_response = {
             "id": "chat-002",
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "订单 ORD-12345 已发货，预计明天到达。",
-                },
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "订单 ORD-12345 已发货，预计明天到达。",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 30, "completion_tokens": 15, "total_tokens": 45},
         }
 
@@ -88,7 +95,7 @@ class TestThinkingNodeWithModel:
         mock_client.chat_completion = AsyncMock(return_value=mock_response)
 
         with patch(
-            "app.graph.nodes.thinking.get_model_gateway_client",
+            "app.tools.clients.model_gateway_client.get_model_gateway_client",
             return_value=mock_client,
         ):
             result = await thinking_node(mock_state)
@@ -111,12 +118,10 @@ class TestThinkingNodeWithModel:
     async def test_thinking_model_timeout(self, mock_state):
         """测试模型调用超时"""
         mock_client = AsyncMock()
-        mock_client.chat_completion = AsyncMock(
-            side_effect=ModelTimeoutError(timeout_s=30)
-        )
+        mock_client.chat_completion = AsyncMock(side_effect=ModelTimeoutError(timeout_s=30))
 
         with patch(
-            "app.graph.nodes.thinking.get_model_gateway_client",
+            "app.tools.clients.model_gateway_client.get_model_gateway_client",
             return_value=mock_client,
         ):
             result = await thinking_node(mock_state)
@@ -128,12 +133,10 @@ class TestThinkingNodeWithModel:
     async def test_thinking_all_providers_down(self, mock_state):
         """测试所有提供商不可用"""
         mock_client = AsyncMock()
-        mock_client.chat_completion = AsyncMock(
-            side_effect=AllProvidersDownError()
-        )
+        mock_client.chat_completion = AsyncMock(side_effect=AllProvidersDownError())
 
         with patch(
-            "app.graph.nodes.thinking.get_model_gateway_client",
+            "app.tools.clients.model_gateway_client.get_model_gateway_client",
             return_value=mock_client,
         ):
             result = await thinking_node(mock_state)
@@ -144,22 +147,26 @@ class TestThinkingNodeWithModel:
     @pytest.mark.asyncio
     async def test_thinking_with_tool_results(self, mock_state):
         """测试处理工具返回结果"""
-        mock_state["tool_results"] = [{
-            "call_id": "call_001",
-            "status": "success",
-            "result_json": '{"status": "已发货", "eta": "2024-01-15"}',
-        }]
+        mock_state["tool_results"] = [
+            {
+                "call_id": "call_001",
+                "status": "success",
+                "result_json": '{"status": "已发货", "eta": "2024-01-15"}',
+            }
+        ]
         mock_state["step_count"] = 1
 
         mock_response = {
             "id": "chat-003",
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "根据查询结果，您的订单 ORD-12345 已发货，预计 2024-01-15 到达。",
-                },
-                "finish_reason": "stop",
-            }],
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "根据查询结果，您的订单 ORD-12345 已发货，预计 2024-01-15 到达。",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130},
         }
 
@@ -167,7 +174,7 @@ class TestThinkingNodeWithModel:
         mock_client.chat_completion = AsyncMock(return_value=mock_response)
 
         with patch(
-            "app.graph.nodes.thinking.get_model_gateway_client",
+            "app.tools.clients.model_gateway_client.get_model_gateway_client",
             return_value=mock_client,
         ):
             result = await thinking_node(mock_state)
@@ -178,17 +185,21 @@ class TestThinkingNodeWithModel:
     async def test_thinking_builds_correct_messages(self, mock_state):
         """测试构建正确的消息结构"""
         mock_client = AsyncMock()
-        mock_client.chat_completion = AsyncMock(return_value={
-            "id": "chat-004",
-            "choices": [{
-                "message": {"role": "assistant", "content": "测试回答"},
-                "finish_reason": "stop",
-            }],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        })
+        mock_client.chat_completion = AsyncMock(
+            return_value={
+                "id": "chat-004",
+                "choices": [
+                    {
+                        "message": {"role": "assistant", "content": "测试回答"},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+        )
 
         with patch(
-            "app.graph.nodes.thinking.get_model_gateway_client",
+            "app.tools.clients.model_gateway_client.get_model_gateway_client",
             return_value=mock_client,
         ):
             await thinking_node(mock_state)
@@ -197,5 +208,8 @@ class TestThinkingNodeWithModel:
             messages = call_args[1]["messages"]
 
             assert len(messages) >= 1
-            assert messages[0]["role"] == "user"
-            assert "ORD-12345" in messages[0]["content"]
+            # First message is system prompt, user message follows
+            assert messages[0]["role"] == "system"
+            user_msgs = [m for m in messages if m["role"] == "user"]
+            assert len(user_msgs) >= 1
+            assert "ORD-12345" in user_msgs[0]["content"]

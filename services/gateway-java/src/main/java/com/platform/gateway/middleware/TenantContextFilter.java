@@ -23,6 +23,10 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
+import com.platform.gateway.security.UserPrincipal;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+
 /**
  * 租户上下文过滤器
  * 从 Header 提取 tenant_id, user_id 和 request_id
@@ -137,6 +141,19 @@ public class TenantContextFilter implements Filter {
         String tenantId = httpRequest.getHeader(TENANT_ID_HEADER);
         String userId = httpRequest.getHeader(USER_ID_HEADER);
 
+        // 安全：如果 JWT 认证已完成（Spring Security Filter Chain 先于本 Filter 执行），
+        // 优先使用 JWT 中的 tenantId，防止客户端伪造 X-Tenant-ID Header 绕过租户隔离
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof UserPrincipal principal) {
+            String jwtTenantId = principal.getTenantId();
+            String jwtUserId = principal.getUserId();
+            if (jwtTenantId != null && !jwtTenantId.isBlank()) {
+                tenantId = jwtTenantId;
+                userId = jwtUserId;
+                log.debug("Using JWT-verified tenantId={}, userId={}", tenantId, userId);
+            }
+        }
+
         // 开发环境：允许使用默认值
         if (isDevBypassEnabled()) {
             if (tenantId == null || tenantId.isBlank()) {
@@ -179,9 +196,10 @@ public class TenantContextFilter implements Filter {
      * 判断是否启用开发模式绕过
      */
     private boolean isDevBypassEnabled() {
+        // 白名单策略：仅允许 local/development profile 启用 dev bypass
+        // 其他环境（staging/test/production）一律不允许
         return devBypassEnabled &&
-               !"prod".equals(activeProfile) &&
-               !"production".equals(activeProfile);
+               ("local".equals(activeProfile) || "development".equals(activeProfile));
     }
 
     /**

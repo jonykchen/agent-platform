@@ -1,8 +1,8 @@
 """测试数据库连接池和 gRPC 客户端"""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import asyncio
+
+import pytest
 
 
 class TestDatabasePool:
@@ -28,10 +28,10 @@ class TestDatabasePool:
         mock_pool = MagicMock()
 
         with patch("asyncpg.create_pool", AsyncMock(return_value=mock_pool)) as mock_create:
-            from app.infrastructure.database import init_database_pool, _pool
-
             # 清除全局池
             import app.infrastructure.database as db_module
+            from app.infrastructure.database import init_database_pool
+
             db_module._pool = None
 
             await init_database_pool()
@@ -43,11 +43,13 @@ class TestDatabasePool:
     @pytest.mark.asyncio
     async def test_close_database_pool(self):
         """测试关闭连接池"""
-        mock_pool = AsyncMock()
+        mock_pool = MagicMock()
         mock_pool.close = AsyncMock()
         mock_pool.get_size = MagicMock(return_value=10)
+        mock_pool.get_idle_size = MagicMock(return_value=8)
 
         import app.infrastructure.database as db_module
+
         db_module._pool = mock_pool
 
         from app.infrastructure.database import close_database_pool
@@ -62,12 +64,15 @@ class TestDatabasePool:
         """测试获取连接上下文"""
         mock_conn = AsyncMock()
         mock_pool = MagicMock()
-        mock_pool.acquire = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_conn),
-            __aexit__=AsyncMock(),
-        ))
+        mock_pool.acquire = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_conn),
+                __aexit__=AsyncMock(),
+            )
+        )
 
         import app.infrastructure.database as db_module
+
         db_module._pool = mock_pool
 
         from app.infrastructure.database import get_connection
@@ -83,12 +88,15 @@ class TestDatabasePool:
         mock_conn.fetchrow = AsyncMock(return_value=mock_record)
 
         mock_pool = MagicMock()
-        mock_pool.acquire = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_conn),
-            __aexit__=AsyncMock(),
-        ))
+        mock_pool.acquire = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_conn),
+                __aexit__=AsyncMock(),
+            )
+        )
 
         import app.infrastructure.database as db_module
+
         db_module._pool = mock_pool
 
         from app.infrastructure.database import fetch_one
@@ -104,12 +112,15 @@ class TestDatabasePool:
         mock_conn.executemany = AsyncMock()
 
         mock_pool = MagicMock()
-        mock_pool.acquire = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_conn),
-            __aexit__=AsyncMock(),
-        ))
+        mock_pool.acquire = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_conn),
+                __aexit__=AsyncMock(),
+            )
+        )
 
         import app.infrastructure.database as db_module
+
         db_module._pool = mock_pool
 
         from app.infrastructure.database import execute_many
@@ -128,12 +139,15 @@ class TestDatabasePool:
         mock_pool = MagicMock()
         mock_pool.get_size = MagicMock(return_value=20)
         mock_pool.get_idle_size = MagicMock(return_value=15)
-        mock_pool.acquire = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_conn),
-            __aexit__=AsyncMock(),
-        ))
+        mock_pool.acquire = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_conn),
+                __aexit__=AsyncMock(),
+            )
+        )
 
         import app.infrastructure.database as db_module
+
         db_module._pool = mock_pool
 
         from app.infrastructure.database import check_database_health
@@ -147,6 +161,7 @@ class TestDatabasePool:
     async def test_check_health_unhealthy(self):
         """测试健康检查 - 不健康"""
         import app.infrastructure.database as db_module
+
         db_module._pool = None
 
         from app.infrastructure.database import check_database_health
@@ -167,6 +182,7 @@ class TestGrpcClient:
 
         with patch("grpc.aio.insecure_channel", MagicMock(return_value=mock_channel)):
             import app.infrastructure.grpc_client as grpc_module
+
             grpc_module._channel = None
 
             from app.infrastructure.grpc_client import init_grpc_client
@@ -182,6 +198,7 @@ class TestGrpcClient:
         mock_channel.close = AsyncMock()
 
         import app.infrastructure.grpc_client as grpc_module
+
         grpc_module._channel = mock_channel
         grpc_module._stub_cache = {"test_stub": MagicMock()}
 
@@ -201,6 +218,7 @@ class TestGrpcClient:
         mock_stub_class.return_value = mock_stub_instance
 
         import app.infrastructure.grpc_client as grpc_module
+
         grpc_module._channel = mock_channel
         grpc_module._stub_cache = {}
 
@@ -218,12 +236,13 @@ class TestGrpcClient:
     @pytest.mark.asyncio
     async def test_check_grpc_health_healthy(self):
         """测试 gRPC 健康检查 - 健康"""
+        import grpc
+
         mock_channel = MagicMock()
-        mock_channel.get_state = MagicMock(
-            return_value=MagicMock(name="READY", value=2)
-        )
+        mock_channel.get_state = MagicMock(return_value=grpc.ChannelConnectivity.READY)
 
         import app.infrastructure.grpc_client as grpc_module
+
         grpc_module._channel = mock_channel
 
         from app.infrastructure.grpc_client import check_grpc_health
@@ -236,6 +255,7 @@ class TestGrpcClient:
     async def test_check_grpc_health_unhealthy(self):
         """测试 gRPC 健康检查 - 不健康"""
         import app.infrastructure.grpc_client as grpc_module
+
         grpc_module._channel = None
 
         from app.infrastructure.grpc_client import check_grpc_health

@@ -1,6 +1,6 @@
 """测试 Prometheus Metrics"""
 
-import pytest
+from unittest.mock import MagicMock
 
 
 class TestMetricsDefinitions:
@@ -10,8 +10,8 @@ class TestMetricsDefinitions:
         """测试请求指标定义"""
         from app.core.metrics import (
             REQUEST_COUNT,
-            REQUEST_LATENCY,
             REQUEST_IN_PROGRESS,
+            REQUEST_LATENCY,
         )
 
         assert REQUEST_COUNT is not None
@@ -22,8 +22,8 @@ class TestMetricsDefinitions:
         """测试模型指标定义"""
         from app.core.metrics import (
             MODEL_CALL_COUNT,
-            MODEL_CALL_LATENCY,
             MODEL_CALL_IN_PROGRESS,
+            MODEL_CALL_LATENCY,
         )
 
         assert MODEL_CALL_COUNT is not None
@@ -34,8 +34,8 @@ class TestMetricsDefinitions:
         """测试工具指标定义"""
         from app.core.metrics import (
             TOOL_CALL_COUNT,
-            TOOL_CALL_LATENCY,
             TOOL_CALL_IN_PROGRESS,
+            TOOL_CALL_LATENCY,
         )
 
         assert TOOL_CALL_COUNT is not None
@@ -45,9 +45,9 @@ class TestMetricsDefinitions:
     def test_circuit_breaker_metrics_defined(self):
         """测试熔断器指标定义"""
         from app.core.metrics import (
-            CIRCUIT_BREAKER_STATE,
             CIRCUIT_BREAKER_FAILURES,
             CIRCUIT_BREAKER_OPENS,
+            CIRCUIT_BREAKER_STATE,
         )
 
         assert CIRCUIT_BREAKER_STATE is not None
@@ -70,8 +70,8 @@ class TestMetricsDefinitions:
         """测试 Agent 指标定义"""
         from app.core.metrics import (
             AGENT_RUN_COUNT,
-            AGENT_STEP_COUNT,
             AGENT_RUN_LATENCY,
+            AGENT_STEP_COUNT,
         )
 
         assert AGENT_RUN_COUNT is not None
@@ -84,7 +84,7 @@ class TestMetricFunctions:
 
     def test_record_request(self):
         """测试记录请求"""
-        from app.core.metrics import record_request, REQUEST_COUNT
+        from app.core.metrics import record_request
 
         # 记录请求
         record_request("GET", "/health", 200, 0.05)

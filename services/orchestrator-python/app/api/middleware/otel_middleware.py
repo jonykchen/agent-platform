@@ -37,7 +37,7 @@ from __future__ import annotations
 import typing
 
 from opentelemetry import trace
-from opentelemetry.propagate import extract
+from opentelemetry.propagate import extract, inject
 from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import Span, Status, StatusCode
 

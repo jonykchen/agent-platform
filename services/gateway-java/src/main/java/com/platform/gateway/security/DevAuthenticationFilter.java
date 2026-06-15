@@ -120,12 +120,10 @@ public class DevAuthenticationFilter extends OncePerRequestFilter {
      * 判断是否启用开发模式绕过
      */
     private boolean isDevBypassEnabled() {
-        // 必须同时满足：
-        // 1. 配置启用
-        // 2. 不是生产环境
+        // 白名单策略：仅允许 local/development profile 启用 dev bypass
+        // 其他环境（staging/test/production）一律不允许
         return devBypassEnabled &&
-               !"prod".equals(activeProfile) &&
-               !"production".equals(activeProfile);
+               ("local".equals(activeProfile) || "development".equals(activeProfile));
     }
 
     /**

@@ -28,6 +28,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.slf4j.MDC;
 
 /**
  * 对话控制器
@@ -153,7 +156,30 @@ public class ChatController {
         // 创建 SSE Emitter（超时 5 分钟）
         SseEmitter emitter = new SseEmitter(300000L);
 
+        // SSE 生命周期回调：防止客户端断连后 gRPC stream 继续运行造成资源泄露
+        AtomicReference<Runnable> streamCancelRef = new AtomicReference<>(() -> {});
+
+        emitter.onTimeout(() -> {
+            log.warn("SSE emitter timeout: requestId={}", requestId);
+            streamCancelRef.get().run();
+        });
+        emitter.onError(ex -> {
+            log.warn("SSE emitter error: requestId={}, error={}", requestId, ex.getMessage());
+            streamCancelRef.get().run();
+        });
+        emitter.onCompletion(() -> {
+            log.debug("SSE emitter completed: requestId={}", requestId);
+            streamCancelRef.get().run();
+        });
+
+        // 传播 MDC 上下文到异步线程（确保 tenant_id/user_id/request_id 在日志中可追踪）
+        Map<String, String> mdcContext = MDC.getCopyOfContextMap();
+
         executor.execute(() -> {
+            if (mdcContext != null) {
+                MDC.setContextMap(mdcContext);
+            }
+            try {
             try {
                 // 快速路径判断：简单问答直接透传，不经过完整 Agent 编排（单块下发）
                 if (fastPathService.isFastPath(request)) {
@@ -234,6 +260,9 @@ public class ChatController {
                             ))));
                     emitter.completeWithError(e);
                 } catch (IOException ignored) {}
+            }
+            } finally {
+                MDC.clear();
             }
         });
 

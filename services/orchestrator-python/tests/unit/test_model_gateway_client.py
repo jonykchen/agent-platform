@@ -1,11 +1,12 @@
 """测试 ModelGateway HTTP 客户端"""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import httpx
 
+import httpx
+import pytest
+
+from app.core.exceptions import AllProvidersDownError, ModelTimeoutError
 from app.tools.clients.model_gateway_client import ModelGatewayClient
-from app.core.exceptions import ModelTimeoutError, AllProvidersDownError
 
 
 @pytest.fixture
@@ -18,21 +19,25 @@ def client():
 def mock_response():
     """创建 Mock 响应"""
     response = MagicMock()
-    response.json = MagicMock(return_value={
-        "id": "chat-001",
-        "choices": [{
-            "message": {
-                "role": "assistant",
-                "content": "你好！有什么可以帮助你的？",
+    response.json = MagicMock(
+        return_value={
+            "id": "chat-001",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "你好！有什么可以帮助你的？",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 20,
+                "total_tokens": 30,
             },
-            "finish_reason": "stop",
-        }],
-        "usage": {
-            "prompt_tokens": 10,
-            "completion_tokens": 20,
-            "total_tokens": 30,
-        },
-    })
+        }
+    )
     response.raise_for_status = MagicMock()
     return response
 
@@ -90,9 +95,7 @@ class TestModelGatewayClient:
     async def test_chat_completion_timeout(self, client):
         """测试对话补全超时"""
         mock_httpx_client = AsyncMock()
-        mock_httpx_client.post = AsyncMock(
-            side_effect=httpx.TimeoutException("Timeout")
-        )
+        mock_httpx_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
 
         with patch.object(client, "_get_client", return_value=mock_httpx_client):
             with pytest.raises(ModelTimeoutError):
@@ -124,12 +127,14 @@ class TestModelGatewayClient:
     async def test_list_models(self, client):
         """测试获取模型列表"""
         mock_response = MagicMock()
-        mock_response.json = MagicMock(return_value={
-            "data": [
-                {"id": "qwen-max", "provider": "qwen"},
-                {"id": "qwen-plus", "provider": "qwen"},
-            ],
-        })
+        mock_response.json = MagicMock(
+            return_value={
+                "data": [
+                    {"id": "qwen-max", "provider": "qwen"},
+                    {"id": "qwen-plus", "provider": "qwen"},
+                ],
+            }
+        )
         mock_response.raise_for_status = MagicMock()
         mock_httpx_client = AsyncMock()
         mock_httpx_client.get = AsyncMock(return_value=mock_response)
@@ -142,14 +147,18 @@ class TestModelGatewayClient:
 
     @pytest.mark.asyncio
     async def test_list_models_error(self, client):
-        """测试获取模型列表失败"""
+        """测试获取模型列表失败 - 降级返回默认模型"""
         mock_httpx_client = AsyncMock()
         mock_httpx_client.get = AsyncMock(side_effect=Exception("Connection error"))
 
         with patch.object(client, "_get_client", return_value=mock_httpx_client):
-            models = await client.list_models()
+            # use_cache=True (默认) 返回 DEFAULT_MODELS 降级列表
+            models = await client.list_models(use_cache=True)
+            assert len(models) > 0  # 降级返回默认模型
 
-            assert models == []
+            # use_cache=False 返回空列表
+            models_no_cache = await client.list_models(use_cache=False)
+            assert models_no_cache == []
 
     @pytest.mark.asyncio
     async def test_chat_with_tools(self, client, mock_response):

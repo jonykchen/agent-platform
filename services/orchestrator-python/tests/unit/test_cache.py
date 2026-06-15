@@ -1,11 +1,12 @@
 """测试双层缓存"""
 
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.cache import (
-    DualLayerCache,
     CacheManager,
+    DualLayerCache,
     get_cache_manager,
     init_cache_manager,
 )
@@ -63,9 +64,7 @@ class TestDualLayerCache:
         import json
 
         # L1 没有，L2 有
-        mock_redis.get = AsyncMock(
-            return_value=json.dumps({"data": "from_redis"})
-        )
+        mock_redis.get = AsyncMock(return_value=json.dumps({"data": "from_redis"}))
 
         result = await cache.get("test_key")
 
@@ -154,7 +153,7 @@ class TestDualLayerCache:
 
         assert stats["hit_count"] == 10
         assert stats["miss_count"] == 5
-        assert stats["hit_rate"] == 10 / 15
+        assert abs(stats["hit_rate"] - 10 / 15) < 0.001
         assert stats["name"] == "test"
 
     def test_clear(self, cache):

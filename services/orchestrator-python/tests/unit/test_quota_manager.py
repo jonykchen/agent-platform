@@ -7,6 +7,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from redis.asyncio.connection import RedisError
 
 from app.core.quota_manager import TenantQuotaManager
 
@@ -49,7 +50,6 @@ class TestCheckQuotaSuccess:
     @pytest.mark.asyncio
     async def test_should_allow_when_quota_sufficient(self, manager, mock_redis, mock_script):
         """配额充足时应返回 allowed=True"""
-        # 模拟 Lua 脚本返回剩余 500000
         mock_script.return_value = 500000
         mock_redis.register_script = MagicMock(return_value=mock_script)
 
@@ -61,7 +61,6 @@ class TestCheckQuotaSuccess:
     @pytest.mark.asyncio
     async def test_should_deduct_tokens_from_quota(self, manager, mock_redis, mock_script):
         """扣减后应返回正确的剩余配额"""
-        # 返回剩余 999000（1_000_000 - 1_000）
         mock_script.return_value = 999000
         mock_redis.register_script = MagicMock(return_value=mock_script)
 
@@ -79,7 +78,9 @@ class TestCheckQuotaSuccess:
         # 验证 Lua 脚本被调用时的 keys 参数
         call_args = mock_script.call_args
         assert call_args is not None
-        keys = call_args.kwargs.get("keys") or call_args[1].get("keys") or call_args[0][0] if call_args[0] else None
+        keys = call_args.kwargs.get("keys") or call_args[1].get("keys")
+        if not keys and call_args[0]:
+            keys = call_args[0][0]
         # key 应为 quota:tenant:{tenant_id}:daily
         if keys:
             assert "tenant_001" in keys[0]
@@ -98,7 +99,6 @@ class TestCheckQuotaNotSet:
     @pytest.mark.asyncio
     async def test_should_initialize_default_quota_when_key_not_set(self, manager, mock_redis, mock_script):
         """配额键不存在时应初始化为默认值 1_000_000"""
-        # 第一次返回 -2（未设置），第二次返回扣减后的值
         call_count = 0
 
         async def script_side_effect(**kwargs):
@@ -151,7 +151,6 @@ class TestCheckQuotaExceeded:
     @pytest.mark.asyncio
     async def test_should_reject_when_quota_insufficient(self, manager, mock_redis, mock_script):
         """配额不足时应返回 allowed=False"""
-        # Lua 脚本返回 -1 表示配额不足
         mock_script.return_value = -1
         mock_redis.register_script = MagicMock(return_value=mock_script)
 
@@ -177,12 +176,16 @@ class TestCheckQuotaExceeded:
 
 
 class TestRedisDegradation:
-    """Redis 不可用时的降级行为"""
+    """Redis 不可用时的降级行为
+
+    check_quota 只捕获 RedisError（非通用 Exception），因此 mock 必须抛
+    RedisError 子类才能触发降级分支。
+    """
 
     @pytest.mark.asyncio
-    async def test_should_allow_request_when_redis_fails(self, manager, mock_redis, mock_script):
-        """Redis 连接失败时应降级允许请求通过（fail-open）"""
-        mock_script.side_effect = Exception("Connection refused")
+    async def test_should_allow_request_when_script_raises_redis_error(self, manager, mock_redis, mock_script):
+        """Lua 脚本执行时 RedisError 应降级允许请求通过（fail-open）"""
+        mock_script.side_effect = RedisError("Connection refused")
         mock_redis.register_script = MagicMock(return_value=mock_script)
 
         result = await manager.check_quota("tenant_001", 1000)
@@ -192,7 +195,7 @@ class TestRedisDegradation:
 
     @pytest.mark.asyncio
     async def test_should_handle_redis_error_on_set(self, manager, mock_redis, mock_script):
-        """初始化配额时 Redis set 失败应降级"""
+        """初始化配额时 Redis set 抛 RedisError 应降级"""
         call_count = 0
 
         async def script_side_effect(**kwargs):
@@ -202,20 +205,19 @@ class TestRedisDegradation:
 
         mock_script.side_effect = script_side_effect
         mock_redis.register_script = MagicMock(return_value=mock_script)
-        # 模拟 set 操作失败
-        mock_redis.set.side_effect = Exception("Redis SET failed")
+        # 模拟 set 操作失败（抛 RedisError）
+        mock_redis.set.side_effect = RedisError("Redis SET failed")
 
-        # 由于 set 失败后没有重试，整个 check_quota 应捕获异常
-        # 具体行为取决于异常传播路径
         result = await manager.check_quota("tenant_001", 1000)
-        # set 失败后整体进入 except 分支
+        # set 失败后整体进入 except RedisError 分支
         assert result["allowed"] is True
         assert result["remaining"] == -1
 
     @pytest.mark.asyncio
     async def test_should_handle_redis_error_on_register_script(self, manager, mock_redis):
-        """register_script 失败应降级"""
-        mock_redis.register_script = MagicMock(side_effect=Exception("Redis down"))
+        """register_script 抛 RedisError 应降级"""
+        # register_script 是同步方法，需抛 RedisError 而非 Exception
+        mock_redis.register_script = MagicMock(side_effect=RedisError("Redis down"))
 
         result = await manager.check_quota("tenant_001", 1000)
         assert result["allowed"] is True
@@ -223,10 +225,10 @@ class TestRedisDegradation:
 
     @pytest.mark.asyncio
     async def test_should_handle_redis_error_on_get_quota(self, manager, mock_redis):
-        """get_quota 时 Redis 失败应抛出异常（非关键路径）"""
-        mock_redis.get.side_effect = Exception("Redis GET failed")
+        """get_quota 时 RedisError 应传播（非关键路径无降级）"""
+        mock_redis.get.side_effect = RedisError("Redis GET failed")
 
-        with pytest.raises(Exception, match="Redis GET failed"):
+        with pytest.raises(RedisError):
             await manager.get_quota("tenant_001")
 
 
@@ -236,13 +238,18 @@ class TestRedisDegradation:
 
 
 class TestGetQuota:
-    """配额查询"""
+    """配额查询
+
+    Redis hgetall 在 decode_responses=True 时返回字符串键值，
+    在 decode_responses=False 时返回 bytes 键值。此处使用字符串键
+    以匹配代码中的 config.get("daily_tokens", ...) 访问方式。
+    """
 
     @pytest.mark.asyncio
     async def test_should_return_quota_info(self, manager, mock_redis):
         """应正确返回配额信息"""
-        mock_redis.get.return_value = b"800000"
-        mock_redis.hgetall.return_value = {b"daily_tokens": b"1000000"}
+        mock_redis.get.return_value = "800000"
+        mock_redis.hgetall.return_value = {"daily_tokens": "1000000"}
 
         result = await manager.get_quota("tenant_001")
         assert result["budget"] == 1000000
@@ -252,7 +259,7 @@ class TestGetQuota:
     @pytest.mark.asyncio
     async def test_should_use_default_budget_when_no_config(self, manager, mock_redis):
         """无租户配置时应使用默认配额 1_000_000"""
-        mock_redis.get.return_value = b"900000"
+        mock_redis.get.return_value = "900000"
         mock_redis.hgetall.return_value = {}  # 无配置
 
         result = await manager.get_quota("tenant_001")
@@ -264,7 +271,7 @@ class TestGetQuota:
     async def test_should_handle_no_remaining_key(self, manager, mock_redis):
         """配额键不存在时 remaining 应为 0"""
         mock_redis.get.return_value = None
-        mock_redis.hgetall.return_value = {b"daily_tokens": b"500000"}
+        mock_redis.hgetall.return_value = {"daily_tokens": "500000"}
 
         result = await manager.get_quota("tenant_001")
         assert result["budget"] == 500000
@@ -274,7 +281,7 @@ class TestGetQuota:
     @pytest.mark.asyncio
     async def test_should_use_correct_keys_for_get_quota(self, manager, mock_redis):
         """应使用正确的 Redis key 查询配额"""
-        mock_redis.get.return_value = b"100"
+        mock_redis.get.return_value = "100"
         mock_redis.hgetall.return_value = {}
 
         await manager.get_quota("tenant_001")
@@ -402,8 +409,8 @@ class TestDailyTokenQuotaIntegration:
         assert result1["allowed"] is True
 
         # Step 2: 查询配额
-        mock_redis.get.return_value = b"999000"
-        mock_redis.hgetall.return_value = {b"daily_tokens": b"1000000"}
+        mock_redis.get.return_value = "999000"
+        mock_redis.hgetall.return_value = {"daily_tokens": "1000000"}
         quota_info = await manager.get_quota("tenant_001")
         assert quota_info["remaining"] == 999000
 
@@ -415,11 +422,9 @@ class TestDailyTokenQuotaIntegration:
     async def test_multiple_deductions_until_exhausted(self, manager, mock_redis, mock_script):
         """多次扣减直到配额耗尽"""
         remaining = 100000
-        deduction_count = 0
 
         async def script_side_effect(**kwargs):
-            nonlocal remaining, deduction_count
-            deduction_count += 1
+            nonlocal remaining
             args = kwargs.get("args") or []
             tokens = int(args[0]) if args else 1000
             if remaining < tokens:

@@ -167,28 +167,29 @@ class TestCrossSessionLeakage:
 
     def test_should_detect_different_session_id_in_output(self):
         """输出中包含不同会话 ID 应被检测"""
+        # 会话 ID 格式：sess_ + 16位字母数字 + _ + 字母数字后缀
         context = {
-            "session_id": "sess_abc1234567890_xyz",
+            "session_id": "sess_abc1234567890ab1_xyz",
             "request_id": "req_001",
         }
-        output = "The session sess_other456789012_abc has data"
+        output = "The session sess_other56789012345_abc has data"
         result = self.guard._check_cross_session_leak(output, context)
         assert result is True
 
     def test_should_not_flag_current_session_id(self):
         """输出中包含当前会话 ID 不应触发"""
         context = {
-            "session_id": "sess_abc1234567890_xyz",
+            "session_id": "sess_abc1234567890ab1_xyz",
             "request_id": "req_001",
         }
-        output = "Current session: sess_abc1234567890_xyz"
+        output = "Current session: sess_abc1234567890ab1_xyz"
         result = self.guard._check_cross_session_leak(output, context)
         assert result is False
 
     def test_should_detect_different_user_id_in_output(self):
         """输出中包含不同用户 ID 应被检测"""
         context = {
-            "session_id": "sess_abc1234567890_xyz",
+            "session_id": "sess_abc1234567890ab1_xyz",
             "user_id": "user_alice",
             "request_id": "req_001",
         }
@@ -199,17 +200,17 @@ class TestCrossSessionLeakage:
     def test_should_not_flag_when_no_context_session(self):
         """无 session_id 时不检测跨会话泄露"""
         context = {}
-        output = "sess_abc1234567890_xyz data"
+        output = "sess_abc1234567890ab1_xyz data"
         result = self.guard._check_cross_session_leak(output, context)
         assert result is False
 
     def test_should_include_cross_session_in_scan_result(self):
         """跨会话泄露应在 scan 结果中体现"""
         context = {
-            "session_id": "sess_abc1234567890_xyz",
+            "session_id": "sess_abc1234567890ab1_xyz",
             "request_id": "req_001",
         }
-        output = "sess_other456789012_abc leaked data"
+        output = "sess_other56789012345_abc leaked data"
         result = self.guard.scan(output, context)
         assert "cross_session_data" in result["matched_patterns"]
 

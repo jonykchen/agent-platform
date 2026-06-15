@@ -112,19 +112,22 @@ class BasePlatformException(Exception):
 
 class InvalidRequestError(BasePlatformException):
     def __init__(self, message: str, details=None):
-        super().__init(message, code="ERR_INVALID_REQUEST", user_message="请求参数有误", details=details)
+        BasePlatformException.__init__(
+            self, message, code="ERR_INVALID_REQUEST", user_message="请求参数有误", details=details
+        )
 
 
 class UnauthorizedError(BasePlatformException):
     def __init__(self, message: str = "未授权"):
-        super().__init(message, code="ERR_UNAUTHORIZED", user_message="请先登录")
+        BasePlatformException.__init__(self, message, code="ERR_UNAUTHORIZED", user_message="请先登录")
 
 
 class RateLimitedError(BasePlatformException):
     status_code = 429  # Too Many Requests
 
     def __init__(self, retry_after: int = 60):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             "请求过于频繁",
             code="ERR_RATE_LIMITED",
             user_message=f"请 {retry_after} 秒后重试",
@@ -136,7 +139,8 @@ class QuotaExceededError(BasePlatformException):
     status_code = 429  # Too Many Requests
 
     def __init__(self, message: str = "配额已用尽"):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             message,
             code="ERR_QUOTA_EXCEEDED",
             user_message="您的使用配额已用尽，请联系管理员",
@@ -145,7 +149,8 @@ class QuotaExceededError(BasePlatformException):
 
 class TimeoutError(BasePlatformException):
     def __init__(self, operation: str, timeout_s: float):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"{operation} 超时 ({timeout_s}s)",
             code="ERR_TIMEOUT",
             user_message="请求处理超时，请稍后重试",
@@ -155,7 +160,8 @@ class TimeoutError(BasePlatformException):
 
 class ServiceUnavailableError(BasePlatformException):
     def __init__(self, service: str):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"服务 {service} 不可用",
             code="ERR_SERVICE_UNAVAILABLE",
             user_message="服务暂时不可用，请稍后重试",
@@ -168,7 +174,8 @@ class ServiceUnavailableError(BasePlatformException):
 
 class MaxStepsExceededError(BasePlatformException):
     def __init__(self, max_steps: int):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"超过最大步骤数 ({max_steps})",
             code="ERR_AGENT_MAX_STEPS_EXCEEDED",
             user_message="任务复杂度过高，已自动终止",
@@ -178,7 +185,8 @@ class MaxStepsExceededError(BasePlatformException):
 
 class ContextTooLongError(BasePlatformException):
     def __init__(self, current_tokens: int, max_tokens: int):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"上下文过长 ({current_tokens}/{max_tokens})",
             code="ERR_AGENT_CONTEXT_TOO_LONG",
             user_message="对话过长，请开启新会话",
@@ -188,7 +196,8 @@ class ContextTooLongError(BasePlatformException):
 
 class ToolNotFoundError(BasePlatformException):
     def __init__(self, tool_name: str):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"工具不存在: {tool_name}",
             code="ERR_AGENT_TOOL_NOT_FOUND",
             user_message=f"系统内部错误：找不到工具 [{tool_name[:16]}]",
@@ -201,7 +210,8 @@ class ToolNotFoundError(BasePlatformException):
 
 class AllProvidersDownError(BasePlatformException):
     def __init__(self):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             "所有模型提供商不可用",
             code="ERR_MODEL_ALL_PROVIDERS_DOWN",
             user_message="AI 服务暂时不可用，请稍后重试",
@@ -210,7 +220,8 @@ class AllProvidersDownError(BasePlatformException):
 
 class ModelContentFilteredError(BasePlatformException):
     def __init__(self, reason: str = ""):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"内容被安全过滤: {reason}",
             code="ERR_MODEL_CONTENT_FILTERED",
             user_message="输入内容可能包含不当信息，请调整后重试",
@@ -220,7 +231,8 @@ class ModelContentFilteredError(BasePlatformException):
 
 class ModelTimeoutError(BasePlatformException):
     def __init__(self, timeout_s: float):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"模型调用超时 ({timeout_s}s)",
             code="ERR_MODEL_TIMEOUT",
             user_message="AI 响应超时，请稍后重试",
@@ -233,7 +245,8 @@ class ModelTimeoutError(BasePlatformException):
 
 class ToolValidationError(BasePlatformException):
     def __init__(self, tool_name: str, reason: str):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"工具参数校验失败 [{tool_name}]: {reason}",
             code="ERR_TOOL_VALIDATION_FAILED",
             user_message=f"参数不正确: {reason}",
@@ -243,7 +256,8 @@ class ToolValidationError(BasePlatformException):
 
 class ToolExecutionFailedError(BasePlatformException):
     def __init__(self, tool_name: str, reason: str):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"工具执行失败 [{tool_name}]: {reason}",
             code="ERR_TOOL_EXECUTION_FAILED",
             user_message="工具执行失败，请稍后重试",
@@ -253,7 +267,8 @@ class ToolExecutionFailedError(BasePlatformException):
 
 class ToolRiskRejectedError(BasePlatformException):
     def __init__(self, reason: str):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"操作被风控拒绝: {reason}",
             code="ERR_TOOL_RISK_REJECTED",
             user_message=f"该操作被安全策略阻止: {reason}",
@@ -263,7 +278,8 @@ class ToolRiskRejectedError(BasePlatformException):
 
 class ApprovalRequiredError(BasePlatformException):
     def __init__(self, approval_id: str):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"需要人工审批: {approval_id}",
             code="ERR_TOOL_APPROVAL_REQUIRED",
             user_message="该操作需要人工审批，已提交审批申请",
@@ -273,7 +289,8 @@ class ApprovalRequiredError(BasePlatformException):
 
 class ToolBusUnavailableError(BasePlatformException):
     def __init__(self, reason: str = ""):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             f"工具总线服务不可用: {reason}",
             code="ERR_TOOLBUS_UNAVAILABLE",
             user_message="工具服务暂时不可用，请稍后重试",
@@ -283,7 +300,8 @@ class ToolBusUnavailableError(BasePlatformException):
 
 class DatabaseError(BasePlatformException):
     def __init__(self, message: str, details=None):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             message,
             code="ERR_DATABASE_ERROR",
             user_message="数据服务异常，请稍后重试",
@@ -293,7 +311,8 @@ class DatabaseError(BasePlatformException):
 
 class DatabaseConnectionError(BasePlatformException):
     def __init__(self, message: str):
-        super().__init__(
+        BasePlatformException.__init__(
+            self,
             message,
             code="ERR_DATABASE_CONNECTION",
             user_message="数据服务连接失败，请稍后重试",

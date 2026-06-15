@@ -151,6 +151,12 @@ class DocumentUploadResponse(BaseModel):
     message: str
 
 
+import re
+
+# 合法 tenant_id 格式：字母/数字/下划线/短横线，3-64 字符
+_TENANT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{3,64}$")
+
+
 def _get_tenant_id(request_headers: dict = None) -> str:
     """
     从请求头获取租户 ID
@@ -161,26 +167,51 @@ def _get_tenant_id(request_headers: dict = None) -> str:
     - 检索时自动添加租户过滤条件
     - 防止跨租户数据泄露
 
-    【请求头约定】
-    - Header: X-Tenant-ID
-    - 格式: 字符串（如 "tenant_001", "company_acme"）
-    - 默认值: "default_tenant"（开发环境使用）
-
-    【安全注意事项】
-    - 生产环境必须校验 tenant_id 合法性
-    - 结合 API Gateway 做 tenant_id 注入（防止伪造）
-    - 敏感数据建议额外校验用户权限
+    【安全说明】
+    - 优先从 JWT Authorization header 提取 tenantId（Gateway 已验证签名）
+    - 回退到 X-Tenant-ID header（Gateway 认证后覆盖为 JWT 中的值）
+    - 对 tenant_id 格式严格校验，防止注入攻击
+    - 默认租户仅在开发环境使用
 
     Args:
         request_headers: HTTP 请求头字典
 
     Returns:
         租户 ID 字符串
+
+    Raises:
+        ValueError: tenant_id 格式不合法
     """
+    # 优先从 JWT payload 提取 tenantId
+    auth_header = (request_headers or {}).get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            import base64
+            import json
+
+            token = auth_header[7:]
+            payload_b64 = token.split(".")[1]
+            # 补齐 Base64 padding
+            padding = 4 - len(payload_b64) % 4
+            payload_json = base64.urlsafe_b64decode(payload_b64 + "=" * padding)
+            payload = json.loads(payload_json)
+            jwt_tenant_id = payload.get("tenantId")
+            if jwt_tenant_id and _TENANT_ID_PATTERN.match(jwt_tenant_id):
+                return jwt_tenant_id
+        except Exception:
+            pass  # JWT 解析失败，回退到 Header
+
+    # 回退到 X-Tenant-ID header（Gateway 认证后应覆盖为可信值）
     if request_headers:
-        tenant_id = request_headers.get("X-Tenant-ID")
+        tenant_id = request_headers.get("X-Tenant-ID", "").strip()
         if tenant_id:
+            if not _TENANT_ID_PATTERN.match(tenant_id):
+                raise ValueError(
+                    f"Invalid tenant_id format: '{tenant_id}'. Must match pattern: ^[a-zA-Z0-9_-]{{3,64}}$"
+                )
             return tenant_id
+
+    # 默认租户（仅开发环境）
     return "default_tenant"
 
 
@@ -312,12 +343,30 @@ async def upload_document(
         raise InvalidDocumentFormatError(ext, list(PROCESSORS.keys()))
 
     # ==================== 2. 大小验证 ====================
-    content = await file.read()
-    file_size = len(content)
-    file_size_mb = file_size / (1024 * 1024)
+    # 先检查 Content-Length header（防止超大文件先读入内存再拒绝导致 OOM）
+    content_length = request.headers.get("content-length")
+    if content_length:
+        declared_size_mb = int(content_length) / (1024 * 1024)
+        if declared_size_mb > config.max_file_size_mb * 1.1:  # 10% 裕量（multipart 开销）
+            raise FileSizeExceededError(declared_size_mb, config.max_file_size_mb)
 
-    if file_size_mb > config.max_file_size_mb:
-        raise FileSizeExceededError(file_size_mb, config.max_file_size_mb)
+    # 分块读取并限制大小，避免一次性将超大文件读入内存
+    chunks = []
+    total_size = 0
+    MAX_READ_CHUNK = 1024 * 1024  # 1MB chunks
+    while True:
+        chunk = await file.read(MAX_READ_CHUNK)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        current_size_mb = total_size / (1024 * 1024)
+        if current_size_mb > config.max_file_size_mb:
+            raise FileSizeExceededError(current_size_mb, config.max_file_size_mb)
+        chunks.append(chunk)
+
+    content = b"".join(chunks)
+    file_size = total_size
+    file_size_mb = file_size / (1024 * 1024)
 
     # ==================== 3. 创建文档记录 ====================
     indexer = get_vector_indexer()

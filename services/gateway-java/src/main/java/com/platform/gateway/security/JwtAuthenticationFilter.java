@@ -19,6 +19,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.springframework.security.core.GrantedAuthority;
 
@@ -107,6 +108,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         List<GrantedAuthority> authorities = new ArrayList<>();
         for (String role : roles) {
             authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
+        }
+        // admin 角色自动获得 internal:access 权限（用于 /api/v1/internal/** 端点保护）
+        if (Arrays.asList(roles).contains("admin")) {
+            authorities.add(new SimpleGrantedAuthority("internal:access"));
         }
         for (String permission : rolePermissionService.resolvePermissions(roles)) {
             authorities.add(new SimpleGrantedAuthority(permission));

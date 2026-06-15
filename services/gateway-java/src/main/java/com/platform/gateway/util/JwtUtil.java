@@ -8,10 +8,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import jakarta.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * JWT 工具类
@@ -78,6 +78,45 @@ public class JwtUtil {
 
     @Value("${auth.jwt.refresh-token-ttl-seconds:604800}")
     private long refreshTokenTtlSeconds;
+
+    @Value("${spring.profiles.active:local}")
+    private String activeProfile;
+
+    /**
+     * 已知的不安全默认密钥值，生产/预发环境禁止使用。
+     */
+    private static final Set<String> KNOWN_DEFAULT_SECRETS = Set.of(
+        "your-secret-key-must-be-at-least-256-bits-long-for-hs256",
+        "your-secret-key-must-be-at-least-256-bits-long-for-hs256-algorithm"
+    );
+
+    /**
+     * 仅允许启用默认密钥的 profile 白名单。
+     */
+    private static final Set<String> SAFE_PROFILES = Set.of("local", "development", "default");
+
+    /**
+     * 启动时校验 JWT 密钥安全性。
+     * 非 local/development 环境下使用已知默认密钥或过短密钥将拒绝启动。
+     */
+    @PostConstruct
+    public void validateJwtSecret() {
+        if (!SAFE_PROFILES.contains(activeProfile)) {
+            if (KNOWN_DEFAULT_SECRETS.contains(jwtSecret)) {
+                throw new IllegalStateException(
+                    "FATAL: JWT secret is using a known default value in profile '" + activeProfile
+                    + "'. Set JWT_SECRET environment variable.");
+            }
+            if (jwtSecret.length() < 32) {
+                throw new IllegalStateException(
+                    "FATAL: JWT secret must be at least 32 characters in profile '" + activeProfile
+                    + "'. Current length: " + jwtSecret.length());
+            }
+        } else {
+            log.warn("Using default JWT secret in development profile '{}'. "
+                     + "This MUST be changed in production.", activeProfile);
+        }
+    }
 
     private SecretKey getSigningKey() {
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
@@ -182,8 +221,14 @@ public class JwtUtil {
             .parseSignedClaims(token)
             .getPayload();
         Object roles = claims.get("roles");
-        if (roles instanceof String[]) {
-            return (String[]) roles;
+        if (roles instanceof String[] arr) {
+            return arr;
+        }
+        // Jackson 反序列化 JSON 数组为 ArrayList 而非 String[]，需要兼容处理
+        if (roles instanceof List<?> list) {
+            return list.stream()
+                .map(Object::toString)
+                .toArray(String[]::new);
         }
         return new String[0];
     }

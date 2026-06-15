@@ -84,7 +84,8 @@ import hashlib
 import json
 import random
 import time
-from typing import Any, Callable, TypeVar, Coroutine
+from collections.abc import Callable, Coroutine
+from typing import Any, TypeVar
 
 import structlog
 from cachetools import TTLCache
@@ -511,9 +512,8 @@ class DualLayerCache:
             l1_ttl = base_ttl
             l2_ttl = base_ttl
 
-        # 设置 L1（带小抖动）
+        # 设置 L1（TTLCache 自管理 TTL，无需手动设置过期时间）
         self._local_cache[key] = value
-        self._local_cache_ttl[key] = l1_ttl
 
         # 设置 L2
         try:
@@ -993,9 +993,7 @@ class DualLayerCache:
                         )
                         # 创建后台刷新任务（不等待完成）
                         # 使用 create_task 而不是 await，实现异步后台执行
-                        asyncio.create_task(
-                            self._refresh_hot_key_background(key, loader, base_ttl)
-                        )
+                        asyncio.create_task(self._refresh_hot_key_background(key, loader, base_ttl))
 
                     return cached_data["value"]
 
@@ -1008,9 +1006,7 @@ class DualLayerCache:
                     key=key,
                     expired_seconds=int(current_time - expire_at),
                 )
-                asyncio.create_task(
-                    self._refresh_hot_key_background(key, loader, base_ttl)
-                )
+                asyncio.create_task(self._refresh_hot_key_background(key, loader, base_ttl))
 
                 # 返回旧数据（可能为 None）
                 return cached_data.get("value")
@@ -1294,10 +1290,7 @@ def get_cache_manager() -> CacheManager:
     """
     global _cache_manager
     if _cache_manager is None:
-        raise RuntimeError(
-            "Cache manager not initialized. "
-            "Call init_cache_manager(redis) during application startup."
-        )
+        raise RuntimeError("Cache manager not initialized. Call init_cache_manager(redis) during application startup.")
     return _cache_manager
 
 
@@ -1332,6 +1325,7 @@ def init_cache_manager(redis: Redis) -> CacheManager:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # 缓存装饰器
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 
 def cached(
     cache_name: str,

@@ -396,15 +396,17 @@ class HybridRetriever:
     ) -> list[dict]:
         """BM25 关键词检索
 
-        使用 PostgreSQL 全文搜索。
+        使用 PostgreSQL ILIKE 模式匹配（支持中文，无需安装分词扩展）。
+        注：'simple' 文本搜索配置不支持中文分词，改用 ILIKE 做子串匹配。
         """
-        # 构建 SQL
+        # 构建 SQL：使用 ILIKE 替代 tsquery，支持中文关键词匹配
         sql = """
             SELECT
                 id, document_id, chunk_index, content,
-                ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', $1)) as score
+                CASE WHEN content ILIKE '%' || $1 || '%' THEN 0.5 ELSE 0.0 END as score
             FROM knowledge_chunk
             WHERE tenant_id = $2
+                AND content ILIKE '%' || $1 || '%'
         """
 
         params = [query, tenant_id]

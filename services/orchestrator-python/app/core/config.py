@@ -381,6 +381,30 @@ class AppConfig(BaseSettings):
             raise ValueError("Production JWT secret must be at least 32 characters")
         return v
 
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, v: str, info) -> str:
+        """生产/预发环境禁止使用默认数据库密码"""
+        env = info.data.get("environment", "local")
+        unsafe_patterns = ["dev_password", "password123", "changeme"]
+        if env in ("prod", "production", "staging") and any(p in v for p in unsafe_patterns):
+            raise ValueError(
+                f"Environment '{env}' must not use default database credentials. Set DATABASE_URL environment variable."
+            )
+        return v
+
+    @field_validator("redis_url")
+    @classmethod
+    def validate_redis_url(cls, v: str, info) -> str:
+        """生产/预发环境禁止使用默认 Redis 密码"""
+        env = info.data.get("environment", "local")
+        unsafe_patterns = ["dev_password", "password123", "changeme"]
+        if env in ("prod", "production", "staging") and any(p in v for p in unsafe_patterns):
+            raise ValueError(
+                f"Environment '{env}' must not use default Redis credentials. Set REDIS_URL environment variable."
+            )
+        return v
+
 
 @lru_cache
 def get_config() -> AppConfig:

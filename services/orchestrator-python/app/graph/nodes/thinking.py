@@ -532,9 +532,10 @@ def _handle_model_error(error: Exception, step_count: int, request_id: str) -> d
         状态更新字典
     """
     if isinstance(error, ModelTimeoutError):
+        timeout_s = error.details.get("timeout_s", "unknown")
         return {
             "current_step": "error",
-            "error": f"模型调用超时: {error.timeout_s}秒",
+            "error": f"模型调用超时: {timeout_s}秒",
             "error_code": "ERR_MODEL_TIMEOUT",
             "step_count": step_count + 1,
         }

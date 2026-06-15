@@ -65,7 +65,7 @@ class TestNoTruncationWhenWithinLimit:
         mock_counter.count_messages.side_effect = lambda msgs: len(msgs) * 50
 
         result = manager.truncate(messages)
-        # 应包含 system prompt + 原消息
+        # 应包含原消息
         assert len(result) >= len(messages)
 
     def test_should_return_empty_list_for_empty_input(self, manager, mock_counter):
@@ -104,14 +104,7 @@ class TestTruncationWhenOverLimit:
             _msg("assistant", "resp3"),
         ]
         # 每条消息 500 tokens，超限
-        call_count = 0
-
-        def count_side_effect(msgs):
-            nonlocal call_count
-            call_count += 1
-            return len(msgs) * 500
-
-        mock_counter.count_messages.side_effect = count_side_effect
+        mock_counter.count_messages.side_effect = lambda msgs: len(msgs) * 500
 
         result = manager.truncate(messages)
         # 截断后消息数应少于原始
@@ -134,7 +127,6 @@ class TestTruncationWhenOverLimit:
             _msg("user", "msg2"),
         ]
         # 模拟即使截断后仍超限的情况
-        # 第一次调用（构建 system prompt）返回小值，后续返回超大值
         high_token_count = 2000
         mock_counter.count_messages.return_value = high_token_count
 
@@ -187,9 +179,6 @@ class TestImportantToolResultRetention:
             messages,
             important_tool_results=["call_001"],
         )
-        # call_001 的工具结果应被保留
-        tool_msgs = [m for m in result if m.get("tool_call_id") == "call_001"]
-        # 可能保留也可能因 token 不足被截断，取决于 mock 值
         # 至少应不会报错
         assert isinstance(result, list)
 
@@ -203,7 +192,6 @@ class TestImportantToolResultRetention:
         mock_counter.count_messages.side_effect = lambda msgs: len(msgs) * 50
 
         result = manager.truncate(messages, important_tool_results=["call_001"])
-        # call_002 不在 important 列表中，不应被额外保留
         assert isinstance(result, list)
 
 
@@ -256,7 +244,11 @@ class TestTokenCounting:
 
 
 class TestSummaryGenerationFallback:
-    """摘要生成降级测试"""
+    """摘要生成降级测试
+
+    _generate_summary 内部通过 `from app.memory.summary_generator import get_summary_generator`
+    导入，因此需要 patch app.memory.summary_generator 模块。
+    """
 
     def test_generate_summary_should_return_none_for_empty_messages(self, manager):
         """空消息列表应返回 None"""
@@ -265,6 +257,7 @@ class TestSummaryGenerationFallback:
 
     def test_generate_summary_should_fallback_on_import_error(self, manager):
         """summary_generator 不可用时应降级到简单提取"""
+        # 让 import 失败，触发 except 分支的降级逻辑
         with patch.dict("sys.modules", {"app.memory.summary_generator": None}):
             messages = [
                 _msg("user", "我想查询订单状态"),
@@ -276,22 +269,20 @@ class TestSummaryGenerationFallback:
             assert result is not None
             assert "用户询问" in result
 
-    def test_generate_summary_should_fallback_on_exception(self, manager):
-        """summary_generator 抛异常时应降级"""
+    def test_generate_summary_should_fallback_when_generator_raises(self, manager):
+        """summary_generator 内部抛异常时应降级到简单提取"""
+        # 通过 patch get_summary_generator 使其抛异常
         with patch(
-            "app.core.context_manager.get_summary_generator",
-            side_effect=Exception("import failed"),
+            "app.memory.summary_generator.get_summary_generator",
+            side_effect=Exception("generator init failed"),
         ):
-            # _generate_summary 内部 import，需 patch 整个模块导入路径
             messages = [
                 _msg("user", "查询物流信息"),
             ]
-            # 由于 _generate_summary 内部 try/except 会捕获异常
-            # 实际触发需要 patch app.memory.summary_generator
-            # 这里用直接 patch 方式验证降级逻辑
-            with patch.dict("sys.modules", {"app.memory.summary_generator": None}):
-                result = manager._generate_summary(messages)
-                assert result is not None
+            result = manager._generate_summary(messages)
+            # 降级到简单提取
+            assert result is not None
+            assert "用户询问" in result
 
     def test_generate_summary_should_truncate_long_user_messages(self, manager):
         """降级时长用户消息应被截断"""
@@ -315,8 +306,8 @@ class TestSummaryGenerationFallback:
         with patch.dict("sys.modules", {"app.memory.summary_generator": None}):
             messages = [_msg("user", "测试消息")]
             result = await manager._generate_summary_async(messages)
-            # 应降级到同步版本
-            assert result is not None or result is None  # 不抛异常即可
+            # 应降级到同步版本，不抛异常即可
+            assert result is not None or result is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -356,7 +347,12 @@ class TestSlidingWindowStrategy:
         """应正确分离旧消息和近期消息"""
         with patch("app.core.context_manager.get_token_counter", return_value=mock_counter):
             with patch("app.core.context_manager.config"):
-                mgr = ContextManager(recent_turns=2)
+                mgr = ContextManager(
+                    max_tokens=1000,
+                    system_prompt_reserved=100,
+                    response_reserved=100,
+                    recent_turns=2,
+                )
 
         # 6 条消息 = 3 轮, recent_turns=2 → 最近 4 条, 旧 2 条
         messages = [
@@ -373,6 +369,9 @@ class TestSlidingWindowStrategy:
         result = mgr.truncate(messages)
         # 旧消息可能出现在摘要中，近消息应直接保留
         assert isinstance(result, list)
+        result_contents = [m.get("content", "") for m in result]
+        assert "recent_q2" in result_contents
+        assert "recent_a2" in result_contents
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -417,10 +416,11 @@ class TestTruncateAsync:
         mock_generator = AsyncMock()
         mock_generator.generate = AsyncMock(return_value="LLM generated summary")
 
+        # _generate_summary_async 内部 import from app.memory.summary_generator
         with patch(
-            "app.core.context_manager.get_summary_generator",
+            "app.memory.summary_generator.get_summary_generator",
             return_value=mock_generator,
-        ) as mock_get:
+        ):
             result = await manager.truncate_async(messages, system_prompt="System")
             # 如果摘要被生成，应有包含摘要的 system 消息
             assert isinstance(result, list)
@@ -436,7 +436,6 @@ class TestGlobalInstance:
 
     def test_get_context_manager_returns_instance(self):
         """get_context_manager 应返回 ContextManager 实例"""
-        # 重置全局实例
         import app.core.context_manager as cm
 
         cm._manager = None
