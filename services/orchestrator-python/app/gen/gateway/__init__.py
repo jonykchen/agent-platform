@@ -1,1 +1,0 @@
-"""Gateway proto 生成代码"""
