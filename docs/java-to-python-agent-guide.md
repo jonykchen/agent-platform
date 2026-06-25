@@ -1,8 +1,4 @@
-# Java 工程师 Python Agent 开发迁移指南
-
-> 面向具备 Java 开发经验、但未接触过 Python 的工程师。目标：学完后能用 Python 独立开发 Agent。
-> 侧重核心概念映射与架构设计，辅以实操工具链和语言要点。
-
+# Java>Python Agent 开发迁移指南
 ---
 
 ## 1. 开发环境与工具链：Maven/Gradle → uv
