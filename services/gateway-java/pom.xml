@@ -24,7 +24,7 @@
         <protobuf.version>4.34.1</protobuf.version>
         <jwt.version>0.12.5</jwt.version>
         <!-- Resilience4j 2.x 与 Spring Boot 3.2 兼容（Boot 3.x 对应 resilience4j 2.x） -->
-        <resilience4j.version>2.2.0</resilience4j.version>
+        <resilience4j.version>2.4.0</resilience4j.version>
         <!-- 代码质量工具版本 -->
         <checkstyle.version>10.17.0</checkstyle.version>
         <spotbugs.version>4.8.6</spotbugs.version>
