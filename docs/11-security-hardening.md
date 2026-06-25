@@ -35,7 +35,7 @@
 graph TB
     subgraph "K8s Namespace: agent-platform"
         GW[Gateway<br/>:8080/:9091]
-        ORC[Orchestrator<br/>:8001/:50051]
+        ORC[Orchestrator<br/>:8000/:50100]
         MG[ModelGateway<br/>:8002]
         KB[Knowledge<br/>:8003]
         TB[ToolBus<br/>:8083/:40051]
@@ -66,7 +66,7 @@ graph TB
 
 | 调用方 | 被调用方 | 协议 | 端口 | 是否需要 mTLS |
 |--------|----------|------|------|---------------|
-| Gateway | Orchestrator | gRPC | 50051 | 是 |
+| Gateway | Orchestrator | gRPC | 50100 | 是 |
 | Orchestrator | ModelGateway | HTTP | 8002 | 是 |
 | Orchestrator | ToolBus | gRPC | 40051 | 是 |
 | Orchestrator | Knowledge | HTTP | 8003 | 是 |

@@ -111,8 +111,8 @@ class AppConfig(BaseSettings):
     # ==================== 数据库配置 ====================
 
     database_url: str = Field(
-        default="postgresql+asyncpg://app_user:dev_password@localhost:5432/agent_platform",
-        description="[SECRET] PostgreSQL 连接 URL，使用 asyncpg 驱动支持异步操作",
+        default="postgresql+asyncpg://app_user:CHANGE_ME@localhost:5432/agent_platform",
+        description="[SECRET] PostgreSQL 连接 URL（通过 DATABASE_URL 环境变量覆盖）",
     )
 
     database_pool_size: int = 10
@@ -120,8 +120,8 @@ class AppConfig(BaseSettings):
 
     # ==================== Redis 配置 ====================
 
-    redis_url: str = "redis://:dev_password@localhost:6379/2"
-    """Redis 连接 URL，用于缓存查询结果和 Embedding 缓存"""
+    redis_url: str = "redis://:CHANGE_ME@localhost:6379/2"
+    """Redis 连接 URL（通过 REDIS_URL 环境变量覆盖）"""
 
     # ==================== Embedding 配置 ====================
 

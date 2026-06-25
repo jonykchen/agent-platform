@@ -38,7 +38,7 @@ Gateway (Java) → Orchestrator (Python) → Model Gateway (Python)
 | 服务 | HTTP 端口 | gRPC 端口 | 说明 |
 |------|----------|----------|------|
 | Gateway | 8080 | 9091 | API 入口 |
-| Orchestrator | 8001 | 50051 | Agent 编排 |
+| Orchestrator | 8000 | 50100 | Agent 编排（开发脚本使用 8001） |
 | Model Gateway | 8002 | - | 模型统一网关 |
 | Knowledge | 8003 | - | 知识库服务 |
 | Tool Bus | 8083 | 40051 | 工具执行 |
@@ -97,12 +97,17 @@ services/orchestrator-python/app/
 ### 状态机 (LangGraph)
 ```python
 class AgentState(TypedDict):
-    messages: list[dict]
-    tool_calls: list[dict]
-    current_step: str
-    risk_level: str       # low/medium/high/critical
-    needs_approval: bool
-    consecutive_errors: int  # 连续失败计数 (S-AGENT-11)
+    # 核心字段（完整定义见 services/orchestrator-python/app/graph/state.py）
+    messages: Annotated[list, add_messages]  # 对话历史（自动累积）
+    tool_calls: list[dict]          # 工具调用请求
+    tool_results: list[dict]        # 工具执行结果
+    current_step: str               # 当前步骤类型
+    risk_level: str                 # low/medium/high/critical
+    approval_id: str | None          # 审批单 ID（替代 needs_approval）
+    approval_status: str | None      # pending/approved/rejected
+    consecutive_errors: int          # 连续失败计数 (S-AGENT-11)
+    step_count: int                  # 步骤计数器
+    max_steps: int                   # 最大步骤限制
 ```
 
 > 模式选择（ReAct/Plan-and-Execute/Multi-Agent）见 S-AGENT-09。节点模板见 `/langgraph-node`。

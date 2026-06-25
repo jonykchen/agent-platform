@@ -221,7 +221,7 @@ class AuthInterceptor(grpc.UnaryUnaryClientInterceptor):
     ```python
     # 创建 Token 提供器
     token_manager = ServiceTokenManager(
-        secret="your-secret-key",
+        secret="<YOUR_SECRET_KEY>",
         expiry_seconds=300,
     )
     token_provider = lambda: token_manager.generate_token("orchestrator")
@@ -235,7 +235,7 @@ class AuthInterceptor(grpc.UnaryUnaryClientInterceptor):
     )
 
     # 应用拦截器
-    channel = grpc.insecure_channel("localhost:50051")
+    channel = grpc.insecure_channel("localhost:40051")
     intercepted_channel = grpc.intercept_channel(channel, interceptor)
     stub = ToolBusServiceStub(intercepted_channel)
     ```
@@ -359,7 +359,7 @@ class ServerAuthInterceptor(grpc.ServerInterceptor):
     ```python
     # 创建 Token 验证器
     token_manager = ServiceTokenManager(
-        secret="your-secret-key",  # 必须与客户端相同
+        secret="<YOUR_SECRET_KEY>",  # 必须与客户端相同
         expiry_seconds=300,
     )
 
@@ -538,7 +538,7 @@ class ServiceTokenManager:
     ```python
     # 创建管理器（客户端和服务端使用相同的 secret）
     manager = ServiceTokenManager(
-        secret="your-very-secure-secret-key",
+        secret="<YOUR_SECRET_KEY>",
         expiry_seconds=300,  # 5 分钟
         issuer="agent-platform",
     )

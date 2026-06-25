@@ -121,8 +121,8 @@ class AppConfig(BaseSettings):
     port: int = 8000
     
     # ---- 模型网关地址 ----
-    model_gateway_url: str = "http://model-gateway:8001"
-    tool_bus_grpc_addr: str = "tool-bus:50051"
+    model_gateway_url: str = "http://model-gateway:8002"
+    tool_bus_grpc_addr: str = "tool-bus:40051"
     
     # ---- 数据库 [SECRET] ----
     database_url: str = Field(
@@ -545,7 +545,7 @@ eval-regression:
   script:
     - uv run --with openai --with requests --with pandas python shared/evals/scripts/run_regression_eval.py \
         --gold-set shared/evals/gold-set/ \
-        --endpoint http://model-gateway:8001/v1/chat/completions \
+        --endpoint http://model-gateway:8002/v1/chat/completions \
         --output reports/eval_report.json \
         --threshold-json-rate 99.0
   artifacts:
@@ -828,8 +828,8 @@ spec:
       port: 8080
       targetPort: 8080
     - name: grpc
-      port: 50051
-      targetPort: 50051
+      port: 9091
+      targetPort: 9091
   type: ClusterIP  # 仅集群内部访问
 
 ---
@@ -843,8 +843,8 @@ spec:
     app: tool-bus
   ports:
     - name: grpc
-      port: 50051
-      targetPort: 50051
+      port: 40051
+      targetPort: 40051
   type: ClusterIP
 ```
 
@@ -866,7 +866,7 @@ class KubernetesServiceDiscovery:
     
     使用方式:
         svc = KubernetesServiceDiscovery()
-        addr = svc.resolve("tool-bus")  # => ("tool-bus.agent-platform.svc.cluster.local", 50051)
+        addr = svc.resolve("tool-bus")  # => ("tool-bus.agent-platform.svc.cluster.local", 40051)
     """
     
     NAMESPACE = "agent-platform"
@@ -888,10 +888,10 @@ class KubernetesServiceDiscovery:
         port_map = {
             "gateway": 8080,
             "orchestrator": 8000,
-            "model-gateway": 8001,
-            "tool-bus": 50051,
-            "governance": 50052,
-            "knowledge": 8081,
+            "model-gateway": 8002,
+            "tool-bus": 40051,
+            "governance": 8082,
+            "knowledge": 8003,
         }
         
         port = port_map.get(service_name, default_port or 8080)

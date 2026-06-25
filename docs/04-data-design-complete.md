@@ -72,7 +72,7 @@ CREATE TABLE agent_run (
 );
 
 -- ✅ P-04 修正: 使用独立列的普通复合索引（高效得多）
-CREATE INDEX idx_run_tenant_created ON agent_run(tenant_id, created_at DESC);
+CREATE INDEX idx_run_tenant_created ON agent_run(tenant_id, started_at DESC);
 CREATE INDEX idx_run_user ON agent_run(user_id, started_at DESC);
 CREATE INDEX idx_run_session ON agent_run(session_id);
 CREATE INDEX idx_run_status ON agent_run(status);
@@ -406,7 +406,7 @@ CREATE TABLE knowledge_chunk (
     content_hash        VARCHAR(64) NOT NULL,   -- 用于去重
     token_count         INT,
     
-    embedding           VECTOR(1536),           -- pgvector 类型，维度取决于模型
+    embedding           VECTOR(1024),           -- pgvector 类型，1024 维（text-embedding-v3）
     embedding_model     VARCHAR(64),
     
     metadata            JSONB DEFAULT '{}',
@@ -716,7 +716,7 @@ spring:
 | **tool_invocation** | PK (uuid) | (run_id), (tool_name), (created_at) | (risk_level IN ('high','critical')), was_cached=true |
 | **approval_task** | PK (uuid) | (assignee_id, status), (expires_at) | status='pending' |
 | **audit_event** | PK (bigserial) | **(tenant_id, created_at)**, (event_type), (request_id) | severity IN ('error','critical') |
-| **knowledge_chunk** | PK (uuid) | (document_id, chunk_index), (tenant_id) | **IVFFlat 向量索引** |
+| **knowledge_chunk** | PK (uuid) | (document_id, chunk_index), (tenant_id) | **HNSW 向量索引** |
 | **model_usage_daily** | UK (date,tenant,user,model) | (stat_date), (tenant_id), (model_name) | — |
 
 ---

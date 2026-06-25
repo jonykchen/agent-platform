@@ -28,7 +28,7 @@ def _resolve_database_url() -> str:
 
         url = os.environ.get(
             "DATABASE_URL",
-            "postgresql://app_user:dev_password@localhost:5432/agent_platform",
+            "",
         )
     # alembic 使用同步驱动：去掉 +asyncpg，改用 psycopg（v3）
     return url.replace("+asyncpg", "+psycopg")

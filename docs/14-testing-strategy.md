@@ -549,7 +549,7 @@ class OrchestratorClientTest {
     void setUp() {
         // 使用本地测试地址，避免真实连接
         ReflectionTestUtils.setField(orchestratorClient, "orchestratorHost", "localhost");
-        ReflectionTestUtils.setField(orchestratorClient, "orchestratorPort", 50051);
+        ReflectionTestUtils.setField(orchestratorClient, "orchestratorPort", 50100);
         ReflectionTestUtils.setField(orchestratorClient, "timeoutMs", 30000);
     }
 
@@ -622,7 +622,7 @@ public class OrchestratorClient {
         @Bean
         public OrchestratorServiceGrpc.OrchestratorServiceBlockingStub orchestratorStub(
                 @Value("${orchestrator.grpc.host:localhost}") String host,
-                @Value("${orchestrator.grpc.port:50051}") int port
+                @Value("${orchestrator.grpc.port:50100}") int port
         ) {
             ManagedChannel channel = ManagedChannelBuilder.forAddress(host, port)
                     .usePlaintext()
@@ -3652,7 +3652,7 @@ spring.kafka:
 orchestrator:
   grpc:
     host: localhost
-    port: 50051
+    port: 50100
     mock-enabled: true
 
 logging:

@@ -70,7 +70,7 @@ import java.util.stream.Collectors;
 @Component
 public class JwtUtil {
 
-    @Value("${auth.jwt.secret:your-secret-key-must-be-at-least-256-bits-long-for-hs256}")
+    @Value("${auth.jwt.secret:}")
     private String jwtSecret;
 
     @Value("${auth.jwt.access-token-ttl-seconds:3600}")
@@ -86,8 +86,10 @@ public class JwtUtil {
      * 已知的不安全默认密钥值，生产/预发环境禁止使用。
      */
     private static final Set<String> KNOWN_DEFAULT_SECRETS = Set.of(
-        "your-secret-key-must-be-at-least-256-bits-long-for-hs256",
-        "your-secret-key-must-be-at-least-256-bits-long-for-hs256-algorithm"
+        "",
+        "CHANGE_ME",
+        "changeme",
+        "password123"
     );
 
     /**

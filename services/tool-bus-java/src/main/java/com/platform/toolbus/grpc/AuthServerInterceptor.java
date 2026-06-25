@@ -32,7 +32,7 @@ public class AuthServerInterceptor implements ServerInterceptor {
 
     public AuthServerInterceptor(
             @Value("${grpc.auth.valid-services:orchestrator,gateway}") Set<String> validServices,
-            @Value("${grpc.auth.secret:dev-secret-change-in-prod}") String tokenSecret,
+            @Value("${grpc.auth.secret:}") String tokenSecret,
             @Value("${grpc.auth.issuer:agent-platform}") String issuer
     ) {
         this.validServices = validServices;

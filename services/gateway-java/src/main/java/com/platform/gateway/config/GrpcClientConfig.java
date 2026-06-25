@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit;
  * <h2>配置项</h2>
  * <ul>
  *   <li>{@code orchestrator.grpc.host}: Orchestrator 服务地址，默认 localhost</li>
- *   <li>{@code orchestrator.grpc.port}: Orchestrator 服务端口，默认 50051</li>
+ *   <li>{@code orchestrator.grpc.port}: Orchestrator 服务端口，默认 50100</li>
  *   <li>{@code orchestrator.grpc.timeout-ms}: 默认调用超时，默认 30000ms</li>
  *   <li>{@code orchestrator.grpc.keepalive-time-ms}: Keep-alive 间隔，默认 30000ms</li>
  *   <li>{@code orchestrator.grpc.keepalive-timeout-ms}: Keep-alive 超时，默认 10000ms</li>
@@ -73,7 +73,7 @@ public class GrpcClientConfig {
     @Value("${orchestrator.grpc.host:localhost}")
     private String orchestratorHost;
 
-    @Value("${orchestrator.grpc.port:50051}")
+    @Value("${orchestrator.grpc.port:50100}")
     private int orchestratorPort;
 
     @Value("${orchestrator.grpc.timeout-ms:30000}")

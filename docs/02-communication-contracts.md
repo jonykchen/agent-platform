@@ -420,7 +420,7 @@ contract-test:
         -d '{"header":{"request_id":"test","tenant_id":"test_tenant","user_id":"test_user","trace_id":"","timestamp":0},"message":"hello"}' \
         --import-path contracts/proto \
         -proto gateway_orchestrator.proto \
-        localhost:50051 \
+        localhost:50100 \
         platform.gateway.OrchestratorService/ChatCompletion
   
   artifacts:

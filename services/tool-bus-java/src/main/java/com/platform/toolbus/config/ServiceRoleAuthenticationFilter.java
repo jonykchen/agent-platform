@@ -46,7 +46,7 @@ public class ServiceRoleAuthenticationFilter extends OncePerRequestFilter {
     private static final long MAX_TIMESTAMP_AGE_SECONDS = 300; // 5 minutes
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
-    @Value("${service.auth.secret:dev-secret-change-in-prod-min-32-chars!!!}")
+    @Value("${service.auth.secret:}")
     private String sharedSecret;
 
     @Override

@@ -42,17 +42,15 @@ gRPC 服务器启动流程：
 
 import asyncio
 import signal
-from typing import Optional
 
 import grpc
-from grpc import aio
 import structlog
+from grpc import aio
 
-from app.gen.gateway import orchestrator_pb2_grpc
-from app.grpc.servicers.orchestrator_servicer import OrchestratorServiceServicer
-from app.grpc.servicers.health_servicer import HealthServicer
-from app.grpc.interceptors.tracing_interceptor import TracingInterceptor
 from app.core.config import config
+from app.gen.gateway import orchestrator_pb2_grpc
+from app.grpc.servicers.health_servicer import HealthServicer
+from app.grpc.servicers.orchestrator_servicer import OrchestratorServiceServicer
 
 logger = structlog.get_logger()
 
@@ -69,7 +67,7 @@ class GrpcServer:
     使用方式：
     ```python
     # 启动
-    grpc_server = GrpcServer(port=50051)
+    grpc_server = GrpcServer(port=50100)
     await grpc_server.start()
 
     # 等待关闭信号
@@ -80,15 +78,15 @@ class GrpcServer:
     ```
     """
 
-    def __init__(self, port: int = 50051):
+    def __init__(self, port: int = 50100):
         """初始化 gRPC 服务器
 
         Args:
             port: 监听端口
         """
         self.port = port
-        self.server: Optional[aio.Server] = None
-        self.health_servicer: Optional[HealthServicer] = None
+        self.server: aio.Server | None = None
+        self.health_servicer: HealthServicer | None = None
         self._shutdown_event = asyncio.Event()
 
     async def start(self) -> None:
@@ -112,13 +110,12 @@ class GrpcServer:
 
         # 注册 Orchestrator Servicer
         orchestrator_servicer = OrchestratorServiceServicer()
-        orchestrator_pb2_grpc.add_OrchestratorServiceServicer_to_server(
-            orchestrator_servicer, self.server
-        )
+        orchestrator_pb2_grpc.add_OrchestratorServiceServicer_to_server(orchestrator_servicer, self.server)
 
         # 注册健康检查服务
         self.health_servicer = HealthServicer()
         from grpc.health.v1 import health_pb2_grpc
+
         health_pb2_grpc.add_HealthServicer_to_server(self.health_servicer, self.server)
 
         # 启动服务器
@@ -174,6 +171,7 @@ class GrpcServer:
         注意：Windows 不支持 add_signal_handler，跳过信号处理
         """
         import sys
+
         if sys.platform == "win32":
             # Windows 不支持信号处理，跳过
             logger.debug("grpc_signal_handlers_skipped", reason="Windows platform")
@@ -201,10 +199,10 @@ class GrpcServer:
 
 
 # 全局 gRPC 服务器实例（用于生命周期管理）
-_grpc_server: Optional[GrpcServer] = None
+_grpc_server: GrpcServer | None = None
 
 
-def get_grpc_server() -> Optional[GrpcServer]:
+def get_grpc_server() -> GrpcServer | None:
     """获取全局 gRPC 服务器实例"""
     return _grpc_server
 

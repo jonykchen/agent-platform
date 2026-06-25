@@ -34,7 +34,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    @Value("${service.auth.secret:dev-secret-change-in-prod-min-32-chars!!!}")
+    @Value("${service.auth.secret:}")
     private String serviceAuthSecret;
 
     @Bean

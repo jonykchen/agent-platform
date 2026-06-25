@@ -1334,7 +1334,7 @@ spec:
 ```mermaid
 flowchart LR
     Ingress[Ingress Controller] -->|8080| Gateway
-    Gateway -->|8001/gRPC50051| Orchestrator
+    Gateway -->|8001/gRPC50100| Orchestrator
     Orchestrator -->|8002| ModelGateway
     Orchestrator -->|gRPC40051| ToolBus
     Orchestrator -->|8003| Knowledge
@@ -2081,7 +2081,7 @@ public class GrpcConfig {
     @Value("${grpc.orchestrator.host:localhost}")
     private String orchestratorHost;
 
-    @Value("${grpc.orchestrator.port:50051}")
+    @Value("${grpc.orchestrator.port:50100}")
     private int orchestratorPort;
 
     @Bean
@@ -2719,7 +2719,7 @@ JWT_EXPIRATION_MS=86400000
 
 # ---- gRPC (Orchestrator) ----
 GRPC_ORCHESTRATOR_HOST=localhost
-GRPC_ORCHESTRATOR_PORT=50051
+GRPC_ORCHESTRATOR_PORT=50100
 
 # ---- 加密服务 ----
 # 生产环境使用 Vault 挂载路径
@@ -2789,7 +2789,7 @@ LOG_LEVEL=INFO
 LOG_FORMAT=json
 
 # ---- gRPC Server ----
-GRPC_SERVER_PORT=50051
+GRPC_SERVER_PORT=50100
 ```
 
 **model-gateway-python**：

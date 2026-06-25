@@ -117,14 +117,12 @@ temp/
 *.temp
 *.bak
 
-# Claude Code - 保留项目配置，忽略会话数据
-.claude/transcripts/
-.claude/statsig/
-.claude/statsig-*.json
-.claude/metrics/
-.claude/sessions/
-.claude/tasks/
-# 保留以下文件：
-# .claude/settings.json
-# .claude/settings.local.json
-# .claude/commands.md
+# Claude Code - 开发工具配置（不提交到仓库）
+.claude/
+CLAUDE.md
+
+# Node.js
+node_modules/
+
+# uv lock 文件变更（保留文件本身，忽略运行时变更）
+# uv.lock

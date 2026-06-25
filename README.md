@@ -1,5 +1,9 @@
 # Agent Platform
 
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB.svg)](https://www.python.org/)
+[![Java 21+](https://img.shields.io/badge/Java-21+-ED8B00.svg)](https://openjdk.org/)
+
 > 企业级 Agent 平台，采用 **Python 编排 + Java 核心服务 + 国内 LLM** 混合架构。
 
 ---
@@ -33,14 +37,14 @@
 
 **macOS / Linux / WSL:**
 ```bash
-git clone <repository-url>
+git clone https://github.com/your-username/agent-platform.git
 cd agent-platform
 ./scripts/setup.sh
 ```
 
 **Windows (CMD):**
 ```cmd
-git clone <repository-url>
+git clone https://github.com/your-username/agent-platform.git
 cd agent-platform
 scripts\setup.bat
 ```
@@ -63,10 +67,21 @@ scripts\dev.bat
 
 | 服务 | 地址 | 说明 |
 |------|------|------|
-| PostgreSQL | localhost:5432 | user: app_user, db: agent_platform |
-| Redis | localhost:6379 | 无密码 |
-| MinIO | http://localhost:9000 | user: minioadmin |
-| Grafana | http://localhost:3000 | user: admin |
+| PostgreSQL | localhost:5432 | 数据库（详见 .env.example） |
+| Redis | localhost:6379 | 缓存 |
+| MinIO | http://localhost:9000 | 对象存储 |
+| Grafana | http://localhost:3000 | 监控面板 |
+
+### 应用服务端口
+
+| 服务 | HTTP 端口 | gRPC 端口 |
+|------|----------|----------|
+| Gateway | 8080 | 9091 |
+| Orchestrator | 8001 | 50100 |
+| Model Gateway | 8002 | - |
+| Knowledge | 8003 | - |
+| Tool Bus | 8083 | 40051 |
+| Governance | 8082 | - |
 
 ### 构建与测试
 
@@ -87,11 +102,6 @@ ruff check .
 
 ```
 agent-platform/
-├── CLAUDE.md               # Claude 项目配置
-├── .claude/                # Claude 配置目录
-│   ├── settings.json       # 权限与自动化配置
-│   ├── workflows.md        # 开发流程指南
-│   └── projects/           # Memory 系统
 ├── docs/                   # 技术方案文档
 ├── contracts/              # 契约定义
 │   ├── openapi/           # REST API
@@ -110,10 +120,8 @@ agent-platform/
 │   └── sql/               # 数据库迁移
 ├── infra/                 # 基础设施配置
 ├── scripts/               # 跨平台脚本
-│   ├── setup.sh           # macOS/Linux 设置
-│   ├── setup.bat          # Windows 设置
-│   ├── dev.bat            # Windows 启动脚本
-│   └── test.bat           # Windows 测试脚本
+│   ├── unix/              # macOS/Linux 脚本
+│   └── windows/           # Windows 脚本
 ├── Makefile               # 统一构建入口
 └── README.md
 ```
@@ -131,42 +139,6 @@ agent-platform/
 | 消息队列 | Kafka 3.6 |
 | 对象存储 | MinIO |
 | 观测 | OpenTelemetry + Prometheus + Grafana |
-
-## Claude Code 配置
-
-本项目已配置 Claude Code 自动化开发环境：
-
-### 功能清单
-
-| 功能 | 说明 |
-|------|------|
-| **自动 Lint** | Python 文件保存后自动 ruff fix |
-| **语法检查** | 写入前自动 Python 语法验证 |
-| **安全防护** | 阻止敏感文件读写 |
-| **Memory 系统** | 持久化项目上下文 |
-| **跨平台支持** | macOS/Linux/Windows |
-
-### 配置文件
-
-| 文件 | 用途 |
-|------|------|
-| `CLAUDE.md` | 项目主配置文档 |
-| `.claude/settings.json` | 权限与 Hooks |
-| `.claude/workflows.md` | 开发流程指南 |
-| `.claude/projects/*/memory/` | Memory 文件 |
-
-### 快速命令
-
-```bash
-# 检查配置是否正确
-python -m json.tool .claude/settings.json
-
-# 查看项目阶段
-cat .claude/projects/*/memory/project_phase.md
-
-# 查看技术决策
-cat .claude/projects/*/memory/tech_decisions.md
-```
 
 ## 实施路线图
 
@@ -231,6 +203,12 @@ uv run ruff check .
 uv run ruff format .
 ```
 
+## 贡献
+
+欢迎贡献！请阅读 [贡献指南](CONTRIBUTING.md) 了解如何参与项目开发。
+
+发现安全漏洞？请参阅 [安全政策](SECURITY.md) 进行负责任披露。
+
 ## 许可证
 
-内部项目，仅供授权使用。
+本项目基于 [AGPL-3.0](LICENSE) 协议开源。

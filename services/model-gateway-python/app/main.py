@@ -458,14 +458,28 @@ def create_app() -> FastAPI:
     # ─────────────────────────────────────────────────────────────────────
 
     # CORS 中间件 - 处理跨域请求
-    # 生产环境应该限制 allow_origins 为具体域名
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # 生产环境应改为具体域名列表
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # 注意：allow_origins=["*"] + allow_credentials=True 是不安全配置
+    # 生产环境应通过 CORS_ALLOWED_ORIGINS 环境变量指定具体域名
+    from app.core.config import config as app_config
+
+    cors_origins = app_config.cors_allowed_origins
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[o.strip() for o in cors_origins.split(",")],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    else:
+        # 未配置 CORS 域名时，允许所有来源但不发送凭证（安全降级）
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # ─────────────────────────────────────────────────────────────────────
     # 路由注册

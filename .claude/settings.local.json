@@ -55,7 +55,8 @@
       "Bash(cd /Users/jonychen/IdeaProjects/agent-platform/services/knowledge-python)",
       "Bash(echo \"=== retrievers ===\")",
       "Bash(echo \"=== hybrid_retriever.search 签名与 rerank 调用 ===\")",
-      "Bash(/Users/jonychen/.local/bin/ruff check *)"
+      "Bash(/Users/jonychen/.local/bin/ruff check *)",
+      "Bash(pip3 show *)"
     ]
   },
   "extends": "./settings.json"

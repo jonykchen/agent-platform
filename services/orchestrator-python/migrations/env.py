@@ -25,7 +25,7 @@ def _resolve_database_url() -> str:
 
         url = os.environ.get(
             "DATABASE_URL",
-            "postgresql://app_user:dev_password@localhost:5432/agent_platform",
+            "",
         )
     return url.replace("+asyncpg", "+psycopg")
 

@@ -121,7 +121,7 @@ class AppConfig(BaseSettings):
 
     # ToolBus gRPC 地址 - 工具执行服务
     # 使用 gRPC 而非 HTTP 的原因：更高效的二进制传输、强类型约束
-    tool_bus_grpc_addr: str = "localhost:50051"
+    tool_bus_grpc_addr: str = "localhost:40051"
 
     # ─────────────────────────────────────────────────────────────────────────
     # 数据库配置 [SECRET] - PostgreSQL 异步连接
@@ -132,8 +132,8 @@ class AppConfig(BaseSettings):
     # - 完全支持 asyncio，不需要线程池
     # - 连接池管理更高效
     database_url: str = Field(
-        default="postgresql+asyncpg://app_user:dev_password@localhost:5432/agent_platform",
-        description="[SECRET] PostgreSQL 异步连接 URL",
+        default="postgresql+asyncpg://app_user:CHANGE_ME@localhost:5432/agent_platform",
+        description="[SECRET] PostgreSQL 异步连接 URL（通过 DATABASE_URL 环境变量覆盖）",
     )
     database_pool_size: int = 20  # 连接池大小，根据并发量调整
 
@@ -147,8 +147,8 @@ class AppConfig(BaseSettings):
     # - Checkpoint 暂存
     # - 分布式锁
     redis_url: str = Field(
-        default="redis://:dev_password@localhost:6379/0",
-        description="[SECRET] Redis 连接 URL",
+        default="redis://:CHANGE_ME@localhost:6379/0",
+        description="[SECRET] Redis 连接 URL（通过 REDIS_URL 环境变量覆盖）",
     )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -182,8 +182,8 @@ class AppConfig(BaseSettings):
     # 2. 请求携带 JWT → 各服务校验
     # 3. JWT 过期 → 刷新令牌或重新登录
     jwt_secret: str = Field(
-        default="dev-only-change-me-in-production-min-32-chars!!!",
-        description="[SECRET] JWT 签名密钥（生产必须 ≥ 32 字符）",
+        default="",
+        description="[SECRET] JWT 签名密钥（必须通过 JWT_SECRET 环境变量设置，生产 ≥ 32 字符）",
     )
     jwt_algorithm: str = "HS256"  # HMAC-SHA256，性能好、兼容性强
     jwt_expiry_seconds: int = 86400  # 24 小时，平衡安全与用户体验
@@ -377,8 +377,17 @@ class AppConfig(BaseSettings):
     @field_validator("jwt_secret")
     @classmethod
     def validate_jwt_secret(cls, v: str, info) -> str:
-        if info.data.get("environment") == "prod" and len(v) < 32:
-            raise ValueError("Production JWT secret must be at least 32 characters")
+        env = info.data.get("environment", "local")
+        # 生产/预发环境禁止空密钥和弱密钥
+        if env in ("prod", "production", "staging"):
+            if not v:
+                raise ValueError("JWT_SECRET is required in production. Set the JWT_SECRET environment variable.")
+            if len(v) < 32:
+                raise ValueError("Production JWT secret must be at least 32 characters")
+        # 所有环境禁止已知弱密钥
+        unsafe_secrets = ["CHANGE_ME", "changeme", "password123"]
+        if any(p in v for p in unsafe_secrets):
+            raise ValueError("JWT secret contains an unsafe pattern. Set a strong JWT_SECRET environment variable.")
         return v
 
     @field_validator("database_url")
@@ -386,7 +395,7 @@ class AppConfig(BaseSettings):
     def validate_database_url(cls, v: str, info) -> str:
         """生产/预发环境禁止使用默认数据库密码"""
         env = info.data.get("environment", "local")
-        unsafe_patterns = ["dev_password", "password123", "changeme"]
+        unsafe_patterns = ["dev_password", "password123", "changeme", "CHANGE_ME"]
         if env in ("prod", "production", "staging") and any(p in v for p in unsafe_patterns):
             raise ValueError(
                 f"Environment '{env}' must not use default database credentials. Set DATABASE_URL environment variable."
@@ -398,7 +407,7 @@ class AppConfig(BaseSettings):
     def validate_redis_url(cls, v: str, info) -> str:
         """生产/预发环境禁止使用默认 Redis 密码"""
         env = info.data.get("environment", "local")
-        unsafe_patterns = ["dev_password", "password123", "changeme"]
+        unsafe_patterns = ["dev_password", "password123", "changeme", "CHANGE_ME"]
         if env in ("prod", "production", "staging") and any(p in v for p in unsafe_patterns):
             raise ValueError(
                 f"Environment '{env}' must not use default Redis credentials. Set REDIS_URL environment variable."

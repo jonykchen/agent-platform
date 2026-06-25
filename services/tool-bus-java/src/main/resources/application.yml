@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:5432/agent_platform
     username: ${DB_USER:app_user}
-    password: ${DB_PASSWORD:dev_password}
+    password: ${DB_PASSWORD:}
     hikari:
       maximum-pool-size: 10
 
@@ -31,7 +31,7 @@ grpc:
     # 合法的调用方服务列表
     valid-services: orchestrator,gateway
     # Service Token 签名密钥（生产环境必须通过环境变量注入）
-    secret: ${GRPC_AUTH_SECRET:dev-secret-change-in-prod-min-32-chars!!!}
+    secret: ${GRPC_AUTH_SECRET:}
     issuer: agent-platform
 
 management:
@@ -41,7 +41,7 @@ management:
         include: health,info,prometheus,metrics
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
   prometheus:
     metrics:
       export:

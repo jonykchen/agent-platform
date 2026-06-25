@@ -58,7 +58,7 @@ public class OrchestratorClient {
     @Value("${orchestrator.grpc.host:localhost}")
     private String orchestratorHost;
 
-    @Value("${orchestrator.grpc.port:50051}")
+    @Value("${orchestrator.grpc.port:50100}")
     private int orchestratorPort;
 
     @Value("${orchestrator.grpc.timeout-ms:30000}")

@@ -58,6 +58,20 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ---
 
+## 配置环境变量
+
+> ⚠️ **首次启动前必须配置环境变量！**
+
+```bash
+# 复制环境变量模板
+cp .env.example .env.local
+
+# 编辑 .env.local，填入必要的配置值（如数据库密码、JWT 密钥等）
+# 开发环境可使用模板中的默认值
+```
+
+详细的配置说明请参考 `.env.example` 文件中的注释。
+
 ## 一键启动基础设施
 
 ```bash
@@ -72,11 +86,11 @@ make dev-down
 ```
 
 启动后可访问：
-- **PostgreSQL**: `localhost:5432` (user: `app_user`, password: `dev_password`)
-- **Redis**: `localhost:6379` (password: `dev_password`)
-- **MinIO Console**: http://localhost:9001 (user: `minioadmin`, password: `minioadmin123`)
+- **PostgreSQL**: `localhost:5432` (user: `app_user`，密码见 `.env.local`)
+- **Redis**: `localhost:6379` (密码见 `.env.local`)
+- **MinIO Console**: http://localhost:9001 (密码见 `.env.local`)
 - **Kafka**: `localhost:9092` / `localhost:9093`
-- **Grafana**: http://localhost:3000 (user: `admin`, password: `admin`)
+- **Grafana**: http://localhost:3000 (密码见 `.env.local`)
 - **Prometheus**: http://localhost:9090
 
 ---
@@ -205,11 +219,11 @@ pnpm build
 | 服务 | 端口 | 说明 |
 |------|------|------|
 | Gateway (Java) | 8080 | API 入口 |
-| Orchestrator | 8001 | Agent 编排 |
+| Orchestrator | 8000 (开发 8001) | Agent 编排 |
 | Model Gateway | 8002 | 模型代理 |
 | Knowledge | 8003 | 知识库 |
-| Tool Bus | 8004 | 工具调用 |
-| Governance | 8005 | 治理服务 |
+| Tool Bus | 8083 | 工具调用 |
+| Governance | 8082 | 治理服务 |
 | Web Frontend | 5173 | 前端开发服务 |
 
 ---

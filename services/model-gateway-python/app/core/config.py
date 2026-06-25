@@ -94,13 +94,21 @@ class AppConfig(BaseSettings):
     # Redis 配置 [SECRET] - 缓存和熔断状态存储
     # ─────────────────────────────────────────────────────────────────────────
 
-    # Redis 在 Model Gateway 的用途：
+    # CORS 配置
+    # 生产环境应指定具体域名，如 "https://app.example.com,https://admin.example.com"
+    # 留空时允许所有来源但不发送凭证（安全降级）
+    cors_allowed_origins: str = Field(
+        default="",
+        description="CORS 允许的域名列表（逗号分隔），留空则允许所有来源但不发送凭证",
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
     # 1. 熔断器状态存储：记录各提供商的熔断状态
     # 2. 速率限制计数：防止短时间内大量请求
     # 3. 响应缓存：相同请求的响应缓存（可选）
     redis_url: str = Field(
-        default="redis://:dev_password@localhost:6379/1",
-        description="[SECRET] Redis 连接 URL",
+        default="redis://:CHANGE_ME@localhost:6379/1",
+        description="[SECRET] Redis 连接 URL（通过 REDIS_URL 环境变量覆盖）",
     )
 
     # ─────────────────────────────────────────────────────────────────────────

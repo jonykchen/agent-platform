@@ -27,7 +27,7 @@
 │              ▼                                    ▼                        │
 │  ┌─────────────────────────────┐    ┌─────────────────────────────┐        │
 │  │   ToolBus Service (Java)    │    │   Model Gateway (Python)    │        │
-│  │   localhost:50051          │    │   localhost:8002            │        │
+│  │   localhost:40051          │    │   localhost:8002            │        │
 │  │                             │    │                             │        │
 │  │ • 工具执行引擎              │    │ • Qwen/GLM/Kimi/DeepSeek   │        │
 │  │ • 风控审批                  │    │ • 负载均衡                  │        │
@@ -181,7 +181,7 @@ model_client = get_model_gateway_client()
 
 ```python
 # config.py 中的相关配置
-tool_bus_grpc_addr: str = "localhost:50051"  # ToolBus gRPC 地址
+tool_bus_grpc_addr: str = "localhost:40051"  # ToolBus gRPC 地址
 model_gateway_url: str = "http://localhost:8002"  # Model Gateway HTTP 地址
 
 tool_call_timeout_s: int = 15  # 工具调用超时
