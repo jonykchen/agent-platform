@@ -530,13 +530,13 @@ A: `tool_call_node` 会：
 | [02-communication-contracts.md](./02-communication-contracts.md) | 工具注册 API |
 | [03-security-specification.md](./03-security-specification.md) | 风控规则 |
 | [05-performance-optimization.md](./05-performance-optimization.md) | 性能优化 |
-| [09-frontend-design.md](./09-frontend-design.md) | 前端设计（✅ 开发中） |
+| [09-frontend-design.md](./09-frontend-design.md) | 前端设计（✅ 已实施） |
 
 ---
 
 ## 11. 前端模块
 
-> 前端代码位于 `services/web-frontend/`，实现状态：**开发中**
+> 前端代码位于 `services/web-frontend/`，实现状态：**已实施**
 
 ### 11.1 前端功能一览
 
