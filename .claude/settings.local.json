@@ -56,7 +56,10 @@
       "Bash(echo \"=== retrievers ===\")",
       "Bash(echo \"=== hybrid_retriever.search 签名与 rerank 调用 ===\")",
       "Bash(/Users/jonychen/.local/bin/ruff check *)",
-      "Bash(pip3 show *)"
+      "Bash(pip3 show *)",
+      "Bash(export TMPDIR=/tmp/claude-tmp)",
+      "Bash(mkdir -p /tmp/claude-tmp)",
+      "Bash(echo \"Orchestrator not ready\")"
     ]
   },
   "extends": "./settings.json"

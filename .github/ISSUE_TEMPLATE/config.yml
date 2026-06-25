@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 查看文档
+    url: https://github.com/jonychen/agent-platform/blob/master/docs/00-index.md
+    about: 在提交 Issue 前，请先查阅项目文档
+  - name: 🔒 安全漏洞
+    url: https://github.com/jonychen/agent-platform/blob/master/SECURITY.md
+    about: 安全问题请勿公开报告，请参阅安全政策进行负责任披露
