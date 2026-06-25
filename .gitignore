@@ -126,3 +126,6 @@ node_modules/
 
 # uv lock 文件变更（保留文件本身，忽略运行时变更）
 # uv.lock
+
+# 本地上传文件（Knowledge 服务）
+uploads/
