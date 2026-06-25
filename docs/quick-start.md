@@ -242,10 +242,13 @@ pnpm build
 # orchestrator-python/.env.local 示例
 DATABASE_URL=postgresql+asyncpg://app_user:dev_password@localhost:5432/agent_platform
 REDIS_URL=redis://:dev_password@localhost:6379/0
-DEEPSEEK_API_KEY=sk-xxx          # 至少配置一个 LLM API Key
-DEFAULT_MODEL=deepseek-chat       # 默认模型
+DEEPSEEK_API_KEY=sk-xxx          # 聊天模型（DeepSeek）
+QWEN_API_KEY=sk-xxx              # Embedding 模型（通义千问，RAG 必需）
+DEFAULT_MODEL=deepseek-chat       # 默认聊天模型
 OTEL_ENABLED=false                # 本地开发可关闭 OTel
 ```
+
+> **RAG 说明**：知识库检索（RAG）需要 Embedding 向量化服务，使用通义千问 `text-embedding-v3`（1024 维）。需在 Model Gateway 和 Orchestrator 的 `.env.local` 中配置 `QWEN_API_KEY`。
 
 ---
 

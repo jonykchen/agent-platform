@@ -40,6 +40,7 @@ graph TB
     subgraph "知识层"
         Knowledge[Knowledge<br/>Python 3.12 + FastAPI<br/>:8003]
         RAG[RAG 知识库]
+        Embedding[Embedding<br/>text-embedding-v3<br/>1024 维]
     end
 
     subgraph "数据层"
@@ -67,6 +68,7 @@ graph TB
     Governance --> Approval
     Orchestrator -->|HTTP| Knowledge
     Knowledge --> RAG
+    Knowledge -->|Embedding API| ModelGateway
     Knowledge --> PostgreSQL
     Orchestrator --> PostgreSQL
     Orchestrator --> Redis
@@ -119,6 +121,41 @@ sequenceDiagram
     G-->>U: 返回响应
 ```
 
+## RAG 知识库流程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant O as Orchestrator
+    participant K as Knowledge
+    participant M as Model Gateway
+    participant DB as PostgreSQL<br/>(pgvector)
+
+    rect rgb(232, 245, 233)
+        Note over K,DB: 文档索引流程
+        U->>K: 上传文档
+        K->>K: 分块 (chunk_size=500)
+        K->>M: Embedding 请求<br/>text-embedding-v3
+        M-->>K: 返回 1024 维向量
+        K->>DB: 存储 chunk + embedding<br/>HNSW 索引
+    end
+
+    rect rgb(227, 242, 253)
+        Note over O,DB: RAG 检索流程
+        U->>O: 用户提问
+        O->>O: thinking 节点<br/>判断需要知识检索
+        O->>K: 语义检索请求
+        K->>M: Query Embedding
+        M-->>K: Query 向量
+        K->>DB: pgvector 余弦相似度搜索<br/>top-k + 重排序
+        K-->>O: 返回相关文档片段
+        O->>O: 将检索结果注入上下文
+        O->>M: 带上下文的 LLM 调用
+        M-->>O: 增强回答
+        O-->>U: 返回结果
+    end
+```
+
 ## 数据流向图
 
 ```mermaid
@@ -145,6 +182,7 @@ graph LR
         ConversationHistory[对话历史]
         LongTermMemory[长期记忆]
         KnowledgeBase[知识库]
+        VectorDB[(pgvector<br/>1024 维)]
     end
 
     UserInput --> TokenCounter
@@ -158,7 +196,8 @@ graph LR
     Response --> ConversationHistory
     ToolResults --> ConversationHistory
     ConversationHistory --> LongTermMemory
-    KnowledgeBase --> LLMCall
+    KnowledgeBase --> VectorDB
+    VectorDB -->|余弦相似度| LLMCall
 ```
 
 ## 部署架构图

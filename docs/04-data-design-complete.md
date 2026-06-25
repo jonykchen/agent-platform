@@ -388,7 +388,7 @@ CREATE TABLE knowledge_document (
     status              VARCHAR(32) NOT NULL DEFAULT 'pending',
     chunk_count         INT DEFAULT 0,
     
-    embedding_model     VARCHAR(64) DEFAULT 'bge-large-zh-v1.5',
+    embedding_model     VARCHAR(64) DEFAULT 'text-embedding-v3',
     
     access_control      JSONB DEFAULT '{"level": "tenant"}',  -- tenant / department / custom
     

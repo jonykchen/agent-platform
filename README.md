@@ -148,7 +148,7 @@ agent-platform/
 |-------|------|-----------|
 | **Phase 1: MVP** | ✅ 已完成 | Gateway + Orchestrator + Model Gateway + Tool Bus + Governance + Knowledge |
 | **Phase 2: 生产加固** | ✅ 已完成 | CI/CD + 安全加固 + 可观测性 + 测试体系 + 文档体系 |
-| **Phase 3: 能力增强** | 📋 规划中 | 多模型灰度 / 高级 RAG / 插件系统 |
+| **Phase 3: 能力增强** | 🚧 进行中 | 多模型灰度 / RAG 基础已就绪 / 插件系统 |
 | **Phase 4: 规模化** | 📋 规划中 | 多租户 RLS 增强 / 配额管理 / 水平扩展 |
 
 > 详细路线图见 [ROADMAP.md](ROADMAP.md)

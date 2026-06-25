@@ -192,6 +192,11 @@ HTTP_KEEPALIVE_EXPIRY = 30.0      # HTTP keepalive 过期时间（秒）
 # 默认模型
 DEFAULT_MODEL = "deepseek-chat"   # 默认 LLM 模型（需配置对应 API Key）
 
+# Embedding / RAG 配置
+EMBEDDING_MODEL = "text-embedding-v3"  # 通义千问 Embedding 模型
+EMBEDDING_DIMENSION = 1024             # 向量维度（与 pgvector 列定义一致）
+QWEN_API_KEY = "sk-xxx"               # RAG 必需，用于 Embedding 向量化
+
 # OpenTelemetry（本地开发可在 .env.local 中设为 false）
 OTEL_ENABLED = True               # 是否启用 OTel
 OTLP_ENDPOINT = "http://localhost:4317"  # OTLP gRPC 端点
