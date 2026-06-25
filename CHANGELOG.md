@@ -106,9 +106,9 @@
 - Knowledge (Python)：知识库服务（RAG）
 - 基础设施：Docker Compose / PostgreSQL + pgvector / Redis / Kafka
 
-[Unreleased]: https://github.com/jonychen/agent-platform/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/jonychen/agent-platform/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/jonychen/agent-platform/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/jonychen/agent-platform/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/jonychen/agent-platform/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/jonychen/agent-platform/releases/tag/v0.1.0
+[Unreleased]: https://github.com/jonykchen/agent-platform/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jonykchen/agent-platform/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/jonykchen/agent-platform/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/jonykchen/agent-platform/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/jonykchen/agent-platform/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/jonykchen/agent-platform/releases/tag/v0.1.0

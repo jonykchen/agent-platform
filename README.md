@@ -3,7 +3,7 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB.svg)](https://www.python.org/)
 [![Java 21+](https://img.shields.io/badge/Java-21+-ED8B00.svg)](https://openjdk.org/)
-[![CI](https://github.com/jonychen/agent-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/jonychen/agent-platform/actions/workflows/ci.yml)
+[![CI](https://github.com/jonykchen/agent-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/jonykchen/agent-platform/actions/workflows/ci.yml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
 > 企业级 Agent 平台，采用 **Python 编排 + Java 核心服务 + 国内 LLM** 混合架构。
@@ -39,14 +39,14 @@
 
 **macOS / Linux / WSL:**
 ```bash
-git clone https://github.com/jonychen/agent-platform.git
+git clone https://github.com/jonykchen/agent-platform.git
 cd agent-platform
 ./scripts/setup.sh
 ```
 
 **Windows (CMD):**
 ```cmd
-git clone https://github.com/jonychen/agent-platform.git
+git clone https://github.com/jonykchen/agent-platform.git
 cd agent-platform
 scripts\setup.bat
 ```

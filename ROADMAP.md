@@ -68,4 +68,4 @@
 
 欢迎社区参与！请阅读 [贡献指南](CONTRIBUTING.md) 了解如何参与项目开发。
 
-如有建议或想法，请提交 [Feature Request](https://github.com/jonychen/agent-platform/issues/new?template=feature_request.md)。
+如有建议或想法，请提交 [Feature Request](https://github.com/jonykchen/agent-platform/issues/new?template=feature_request.md)。

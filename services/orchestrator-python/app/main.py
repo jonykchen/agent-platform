@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI):
     # ─────────────────────────────────────────────────────────────────────
 
     # 1. 日志初始化（必须最先）
-    setup_logging(config.environment, config.debug)
+    setup_logging(config.environment, "DEBUG" if config.debug else "INFO")
 
     # 1.5 初始化追踪系统
     from app.core.tracing import setup_tracing

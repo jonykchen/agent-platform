@@ -16,7 +16,7 @@
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/jonychen/agent-platform.git
+git clone https://github.com/jonykchen/agent-platform.git
 cd agent-platform
 
 # 2. 配置环境变量
@@ -106,7 +106,7 @@ docs(readme): 更新安装步骤
 
 ## 报告问题
 
-- **Bug 报告**：使用 [GitHub Issues](https://github.com/jonychen/agent-platform/issues)，选择 Bug Report 模板
+- **Bug 报告**：使用 [GitHub Issues](https://github.com/jonykchen/agent-platform/issues)，选择 Bug Report 模板
 - **功能建议**：使用 GitHub Issues，选择 Feature Request 模板
 - **安全问题**：请勿公开报告，参见 [SECURITY.md](SECURITY.md)
 

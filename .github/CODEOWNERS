@@ -4,39 +4,39 @@
 #  文档: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 # ============================================================
 
-# 默认所有文件由 @jonychen 审查
-*                       @jonychen
+# 默认所有文件由 @jonykchen 审查
+*                       @jonykchen
 
 # Gateway Java 服务
-services/gateway-java/  @jonychen
+services/gateway-java/  @jonykchen
 
 # Orchestrator Python 服务
-services/orchestrator-python/ @jonychen
+services/orchestrator-python/ @jonykchen
 
 # Model Gateway Python 服务
-services/model-gateway-python/ @jonychen
+services/model-gateway-python/ @jonykchen
 
 # Tool Bus Java 服务
-services/tool-bus-java/ @jonychen
+services/tool-bus-java/ @jonykchen
 
 # Governance Java 服务
-services/governance-java/ @jonychen
+services/governance-java/ @jonykchen
 
 # Knowledge Python 服务
-services/knowledge-python/ @jonychen
+services/knowledge-python/ @jonykchen
 
 # 前端
-services/web-frontend/  @jonychen
+services/web-frontend/  @jonykchen
 
 # 共享契约（Proto/OpenAPI）变更需要严格审查
-contracts/              @jonychen
+contracts/              @jonykchen
 
 # 基础设施配置
-infra/                  @jonychen
+infra/                  @jonykchen
 
 # CI/CD 配置
-.github/                @jonychen
+.github/                @jonykchen
 
 # 安全相关文件
-SECURITY.md             @jonychen
-shared/java-config/     @jonychen
+SECURITY.md             @jonykchen
+shared/java-config/     @jonykchen
