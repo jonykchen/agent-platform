@@ -46,7 +46,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from pydantic import Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppConfig(BaseSettings):
@@ -67,6 +67,12 @@ class AppConfig(BaseSettings):
        - Field(description="[SECRET]") 标记敏感信息
        - 日志输出时自动脱敏
     """
+
+    model_config = SettingsConfigDict(
+        env_file=".env.local",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # ─────────────────────────────────────────────────────────────────────────
     # 环境配置 - 控制应用运行模式

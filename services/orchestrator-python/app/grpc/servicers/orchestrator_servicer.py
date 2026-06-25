@@ -153,7 +153,7 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
             )
 
             # 执行 Agent
-            result = await graph.invoke(initial_state, config=graph_config)
+            result = await graph.ainvoke(initial_state, config=graph_config)
 
             # 提取结果
             output = result.get("output", "")
@@ -332,7 +332,7 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
             graph_config = {"configurable": {"thread_id": request_id}}
 
             # 执行完整 Agent 图（保留工具/风控/审批逻辑）
-            result = await graph.invoke(initial_state, config=graph_config)
+            result = await graph.ainvoke(initial_state, config=graph_config)
 
             output = result.get("output", "")
             approval_id = result.get("approval_id")

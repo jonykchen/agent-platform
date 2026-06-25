@@ -55,6 +55,7 @@ from fastapi import APIRouter, HTTPException, Request
 from app.api.middleware.request_context import get_request_id, get_tenant_id, get_user_id
 from app.api.utils import get_or_create_session_id
 from app.core.config import config
+from app.core.prompt_guard import prompt_guard
 from app.graph.builder import get_agent_graph
 from app.graph.state import create_initial_state
 from app.infrastructure.redis_client import get_redis
@@ -73,7 +74,7 @@ router = APIRouter()
 
 
 @router.post("/agents/{agent_id}/runs", response_model=AgentRunResponse)
-async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request, background_tasks: BackgroundTasks):
+async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request):
     """启动 Agent 运行
 
     执行 Agent 编排流程，支持同步和异步两种模式。
@@ -161,7 +162,7 @@ async def start_agent_run(agent_id: str, request: AgentRunRequest, req: Request,
     # 同步模式：执行并等待结果
     if request.execution_mode == ExecutionMode.SYNC:
         try:
-            result = await graph.invoke(initial_state, config=graph_config)
+            result = await graph.ainvoke(initial_state, config=graph_config)
 
             # 提取结果
             output = result.get("output", "")
@@ -311,7 +312,7 @@ async def _execute_agent_background(
 
         # 执行 Agent
         graph = get_agent_graph()
-        result = await graph.invoke(initial_state, config=graph_config)
+        result = await graph.ainvoke(initial_state, config=graph_config)
 
         # 更新状态为 completed
         await redis_client.hset(

@@ -148,8 +148,14 @@ dev:
 	@$(DOCKER_COMPOSE) -f infra/docker-compose.yml up -d
 	@echo "🚀 Dev environment started"
 
+# 精简开发环境：仅 PostgreSQL + Redis + MinIO（~1.5 GB）
+dev-slim:
+	@$(DOCKER_COMPOSE) -f infra/docker-compose.dev.yml up -d
+	@echo "🚀 Dev-slim environment started (PostgreSQL + Redis + MinIO)"
+
 dev-down:
 	@$(DOCKER_COMPOSE) -f infra/docker-compose.yml down
+	@$(DOCKER_COMPOSE) -f infra/docker-compose.dev.yml down 2>/dev/null || true
 	@echo "🛑 Dev environment stopped"
 
 # ---- 清理 ----

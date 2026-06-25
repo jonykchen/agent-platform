@@ -250,7 +250,7 @@ def build_agent_graph():
     from app.core.config import config
 
     env = getattr(config, "environment", "local")
-    ephemeral_envs = {"local", "dev", "test"}
+    ephemeral_envs = {"local", "dev", "development", "test"}
 
     if env not in ephemeral_envs:
         # 生产/预发：强制 Redis 持久化，缺少 redis_url 时直接失败而非静默退化。
@@ -265,8 +265,10 @@ def build_agent_graph():
         checkpointer = RedisSaver(redis_url=redis_url)
         logger.info("Using Redis checkpointer for persistent environment", environment=env)
     else:
-        checkpointer = MemorySaver()
-        logger.info("Using MemorySaver for ephemeral environment", environment=env)
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        checkpointer = InMemorySaver()
+        logger.info("Using InMemorySaver for ephemeral environment", environment=env)
 
     compiled_graph = graph.compile(
         checkpointer=checkpointer,

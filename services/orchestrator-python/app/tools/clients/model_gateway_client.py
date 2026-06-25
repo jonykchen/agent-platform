@@ -200,13 +200,11 @@ logger = structlog.get_logger()
 
 # 默认模型列表（用于降级）
 DEFAULT_MODELS = [
-    {"id": "qwen-max", "provider": "qwen"},
-    {"id": "qwen-plus", "provider": "qwen"},
-    {"id": "deepseek-v3", "provider": "deepseek"},
+    {"id": "deepseek-chat", "provider": "deepseek"},
 ]
 
 # 模型降级顺序
-MODEL_FALLBACK_ORDER = ["qwen-max", "deepseek-v3", "qwen-plus"]
+MODEL_FALLBACK_ORDER = ["deepseek-chat", "deepseek-chat", "deepseek-chat"]
 
 
 class ModelGatewayClient:

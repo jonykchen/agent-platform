@@ -189,7 +189,10 @@ HTTP_MAX_CONNECTIONS = 100        # HTTP 最大连接数
 HTTP_MAX_KEEPALIVE = 20           # HTTP 最大 keepalive 连接数
 HTTP_KEEPALIVE_EXPIRY = 30.0      # HTTP keepalive 过期时间（秒）
 
-# OpenTelemetry
+# 默认模型
+DEFAULT_MODEL = "deepseek-chat"   # 默认 LLM 模型（需配置对应 API Key）
+
+# OpenTelemetry（本地开发可在 .env.local 中设为 false）
 OTEL_ENABLED = True               # 是否启用 OTel
 OTLP_ENDPOINT = "http://localhost:4317"  # OTLP gRPC 端点
 ```
@@ -220,7 +223,8 @@ OTLP_ENDPOINT = "http://localhost:4317"  # OTLP gRPC 端点
 ## 常用命令
 
 ```bash
-make dev              # 启动基础设施
+make dev              # 启动完整基础设施（含 Kafka/OTel/Prometheus/Grafana）
+make dev-slim         # 精简开发环境（仅 PostgreSQL + Redis + MinIO，~1.5 GB）
 make dev-down         # 停止
 make lint             # Lint 检查
 make fmt              # 格式化

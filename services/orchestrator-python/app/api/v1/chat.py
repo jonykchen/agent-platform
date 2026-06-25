@@ -606,7 +606,7 @@ async def chat_completion(request: ChatRequest, req: Request):
         # 全局总超时：整个图执行不得超过 agent_total_timeout_s（S-AGENT 总超时）。
         # 防止个别节点（模型/工具）卡死拖垮请求，超时统一抛出 asyncio.TimeoutError。
         async with asyncio.timeout(config.agent_total_timeout_s):
-            result = await graph.invoke(initial_state, config=graph_config)
+            result = await graph.ainvoke(initial_state, config=graph_config)
 
         # 提取结果
         output = result.get("output", "")
@@ -787,7 +787,7 @@ async def resume_chat(request: ResumeChatRequest, req: Request):
     }
 
     # 从审批等待节点恢复
-    result = await graph.invoke(checkpoint, config=graph_config)
+    result = await graph.ainvoke(checkpoint, config=graph_config)
 
     # 清理 checkpoint
     await checkpoint_store.delete(run_id)

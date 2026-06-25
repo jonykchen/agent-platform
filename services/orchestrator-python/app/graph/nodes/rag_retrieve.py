@@ -146,13 +146,11 @@ async def rag_retrieve_node(state: AgentState) -> dict:
             request_id=request_id,
         )
 
-        # 检索失败时返回空结果，让模型自己回答
+        # 检索失败时返回空结果，让模型自己回答（不设 error，避免阻断流程）
         return {
             "retrieved_docs": [],
             "current_step": "thinking",
             "step_count": state["step_count"] + 1,
-            "error": f"知识库检索失败: {str(e)}",
-            "error_code": "ERR_RAG_SEARCH_FAILED",
         }
 
 

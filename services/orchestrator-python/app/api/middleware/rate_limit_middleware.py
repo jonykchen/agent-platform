@@ -5,10 +5,9 @@
 
 from __future__ import annotations
 
+import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-
-import structlog
 
 from app.core.exceptions import RateLimitedError
 from app.core.quota_manager import TenantQuotaManager
@@ -101,7 +100,8 @@ def get_quota_manager() -> TenantQuotaManager:
     """获取配额管理器实例"""
     global _quota_manager
     if _quota_manager is None:
-        from app.main import get_redis
+        from app.infrastructure.redis_client import get_redis
+
         redis = get_redis()
         _quota_manager = TenantQuotaManager(redis)
     return _quota_manager

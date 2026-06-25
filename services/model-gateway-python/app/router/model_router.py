@@ -119,8 +119,8 @@ class ModelRouter:
 
         # 默认路由策略
         self._default_policy = {
-            "primary_model": "qwen-max",
-            "fallback_models": ["qwen-plus", "qwen-turbo"],
+            "primary_model": "deepseek-chat",
+            "fallback_models": ["deepseek-chat"],
         }
 
     def register_provider(self, name: str, provider: BaseLLMProvider) -> None:

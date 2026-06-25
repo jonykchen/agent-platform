@@ -204,7 +204,7 @@ class AppConfig(BaseSettings):
     # ─────────────────────────────────────────────────────────────────────────
 
     # 默认模型配置
-    default_model: str = "qwen-max"
+    default_model: str = "deepseek-chat"
     default_temperature: float = 0.7
     default_max_tokens: int = 2000
 

@@ -55,9 +55,9 @@ scripts\setup.bat
 
 **macOS / Linux:**
 ```bash
+make dev-slim         # 精简环境（推荐，仅 PostgreSQL + Redis + MinIO，~1.5 GB）
+# 或完整环境（含 Kafka/OTel/Prometheus/Grafana）
 make dev
-# 或
-docker compose -f infra/docker-compose.yml up -d
 ```
 
 **Windows:**
@@ -132,7 +132,7 @@ agent-platform/
 
 | 层级 | 技术选型 |
 |------|----------|
-| API 入口 | Java 21 + Spring Boot 3.2 |
+| API 入口 | Java 17 + Spring Boot 3.2 |
 | Agent 编排 | Python 3.12 + FastAPI + LangGraph |
 | 模型网关 | Python 3.12 + FastAPI |
 | 工具服务 | Java 21 + Spring Boot 3.2 |

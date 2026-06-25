@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Redis Checkpointer - 生产环境状态持久化
 
 替代 MemorySaver，支持：
@@ -221,7 +223,7 @@ class RedisSaver:
             self._redis = None
 
 
-def get_checkpointer(environment: str, redis_url: str | None = None) -> RedisSaver | "MemorySaver":
+def get_checkpointer(environment: str, redis_url: str | None = None) -> RedisSaver | MemorySaver:
     """获取合适的 checkpointer
 
     环境枚举为 local/dev/test/staging/prod。除 local/dev/test 外（即 staging/prod）

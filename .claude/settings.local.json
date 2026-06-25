@@ -66,7 +66,8 @@
       "Bash(echo \"Gateway starting \\(PID: $!, skipping test compile\\)...\")",
       "Bash(DB_PASSWORD=dev_password REDIS_PASSWORD=dev_password ENVIRONMENT=local mvn spring-boot:run -Dmaven.test.skip=true)",
       "Bash(pnpm dev *)",
-      "Bash(read name *)"
+      "Bash(read name *)",
+      "Bash(open -a Docker)"
     ]
   },
   "extends": "./settings.json"

@@ -75,7 +75,10 @@ cp .env.example .env.local
 ## 一键启动基础设施
 
 ```bash
-# 启动 PostgreSQL、Redis、Kafka、MinIO、监控等
+# 精简环境（推荐日常开发，仅 PostgreSQL + Redis + MinIO，~1.5 GB）
+make dev-slim
+
+# 完整环境（含 Kafka/OTel/Prometheus/Grafana，~7.5 GB）
 make dev
 
 # 查看服务状态
@@ -84,6 +87,8 @@ docker ps
 # 停止基础设施
 make dev-down
 ```
+
+> **提示**：`make dev-slim` 足以支撑全流程 Agent 对话测试。完整环境用于需要 Kafka 审批回调、链路追踪、监控看板的场景。
 
 启动后可访问：
 - **PostgreSQL**: `localhost:5432` (user: `app_user`，密码见 `.env.local`)
@@ -204,7 +209,8 @@ pnpm build
 
 | 命令 | 说明 |
 |------|------|
-| `make dev` | 启动基础设施 (Docker) |
+| `make dev-slim` | 精简开发环境（PostgreSQL + Redis + MinIO，~1.5 GB） |
+| `make dev` | 完整基础设施（含 Kafka/OTel/Prometheus/Grafana） |
 | `make dev-down` | 停止基础设施 |
 | `make build` | 构建所有服务 |
 | `make test` | 运行所有测试 |
@@ -230,14 +236,15 @@ pnpm build
 
 ## 环境变量配置
 
-各服务通过 `.env` 文件配置环境变量，参考各服务目录下的配置示例：
+各服务通过 `.env.local` 文件配置环境变量（已在 `.gitignore` 中），参考各服务目录下的 `.env.example`：
 
 ```bash
-# orchestrator-python/app/core/config.py 示例
-DATABASE_URL=postgresql://app_user:dev_password@localhost:5432/agent_platform
+# orchestrator-python/.env.local 示例
+DATABASE_URL=postgresql+asyncpg://app_user:dev_password@localhost:5432/agent_platform
 REDIS_URL=redis://:dev_password@localhost:6379/0
-MODEL_GATEWAY_URL=http://localhost:8002
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+DEEPSEEK_API_KEY=sk-xxx          # 至少配置一个 LLM API Key
+DEFAULT_MODEL=deepseek-chat       # 默认模型
+OTEL_ENABLED=false                # 本地开发可关闭 OTel
 ```
 
 ---

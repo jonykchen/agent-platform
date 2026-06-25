@@ -87,6 +87,9 @@ class AppConfig(BaseSettings):
     """
     知识库服务配置类
 
+    【配置加载顺序】
+    环境变量 > .env.local 文件 > 默认值
+
     【设计模式】
     使用 Pydantic BaseSettings 实现配置绑定：
     - 自动从环境变量读取（命名转换：database_url → DATABASE_URL）
@@ -96,6 +99,12 @@ class AppConfig(BaseSettings):
     【配置项说明】
     详见各字段的 docstring 和注释。
     """
+
+    model_config = SettingsConfigDict(
+        env_file=".env.local",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # ==================== 基础配置 ====================
 
