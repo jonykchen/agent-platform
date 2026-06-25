@@ -408,8 +408,10 @@ class QwenProvider(BaseLLMProvider):
             with attempt:
                 try:
                     async with httpx.AsyncClient(timeout=float(timeout_seconds)) as client:
+                        # DashScope embedding 使用兼容模式端点
+                        embedding_url = self.base_url.replace("/api/v1", "/compatible-mode/v1") + "/embeddings"
                         response = await client.post(
-                            f"{self.base_url}/embeddings",
+                            embedding_url,
                             headers=self.headers,
                             json=payload,
                         )

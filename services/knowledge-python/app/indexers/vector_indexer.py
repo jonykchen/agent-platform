@@ -43,6 +43,7 @@ CREATE INDEX idx_chunk_embedding ON knowledge_chunk
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from datetime import datetime
@@ -124,7 +125,7 @@ class PgVectorIndexer:
             await conn.execute(
                 """
                 INSERT INTO knowledge_document
-                    (id, tenant_id, name, file_type, file_size, status, metadata, created_at)
+                    (id, tenant_id, name, file_type, file_size_bytes, status, metadata, created_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 """,
                 doc_id,
@@ -213,18 +214,22 @@ class PgVectorIndexer:
                 chunk_id = str(uuid.uuid4())
                 chunk_ids.append(chunk_id)
 
+                # pgvector 期望字符串格式 "[0.1, 0.2, ...]"
+                embedding_str = "[" + ",".join(str(x) for x in embedding.tolist()) + "]"
+                content_hash = hashlib.md5(chunk["content"].encode()).hexdigest()
                 await conn.execute(
                     """
                         INSERT INTO knowledge_chunk
-                            (id, document_id, tenant_id, chunk_index, content, embedding, metadata, created_at)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                            (id, document_id, tenant_id, chunk_index, content, content_hash, embedding, metadata, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9)
                         """,
                     chunk_id,
                     document_id,
                     tenant_id,
                     i,
                     chunk["content"],
-                    embedding.tolist(),
+                    content_hash,
+                    embedding_str,
                     json.dumps(chunk.get("metadata", {})),
                     datetime.utcnow(),
                 )
