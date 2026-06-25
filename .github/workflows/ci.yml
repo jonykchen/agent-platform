@@ -149,7 +149,7 @@ jobs:
           fetch-depth: 0  # Full history for gitleaks
 
       - name: Run Trivy (File System)
-        uses: aquasecurity/trivy-action@0.28.0  # Pin to specific version for supply chain security
+        uses: aquasecurity/trivy-action@v0.24.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -170,7 +170,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Semgrep (SAST)
-        uses: returntocorp/semgrep-action@v1.4.0  # Pin to specific version
+        uses: semgrep/semgrep-action@v1
         with:
           config: >-
             p/security-audit
