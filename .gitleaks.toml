@@ -1,0 +1,38 @@
+# ============================================================
+#  Gitleaks 配置 — 密钥泄露扫描自定义规则
+#  文档: https://github.com/gitleaks/gitleaks
+# ============================================================
+
+title = "Agent Platform Gitleaks Config"
+
+[extend]
+# 使用默认规则集
+useDefault = true
+
+# 允许列表：排除已知的非敏感匹配
+[allowlist]
+description = "Global allowlist"
+paths = [
+    '''\.env\.example$''',
+    '''\.gitignore$''',
+    '''CHANGELOG\.md$''',
+    '''docs/.*\.md$''',
+    '''shared/sql/.*\.sql$''',
+    '''contracts/openapi/.*\.yaml$''',
+    '''contracts/proto/.*\.proto$''',
+    '''.*test.*''',
+    '''.*Test.*''',
+]
+
+# 允许示例密钥
+regexTarget = "match"
+regexes = [
+    '''sk-your-.*''',
+    '''sk-test-.*''',
+    '''CHANGE_ME''',
+    '''changeme''',
+    '''password123''',
+    '''example\.com''',
+    '''localhost''',
+    '''placeholder''',
+]

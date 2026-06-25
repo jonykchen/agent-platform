@@ -19,9 +19,8 @@ info:
 servers:
   - url: http://localhost:8080
     description: 本地开发环境
-    description: Production
-  - url: http://localhost:8080
-    description: Development
+  - url: https://api.agent-platform.example.com
+    description: 生产环境
 
 tags:
   - name: chat

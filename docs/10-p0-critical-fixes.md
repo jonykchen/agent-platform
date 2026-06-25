@@ -1,8 +1,16 @@
 # P0 紧急修复方案
 
-> **版本**：v1.0 | **状态**：待实施 | **优先级**：P0（阻塞上线）
+> **版本**：v1.2 | **状态**：已实施 | **优先级**：P0（阻塞上线）
 >
 > 本文档覆盖 6 个 P0 级问题，每个方案必须在本迭代内完成。
+>
+> **实施状态更新（2026-06-25）**：
+> - ✅ P0-1: Dockerfile（7 个服务已实现）
+> - ✅ P0-2: Python DB 迁移（Alembic 配置已实现）
+> - ✅ P0-3: K8s Ingress/NetworkPolicy（K8s 配置已实现）
+> - ✅ P0-4: SSE 端到端（ChatController 已实现 SseEmitter）
+> - ✅ P0-5: 环境配置模板（根目录 .env.example 已实现）
+> - ✅ P0-6: API Key 加密存储（EncryptionService 已实现 AES-256-GCM）
 
 ---
 

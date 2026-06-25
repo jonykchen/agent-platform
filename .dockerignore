@@ -1,0 +1,54 @@
+# ============================================================
+#  Agent Platform — Docker 全局排除规则
+#  防止不需要的文件打包到 Docker 镜像
+# ============================================================
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Tests
+tests/
+**/tests/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# CI/CD
+.github/
+Makefile
+
+# Build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+target/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore

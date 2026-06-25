@@ -1,6 +1,13 @@
 # 安全与加密加固方案
 
-> **版本**：v1.0 | **状态**：待实施 | **对应审查项**：S-01~S-06 补充、G-SEC-01~04 强化
+> **版本**：v1.2 | **状态**：已实施 | **对应审查项**：S-01~S-06 补充、G-SEC-01~04 强化
+>
+> **实施状态更新（2026-06-25）**：
+> - ✅ 服务间 mTLS（Istio PeerAuthentication 已配置）
+> - ✅ 租户 RLS 行级安全（SQL 迁移已实现）
+> - ✅ 安全扫描自动化（CI 已集成 Trivy/Gitleaks/Semgrep）
+> - ✅ 数据加密 at-rest（pgcrypto 列级加密方案已设计，EncryptionService 已实现）
+> - ✅ 密码/密钥生命周期管理（SecretValidationConfig + EncryptionService 已实现）
 
 ---
 

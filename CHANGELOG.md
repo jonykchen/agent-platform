@@ -8,13 +8,36 @@
 ## [Unreleased]
 
 ### 新增
+- EncryptionService：AES-256-GCM 加密服务，支持密钥轮转
+- Saga 分布式事务模块：CompensationRegistry + SagaState
+- Dependabot 自动依赖更新配置（Maven/pip/npm/GitHub Actions）
+- Stale Bot 自动标记不活跃 Issue/PR
+- CODEOWNERS 自动分配 PR Reviewer
+- GitHub Release Notes 自动生成模板
+- `.gitleaks.toml` 密钥泄露扫描自定义规则
+- `.trivyignore` 漏洞扫描忽略规则
+- `make install` 一键安装所有依赖
+- 前端测试补充：authStore/useDebounce/useThrottle/useLocalStorage/useTenant/useNetworkStatus/uiStore/notificationStore/FileUpload
+- Java 测试补充：AuthController/SessionController/UserController/AuthService/FastPathService/ChatController/EncryptionService
+- 架构图文档：`docs/architecture-overview.md`（4 个 Mermaid 图表）
+- API 参考文档：`docs/api-reference.md`
+- 生产部署指南：`docs/deployment-guide.md`
+
+### 变更
 - 开源准备：添加 AGPL-3.0 LICENSE、CONTRIBUTING.md、SECURITY.md、CODE_OF_CONDUCT.md
 - 添加 `.env.example` 环境变量模板
 - 配置校验增强：空密码/弱密码在非开发环境被拒绝
-
-### 变更
 - 清理所有硬编码密钥默认值（`dev_password` → `CHANGE_ME` / 环境变量）
-- README 重构：添加徽章、移除内部工具配置、更新许可证声明
+- README 重构：添加 CI 徽章、使用示例、文档链接
+- `make ci` 完整性提升：`lint test` → `lint build test`
+- JaCoCo 覆盖率阈值：0.00 → 0.30
+- knowledge-python 添加 mypy strict + pytest-cov 配置
+- OpenAPI servers 配置修正
+- 文档编号冲突修复（10-llm-eval → 15-llm-eval）
+- 所有 13 个核心文档状态更新为「已实施」
+- 端口一致性修复（Tool Bus gRPC: 50051 → 40051, Orchestrator gRPC: 50051 → 50100）
+- Actuator 安全配置：`show-details: always` → `when-authorized`
+- CORS 安全配置：环境变量驱动 allow_origins
 
 ## [0.5.0] - 2026-06
 
@@ -83,9 +106,9 @@
 - Knowledge (Python)：知识库服务（RAG）
 - 基础设施：Docker Compose / PostgreSQL + pgvector / Redis / Kafka
 
-[Unreleased]: https://github.com/your-username/agent-platform/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/your-username/agent-platform/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/your-username/agent-platform/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/your-username/agent-platform/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/your-username/agent-platform/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/your-username/agent-platform/releases/tag/v0.1.0
+[Unreleased]: https://github.com/jonychen/agent-platform/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jonychen/agent-platform/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/jonychen/agent-platform/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/jonychen/agent-platform/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/jonychen/agent-platform/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/jonychen/agent-platform/releases/tag/v0.1.0

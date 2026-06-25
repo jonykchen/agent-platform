@@ -1,0 +1,10 @@
+# ============================================================
+#  Trivy 忽略规则
+#  文档: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/
+# ============================================================
+
+# 忽略已知的低风险 CVE（示例，按需添加）
+# CVE-2023-XXXXX
+
+# 忽略开发依赖中的漏洞（仅影响开发环境）
+# GHSA-xxxx-xxxx-xxxx

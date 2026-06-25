@@ -1,0 +1,49 @@
+# ============================================================
+#  Stale Bot — 自动标记和关闭不活跃的 Issue/PR
+#  文档: https://github.com/actions/stale
+# ============================================================
+
+name: Stale
+
+on:
+  schedule:
+    - cron: '17 3 * * *'  # 每天 UTC 03:17 运行
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          stale-issue-message: >
+            此 Issue 已被标记为 stale，因为超过 60 天没有活动。
+            如果此 Issue 仍然相关，请留下评论或移除 stale 标签。
+            否则将在 14 天后自动关闭。
+          stale-pr-message: >
+            此 PR 已被标记为 stale，因为超过 30 天没有活动。
+            如果此 PR 仍然需要合并，请留下评论或移除 stale 标签。
+            否则将在 7 天后自动关闭。
+          close-issue-message: >
+            此 Issue 因长期无活动已被自动关闭。如需继续讨论，请重新打开。
+          close-pr-message: >
+            此 PR 因长期无活动已被自动关闭。如需继续，请重新打开。
+
+          # Issue 配置
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          stale-issue-label: 'stale'
+          exempt-issue-labels: 'pinned,security,bug,roadmap'
+
+          # PR 配置
+          days-before-pr-stale: 30
+          days-before-pr-close: 7
+          stale-pr-label: 'stale'
+          exempt-pr-labels: 'pinned,security,do-not-close'
+
+          # 操作限制
+          operations-per-run: 100

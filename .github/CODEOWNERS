@@ -1,0 +1,42 @@
+# ============================================================
+#  Agent Platform — CODEOWNERS
+#  自动分配 PR Reviewer
+#  文档: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# ============================================================
+
+# 默认所有文件由 @jonychen 审查
+*                       @jonychen
+
+# Gateway Java 服务
+services/gateway-java/  @jonychen
+
+# Orchestrator Python 服务
+services/orchestrator-python/ @jonychen
+
+# Model Gateway Python 服务
+services/model-gateway-python/ @jonychen
+
+# Tool Bus Java 服务
+services/tool-bus-java/ @jonychen
+
+# Governance Java 服务
+services/governance-java/ @jonychen
+
+# Knowledge Python 服务
+services/knowledge-python/ @jonychen
+
+# 前端
+services/web-frontend/  @jonychen
+
+# 共享契约（Proto/OpenAPI）变更需要严格审查
+contracts/              @jonychen
+
+# 基础设施配置
+infra/                  @jonychen
+
+# CI/CD 配置
+.github/                @jonychen
+
+# 安全相关文件
+SECURITY.md             @jonychen
+shared/java-config/     @jonychen

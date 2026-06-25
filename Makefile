@@ -3,12 +3,32 @@
 #  用法: make <target>
 # ============================================================
 
-.PHONY: help build test lint proto proto-commit proto-verify fmt dev clean docker ci build-frontend test-frontend lint-frontend
+.PHONY: help install build test lint proto proto-commit proto-verify fmt dev clean docker ci build-frontend test-frontend lint-frontend security-scan
 
 # 默认显示帮助
 help:
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:' $(MAKEFILE_LIST) | sort | awk -F':' '{printf "  %-20s %s\n", $$1, $$2}'
+
+# ---- 安装依赖 ----
+install: install-java install-python install-frontend
+	@echo "✅ All dependencies installed"
+
+install-java:
+	@if [ -d services/gateway-java ]; then cd services/gateway-java && ./mvnw dependency:resolve -q 2>/dev/null || echo "gateway-java: skipped"; fi
+	@if [ -d services/tool-bus-java ]; then cd services/tool-bus-java && ./mvnw dependency:resolve -q 2>/dev/null || echo "tool-bus-java: skipped"; fi
+	@if [ -d services/governance-java ]; then cd services/governance-java && ./mvnw dependency:resolve -q 2>/dev/null || echo "governance-java: skipped"; fi
+
+install-python:
+	@if [ -f services/orchestrator-python/pyproject.toml ]; then cd services/orchestrator-python && uv sync --quiet 2>/dev/null || pip install -e .; fi
+	@if [ -f services/model-gateway-python/pyproject.toml ]; then cd services/model-gateway-python && uv sync --quiet 2>/dev/null || pip install -e .; fi
+	@if [ -f services/knowledge-python/pyproject.toml ]; then cd services/knowledge-python && uv sync --quiet 2>/dev/null || pip install -e .; fi
+
+install-frontend:
+	@if [ -f services/web-frontend/package.json ]; then \
+		cd services/web-frontend && \
+		(pnpm install --frozen-lockfile 2>/dev/null || npm install 2>/dev/null || echo "Frontend install skipped"); \
+	fi
 
 # ---- 构建 ----
 build: build-java build-python build-frontend
@@ -157,7 +177,7 @@ docker-build:
 	@if [ -f services/web-frontend/Dockerfile ]; then docker build -t agent-platform/web-frontend:latest -f services/web-frontend/Dockerfile services/web-frontend/; fi
 
 # ---- Full check (CI 使用) ----
-ci: lint test
+ci: lint build test
 	@echo "✅ CI checks passed"
 
 security-scan:

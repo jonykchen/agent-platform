@@ -3,6 +3,8 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB.svg)](https://www.python.org/)
 [![Java 21+](https://img.shields.io/badge/Java-21+-ED8B00.svg)](https://openjdk.org/)
+[![CI](https://github.com/jonychen/agent-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/jonychen/agent-platform/actions/workflows/ci.yml)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
 > 企业级 Agent 平台，采用 **Python 编排 + Java 核心服务 + 国内 LLM** 混合架构。
 
@@ -37,14 +39,14 @@
 
 **macOS / Linux / WSL:**
 ```bash
-git clone https://github.com/your-username/agent-platform.git
+git clone https://github.com/jonychen/agent-platform.git
 cd agent-platform
 ./scripts/setup.sh
 ```
 
 **Windows (CMD):**
 ```cmd
-git clone https://github.com/your-username/agent-platform.git
+git clone https://github.com/jonychen/agent-platform.git
 cd agent-platform
 scripts\setup.bat
 ```
@@ -149,6 +151,48 @@ agent-platform/
 | **Phase 3: 能力增强** | 第 13-20 周 | Knowledge服务(RAG)+评测体系 | 待启动 |
 | **Phase 4: 规模化** | 第 21 周+ | 多租户RLS+配额管理 | 待启动 |
 
+## 使用示例
+
+### 发送对话请求
+
+```bash
+# 登录获取 Token
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "password"}'
+
+# 发送对话
+curl -X POST http://localhost:8080/api/v1/chat/completions \
+  -H "Authorization: Bearer <your_token>" \
+  -H "X-Tenant-ID: tenant-123" \
+  -H "X-User-ID: user-123" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "你好，请帮我查询今天的订单状态"}'
+```
+
+### Python SDK 示例
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8080"
+headers = {
+    "Authorization": "Bearer <your_token>",
+    "X-Tenant-ID": "tenant-123",
+    "X-User-ID": "user-123",
+}
+
+# 发送对话
+response = requests.post(
+    f"{BASE_URL}/api/v1/chat/completions",
+    headers=headers,
+    json={"message": "你好", "stream": False},
+)
+print(response.json())
+```
+
+更多示例请参考 [API 参考文档](docs/api-reference.md)。
+
 ## 文档
 
 - [技术方案总览](docs/00-index.md)
@@ -160,6 +204,9 @@ agent-platform/
 - [运维指南](docs/06-operability-guide.md)
 - [扩展性设计](docs/07-scalability-patterns.md)
 - [前端设计](docs/09-frontend-design.md)
+- [架构图](docs/architecture-overview.md)
+- [API 参考](docs/api-reference.md)
+- [部署指南](docs/deployment-guide.md)
 
 ## 开发指南
 

@@ -1,8 +1,13 @@
 # 运维指南 — 配置管理、Feature Flag、CI/CD 与服务发现
 
-> **版本**：v2.1 | **状态**：开发中 | **对应审查项**：M-03, M-04, M-05
+> **版本**：v2.2 | **状态**：已实施 | **对应审查项**：M-03, M-04, M-05
 >
-> **v2.1 更新**：新增三级健康检查、Prometheus Metrics、缓存管理器
+> **实施状态更新（2026-06-25）**：
+> - ✅ 配置管理（Pydantic Settings 已实现）
+> - ✅ Feature Flag（已实现）
+> - ✅ CI/CD（GitHub Actions 已配置）
+> - ✅ 健康检查（Actuator + 自定义端点已实现）
+> - ✅ Prometheus Metrics（已集成）
 
 ---
 
