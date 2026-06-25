@@ -4,21 +4,19 @@
 # ============================================================
 
 # Stage 1: Build (多阶段构建减小镜像体积)
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 
 WORKDIR /build
 
-# 复制 Maven wrapper 和 pom.xml（利用 Docker 缓存）
-COPY mvnw .
-COPY .mvn .mvn
+# 复制 pom.xml（利用 Docker 缓存）
 COPY pom.xml .
 
 # 下载依赖
-RUN ./mvnw dependency:go-offline -B
+RUN mvn dependency:go-offline -B
 
 # 复制源码并构建
 COPY src src
-RUN ./mvnw package -DskipTests -B
+RUN mvn package -DskipTests -B
 
 # Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
