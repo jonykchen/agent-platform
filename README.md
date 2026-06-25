@@ -142,14 +142,16 @@ agent-platform/
 | 对象存储 | MinIO |
 | 观测 | OpenTelemetry + Prometheus + Grafana |
 
-## 实施路线图
+## 实施进度
 
-| Phase | 周期 | 核心交付物 | 状态 |
-|-------|------|-----------|------|
-| **Phase 1: MVP** | 第 1-4 周 | Gateway+Orchestrator+ModelGateway+Mock ToolBus | 🔧 开发中 |
-| **Phase 2: 业务闭环** | 第 5-12 周 | Governance服务+真实工具+Kafka回调恢复 | 待启动 |
-| **Phase 3: 能力增强** | 第 13-20 周 | Knowledge服务(RAG)+评测体系 | 待启动 |
-| **Phase 4: 规模化** | 第 21 周+ | 多租户RLS+配额管理 | 待启动 |
+| Phase | 状态 | 核心交付物 |
+|-------|------|-----------|
+| **Phase 1: MVP** | ✅ 已完成 | Gateway + Orchestrator + Model Gateway + Tool Bus + Governance + Knowledge |
+| **Phase 2: 生产加固** | ✅ 已完成 | CI/CD + 安全加固 + 可观测性 + 测试体系 + 文档体系 |
+| **Phase 3: 能力增强** | 📋 规划中 | 多模型灰度 / 高级 RAG / 插件系统 |
+| **Phase 4: 规模化** | 📋 规划中 | 多租户 RLS 增强 / 配额管理 / 水平扩展 |
+
+> 详细路线图见 [ROADMAP.md](ROADMAP.md)
 
 ## 使用示例
 

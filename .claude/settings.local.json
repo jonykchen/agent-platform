@@ -59,7 +59,14 @@
       "Bash(pip3 show *)",
       "Bash(export TMPDIR=/tmp/claude-tmp)",
       "Bash(mkdir -p /tmp/claude-tmp)",
-      "Bash(echo \"Orchestrator not ready\")"
+      "Bash(echo \"Orchestrator not ready\")",
+      "Bash(DB_PASSWORD=dev_password ENVIRONMENT=local mvn spring-boot:run -Dmaven.test.skip=true -q)",
+      "Bash(echo \"Governance starting \\(PID: $!, skipping test compile\\)...\")",
+      "Bash(DB_PASSWORD=dev_password REDIS_PASSWORD=dev_password ENVIRONMENT=local mvn spring-boot:run -Dmaven.test.skip=true -q)",
+      "Bash(echo \"Gateway starting \\(PID: $!, skipping test compile\\)...\")",
+      "Bash(DB_PASSWORD=dev_password REDIS_PASSWORD=dev_password ENVIRONMENT=local mvn spring-boot:run -Dmaven.test.skip=true)",
+      "Bash(pnpm dev *)",
+      "Bash(read name *)"
     ]
   },
   "extends": "./settings.json"
