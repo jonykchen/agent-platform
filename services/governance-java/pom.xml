@@ -23,7 +23,7 @@
         <!-- 对齐 buf 生成的 proto stub（1.81 API：blockingV2UnaryCall 等） -->
         <grpc.version>1.81.0</grpc.version>
         <!-- 代码质量工具版本 -->
-        <checkstyle.version>10.17.0</checkstyle.version>
+        <checkstyle.version>13.6.0</checkstyle.version>
         <spotbugs.version>4.8.6</spotbugs.version>
         <spotbugs-maven.version>4.8.6.0</spotbugs-maven.version>
         <jacoco.version>0.8.12</jacoco.version>
