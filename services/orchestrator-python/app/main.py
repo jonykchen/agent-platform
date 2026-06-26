@@ -148,15 +148,22 @@ async def lifespan(app: FastAPI):
     init_cache_manager(redis_client)
     logger.info("Cache manager initialized")
 
-    # 5. Step 缓冲区（用于批量和异步持久化）
-    # step_buffer = StepBuffer(db_pool)
-    # await step_buffer.start()
-
-    # 6. 数据库连接池（使用 asyncpg）
+    # 5. 数据库连接池（使用 asyncpg）
     from app.infrastructure.database import init_database_pool
 
     await init_database_pool()
     logger.info("Database pool initialized")
+
+    # 6. Step 缓冲区（用于批量和异步持久化）
+    from app.infrastructure.database import get_db_pool
+
+    db_pool = get_db_pool()
+    if db_pool:
+        step_buffer = StepBuffer(db_pool)
+        await step_buffer.start()
+        logger.info("Step buffer initialized")
+    else:
+        logger.warning("Database pool not available, step buffer disabled")
 
     # 7. gRPC 客户端（连接 ToolBus）
     from app.infrastructure.grpc_client import init_grpc_client

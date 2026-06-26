@@ -54,15 +54,18 @@ export function MessageList({
     overscan: APP_CONFIG.VIRTUAL_SCROLL_OVERSCAN,
   });
 
-  // 自动滚动到底部（仅在用户已处于底部附近时）
+  // 自动滚动到底部（流式内容更新 或 新消息到达时）
   useEffect(() => {
     const parent = parentRef.current;
-    if (!parent || !streamingContent) return;
+    if (!parent) return;
 
-    // 计算用户是否在底部附近（距离底部 100px 以内）
-    const isNearBottom = parent.scrollHeight - parent.scrollTop - parent.clientHeight < 100;
+    // 计算用户是否在底部附近（距离底部 150px 以内）
+    const isNearBottom = parent.scrollHeight - parent.scrollTop - parent.clientHeight < 150;
     if (isNearBottom) {
-      parent.scrollTop = parent.scrollHeight;
+      // 使用 requestAnimationFrame 确保 DOM 更新后再滚动
+      requestAnimationFrame(() => {
+        parent.scrollTop = parent.scrollHeight;
+      });
     }
   }, [streamingContent, displayMessages.length]);
 

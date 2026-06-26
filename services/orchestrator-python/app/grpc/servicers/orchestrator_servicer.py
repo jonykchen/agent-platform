@@ -116,10 +116,7 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
         try:
             # ====== 关键：直接使用 request.history ======
             # Gateway Java 已经从数据库加载历史并传递，不从 SessionStore 加载
-            history = [
-                {"role": msg.role, "content": msg.content}
-                for msg in request.history
-            ]
+            history = [{"role": msg.role, "content": msg.content} for msg in request.history]
 
             # 构建初始状态
             initial_state = create_initial_state(
@@ -204,6 +201,20 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
                 latency_ms=latency_ms,
                 finish_reason=finish_reason,
                 tokens=response.total_tokens,
+            )
+
+            # ====== 持久化对话到数据库 ======
+            await self._persist_conversation(
+                session_id=session_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                request_id=request_id,
+                user_message=request.message,
+                assistant_message=output,
+                model_used=result.get("model_used", "qwen-max"),
+                total_tokens=response.total_tokens,
+                latency_ms=latency_ms,
+                status="completed" if finish_reason == "stop" else finish_reason,
             )
 
             return response
@@ -313,10 +324,7 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
 
         try:
             # 直接使用 request.history（与 ChatCompletion 一致）
-            history = [
-                {"role": msg.role, "content": msg.content}
-                for msg in request.history
-            ]
+            history = [{"role": msg.role, "content": msg.content} for msg in request.history]
 
             initial_state = create_initial_state(
                 input=request.message,
@@ -404,6 +412,20 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
                 latency_ms=int((time.time() - start_time) * 1000),
                 chunks=chunk_index,
                 output_length=total,
+            )
+
+            # ====== 持久化对话到数据库 ======
+            await self._persist_conversation(
+                session_id=session_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                request_id=request_id,
+                user_message=request.message,
+                assistant_message=text,
+                model_used=result.get("model_used", "deepseek-chat"),
+                total_tokens=result.get("total_tokens", 0),
+                latency_ms=int((time.time() - start_time) * 1000),
+                status="completed",
             )
 
         except BasePlatformException as e:
@@ -510,3 +532,125 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
             cancelled=False,
             status="unknown",
         )
+
+    async def _persist_conversation(
+        self,
+        session_id: str,
+        tenant_id: str,
+        user_id: str,
+        request_id: str,
+        user_message: str,
+        assistant_message: str,
+        model_used: str,
+        total_tokens: int,
+        latency_ms: int,
+        status: str,
+    ) -> None:
+        """持久化对话到数据库
+
+        将用户消息和助手回复保存到 agent_session 表，
+        同时创建 agent_run 记录用于审计和历史查询。
+
+        Args:
+            session_id: 会话 ID
+            tenant_id: 租户 ID
+            user_id: 用户 ID
+            request_id: 请求 ID
+            user_message: 用户消息
+            assistant_message: 助手回复
+            model_used: 使用的模型
+            total_tokens: 总 token 数
+            latency_ms: 延迟（毫秒）
+            status: 运行状态
+        """
+        try:
+            from app.infrastructure.database import get_db_pool
+
+            pool = get_db_pool()
+            if not pool:
+                logger.warning("persist_skip", reason="no_db_pool")
+                return
+
+            async with pool.acquire() as conn:
+                # 1. 确保会话存在
+                await conn.execute(
+                    """
+                    INSERT INTO agent_session (id, tenant_id, user_id, title, status, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, 'active', NOW(), NOW())
+                    ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
+                    """,
+                    session_id,
+                    tenant_id,
+                    user_id,
+                    user_message[:100] if user_message else "新对话",
+                )
+
+                # 2. 获取下一个 run_number
+                run_number = await conn.fetchval(
+                    "SELECT COALESCE(MAX(run_number), 0) + 1 FROM agent_run WHERE session_id = $1",
+                    session_id,
+                )
+
+                # 3. 创建 agent_run 记录
+                run_id = f"run_{request_id}"
+                await conn.execute(
+                    """
+                    INSERT INTO agent_run (
+                        id, session_id, tenant_id, user_id, run_number,
+                        input_message, output_message, status,
+                        model_used, total_tokens, duration_ms,
+                        started_at, completed_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+                    """,
+                    run_id,
+                    session_id,
+                    tenant_id,
+                    user_id,
+                    run_number,
+                    user_message,
+                    assistant_message,
+                    status,
+                    model_used,
+                    total_tokens,
+                    latency_ms,
+                )
+
+                # 4. 创建 agent_step 记录（用户消息）
+                await conn.execute(
+                    """
+                    INSERT INTO agent_step (
+                        id, run_id, tenant_id, step_order, step_type,
+                        content, status, created_at
+                    ) VALUES (gen_random_uuid(), $1, $2, 0, 'user_message', $3, 'completed', NOW())
+                    """,
+                    run_id,
+                    tenant_id,
+                    user_message,
+                )
+
+                # 5. 创建 agent_step 记录（助手回复）
+                await conn.execute(
+                    """
+                    INSERT INTO agent_step (
+                        id, run_id, tenant_id, step_order, step_type,
+                        content, status, created_at
+                    ) VALUES (gen_random_uuid(), $1, $2, 1, 'assistant_message', $3, 'completed', NOW())
+                    """,
+                    run_id,
+                    tenant_id,
+                    assistant_message,
+                )
+
+                logger.info(
+                    "conversation_persisted",
+                    session_id=session_id,
+                    run_id=run_id,
+                    run_number=run_number,
+                )
+
+        except Exception as e:
+            logger.error(
+                "persist_conversation_failed",
+                session_id=session_id,
+                error=str(e),
+            )
