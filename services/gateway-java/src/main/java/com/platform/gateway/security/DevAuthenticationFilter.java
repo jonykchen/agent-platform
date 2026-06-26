@@ -103,7 +103,9 @@ public class DevAuthenticationFilter extends OncePerRequestFilter {
                 null,
                 List.of(
                     new SimpleGrantedAuthority("ROLE_USER"),
-                    new SimpleGrantedAuthority("ROLE_OPERATOR")
+                    new SimpleGrantedAuthority("ROLE_OPERATOR"),
+                    new SimpleGrantedAuthority("ROLE_ADMIN"),
+                    new SimpleGrantedAuthority("internal:access")
                 )
         );
 

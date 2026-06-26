@@ -128,6 +128,9 @@ public class ToolBusClient {
                 headers.add("X-Request-ID", requestId);
             }
 
+            // 内部服务调用标识（Tool Bus ServiceRoleAuthenticationFilter 需要）
+            headers.add("X-Service-Role", "ADMIN");
+
             log.debug("[ToolBusClient] Headers: tenant={}, user={}, request={}",
                     tenantId, userId, requestId);
         };

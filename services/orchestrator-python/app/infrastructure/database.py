@@ -60,17 +60,17 @@
 from __future__ import annotations
 
 import asyncio
-import structlog
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
 import asyncpg
-from asyncpg import Pool, Connection
-from asyncpg.exceptions import PostgresError, InterfaceError
+import structlog
+from asyncpg import Connection, Pool
+from asyncpg.exceptions import PostgresError
 
 from app.core.config import config
-from app.core.exceptions import DatabaseError, DatabaseConnectionError
+from app.core.exceptions import DatabaseConnectionError, DatabaseError
 
 logger = structlog.get_logger()
 
@@ -138,9 +138,9 @@ async def init_database_pool() -> Pool:
 
         _pool = await asyncpg.create_pool(
             dsn=db_url,
-            min_size=pool_min,      # 最小连接数：pool_size / 4，保持热连接
-            max_size=pool_max,      # 最大连接数：由配置决定，上限受数据库限制
-            command_timeout=30.0,   # 查询超时：30秒，防止无限等待
+            min_size=pool_min,  # 最小连接数：pool_size / 4，保持热连接
+            max_size=pool_max,  # 最大连接数：由配置决定，上限受数据库限制
+            command_timeout=30.0,  # 查询超时：30秒，防止无限等待
             max_inactive_connection_lifetime=300.0,  # 空闲连接存活：5分钟
             # 连接初始化回调
             init=_init_connection,
@@ -215,6 +215,15 @@ async def _init_connection(conn: Connection) -> None:
     logger.debug("database_connection_initialized")
 
 
+def get_db_pool() -> Pool | None:
+    """获取数据库连接池
+
+    Returns:
+        asyncpg 连接池实例，未初始化时返回 None
+    """
+    return _pool
+
+
 async def close_database_pool() -> None:
     """关闭数据库连接池
 
@@ -255,7 +264,7 @@ async def close_database_pool() -> None:
         # 等待活跃连接完成，最多等待 10 秒
         await asyncio.wait_for(_pool.close(), timeout=10.0)
         logger.info("database_pool_closed_gracefully")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "database_pool_close_timeout",
             message="Graceful close timed out after 10s, forcing termination",

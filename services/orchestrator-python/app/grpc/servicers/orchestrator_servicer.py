@@ -564,12 +564,26 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
             status: 运行状态
         """
         try:
+            import uuid as _uuid
+
             from app.infrastructure.database import get_db_pool
 
             pool = get_db_pool()
             if not pool:
                 logger.warning("persist_skip", reason="no_db_pool")
                 return
+
+            # 将 session_id 转换为有效的 UUID（agent_session.id 列为 UUID 类型）
+            try:
+                session_uuid = _uuid.UUID(session_id)
+            except ValueError:
+                session_uuid = _uuid.uuid5(_uuid.NAMESPACE_DNS, session_id)
+
+            run_id = f"run_{request_id}"
+            try:
+                run_uuid = _uuid.UUID(run_id)
+            except ValueError:
+                run_uuid = _uuid.uuid5(_uuid.NAMESPACE_DNS, run_id)
 
             async with pool.acquire() as conn:
                 # 1. 确保会话存在
@@ -579,7 +593,7 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
                     VALUES ($1, $2, $3, $4, 'active', NOW(), NOW())
                     ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
                     """,
-                    session_id,
+                    str(session_uuid),
                     tenant_id,
                     user_id,
                     user_message[:100] if user_message else "新对话",
@@ -588,11 +602,10 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
                 # 2. 获取下一个 run_number
                 run_number = await conn.fetchval(
                     "SELECT COALESCE(MAX(run_number), 0) + 1 FROM agent_run WHERE session_id = $1",
-                    session_id,
+                    str(session_uuid),
                 )
 
                 # 3. 创建 agent_run 记录
-                run_id = f"run_{request_id}"
                 await conn.execute(
                     """
                     INSERT INTO agent_run (
@@ -602,8 +615,8 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
                         started_at, completed_at
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
                     """,
-                    run_id,
-                    session_id,
+                    str(run_uuid),
+                    str(session_uuid),
                     tenant_id,
                     user_id,
                     run_number,
@@ -620,10 +633,10 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
                     """
                     INSERT INTO agent_step (
                         id, run_id, tenant_id, step_order, step_type,
-                        content, status, created_at
-                    ) VALUES (gen_random_uuid(), $1, $2, 0, 'user_message', $3, 'completed', NOW())
+                        content
+                    ) VALUES (gen_random_uuid(), $1, $2, 0, 'user_message', $3)
                     """,
-                    run_id,
+                    str(run_uuid),
                     tenant_id,
                     user_message,
                 )
@@ -633,18 +646,18 @@ class OrchestratorServiceServicer(orchestrator_pb2_grpc.OrchestratorServiceServi
                     """
                     INSERT INTO agent_step (
                         id, run_id, tenant_id, step_order, step_type,
-                        content, status, created_at
-                    ) VALUES (gen_random_uuid(), $1, $2, 1, 'assistant_message', $3, 'completed', NOW())
+                        content
+                    ) VALUES (gen_random_uuid(), $1, $2, 1, 'assistant_message', $3)
                     """,
-                    run_id,
+                    str(run_uuid),
                     tenant_id,
                     assistant_message,
                 )
 
                 logger.info(
                     "conversation_persisted",
-                    session_id=session_id,
-                    run_id=run_id,
+                    session_id=str(session_uuid),
+                    run_id=str(run_uuid),
                     run_number=run_number,
                 )
 
