@@ -6,7 +6,7 @@
 
 ### 报告方式
 
-1. **GitHub Security Advisory**（推荐）：通过 [GitHub Security Advisories](https://github.com/your-username/agent-platform/security/advisories/new) 提交
+1. **GitHub Security Advisory**（推荐）：通过 [GitHub Security Advisories](https://github.com/jonykchen/agent-platform/security/advisories/new) 提交
 2. **邮件**：发送邮件至项目维护者（在 GitHub 个人资料中查找）
 
 ### 报告内容
