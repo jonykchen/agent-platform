@@ -141,9 +141,12 @@ services:
       ENVIRONMENT: production
       APP_PORT: 8002
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+      # Qwen（向量模型）
       LLM_API_KEY: ${LLM_API_KEY}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
-      LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-qwen-max}
+      # DeepSeek（主对话模型）
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: https://api.deepseek.com/v1
       LOG_LEVEL: INFO
     depends_on:
       redis:

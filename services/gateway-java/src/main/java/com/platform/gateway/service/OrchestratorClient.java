@@ -117,13 +117,14 @@ public class OrchestratorClient {
                 .build();
 
         // 转换历史消息
-        List<Message> historyProto = request.getHistory()
-                .stream()
-                .map(h -> Message.newBuilder()
-                        .setRole(h.getRole())
-                        .setContent(h.getContent())
-                        .build())
-                .collect(Collectors.toList());
+        List<Message> historyProto = request.getHistory() != null
+                ? request.getHistory().stream()
+                    .map(h -> Message.newBuilder()
+                            .setRole(h.getRole())
+                            .setContent(h.getContent())
+                            .build())
+                    .collect(Collectors.toList())
+                : List.of();
 
         // 构建请求 - 使用完全限定名避免歧义
         com.platform.gateway.ChatRequest grpcRequest = com.platform.gateway.ChatRequest.newBuilder()
@@ -194,13 +195,14 @@ public class OrchestratorClient {
                 .setTraceId(requestId)
                 .build();
 
-        List<Message> historyProto = request.getHistory()
-                .stream()
-                .map(h -> Message.newBuilder()
-                        .setRole(h.getRole())
-                        .setContent(h.getContent())
-                        .build())
-                .collect(Collectors.toList());
+        List<Message> historyProto = request.getHistory() != null
+                ? request.getHistory().stream()
+                    .map(h -> Message.newBuilder()
+                            .setRole(h.getRole())
+                            .setContent(h.getContent())
+                            .build())
+                    .collect(Collectors.toList())
+                : List.of();
 
         com.platform.gateway.ChatRequest grpcRequest = com.platform.gateway.ChatRequest.newBuilder()
                 .setContext(context)

@@ -242,33 +242,13 @@ def build_agent_graph():
     # - checkpointer: 状态持久化，用于恢复中断的执行
     # - interrupt_before: 在 approval_wait 节点前暂停，等待审批
     # checkpointer 持久化策略：
-    # 任何非本地/开发/测试环境（staging/prod）都必须使用 Redis 持久化，
-    # 否则容器重启会丢失所有中断中的审批任务（in-flight approvals）。
-    #
-    # 注意：环境枚举为 local/dev/test/staging/prod（见 config.environment）。
-    # 历史代码误判 "production" 字符串，导致生产环境静默退化为 MemorySaver，此处修正。
-    from app.core.config import config
+    # staging/prod 使用 langgraph-checkpoint-redis 的 AsyncRedisSaver；
+    # local/dev/test 使用 InMemorySaver。
+    from app.graph.checkpointer import get_checkpointer
 
     env = getattr(config, "environment", "local")
-    ephemeral_envs = {"local", "dev", "development", "test"}
-
-    if env not in ephemeral_envs:
-        # 生产/预发：强制 Redis 持久化，缺少 redis_url 时直接失败而非静默退化。
-        redis_url = getattr(config, "redis_url", None)
-        if not redis_url:
-            raise RuntimeError(
-                f"环境 '{env}' 要求持久化 checkpointer，但未配置 redis_url；"
-                "拒绝以 MemorySaver 启动，避免重启丢失中断中的审批任务。"
-            )
-        from app.graph.checkpointer import RedisSaver
-
-        checkpointer = RedisSaver(redis_url=redis_url)
-        logger.info("Using Redis checkpointer for persistent environment", environment=env)
-    else:
-        from langgraph.checkpoint.memory import InMemorySaver
-
-        checkpointer = InMemorySaver()
-        logger.info("Using InMemorySaver for ephemeral environment", environment=env)
+    redis_url = getattr(config, "redis_url", None)
+    checkpointer = get_checkpointer(env, redis_url)
 
     compiled_graph = graph.compile(
         checkpointer=checkpointer,
@@ -573,29 +553,3 @@ def get_agent_graph():
         logger.info("Building agent graph")
         _graph_instance = build_agent_graph()
     return _graph_instance
-
-
-class MemorySaver:
-    """内存 Checkpoint 存储器
-
-    用于开发测试，生产环境应使用 Redis。
-    """
-
-    def __init__(self):
-        self._storage = {}
-
-    def get(self, config):
-        thread_id = config["configurable"]["thread_id"]
-        return self._storage.get(thread_id)
-
-    def put(self, config, checkpoint):
-        thread_id = config["configurable"]["thread_id"]
-        self._storage[thread_id] = checkpoint
-
-    def list(self, config):
-        thread_id = config["configurable"].get("thread_id")
-        if thread_id:
-            if thread_id in self._storage:
-                yield self._storage[thread_id]
-        else:
-            yield from self._storage.values()

@@ -67,7 +67,8 @@
       "Bash(DB_PASSWORD=dev_password REDIS_PASSWORD=dev_password ENVIRONMENT=local mvn spring-boot:run -Dmaven.test.skip=true)",
       "Bash(pnpm dev *)",
       "Bash(read name *)",
-      "Bash(open -a Docker)"
+      "Bash(open -a Docker)",
+      "Bash(ssh *)"
     ]
   },
   "extends": "./settings.json"
