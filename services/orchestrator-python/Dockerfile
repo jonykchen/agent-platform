@@ -14,10 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装 uv 并下载 Python 依赖
+# 安装 Python 依赖
 COPY pyproject.toml .
-RUN pip install --no-cache-dir uv && \
-    uv pip install --system --prefix=/install -e .
+RUN pip install --upgrade pip && \
+    python -c "import tomllib; f=open('pyproject.toml','rb'); d=tomllib.load(f); open('requirements.txt','w').write('\n'.join(d['project']['dependencies']))" && \
+    pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ---- Stage 2: Runtime ----
 FROM python:3.12-slim

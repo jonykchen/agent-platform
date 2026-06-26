@@ -167,8 +167,8 @@ public class AuthService {
      */
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        // 查询用户（假设登录时使用 tenant_001）
-        String tenantId = request.getTenantId() != null ? request.getTenantId() : "tenant_001";
+        // 查询用户（默认租户）
+        String tenantId = request.getTenantId() != null ? request.getTenantId() : "default";
         TenantUser user = tenantUserRepository.findByTenantIdAndUsernameForLogin(tenantId, request.getUsername())
             .orElse(null);
 

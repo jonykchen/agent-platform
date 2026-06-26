@@ -14,9 +14,9 @@ COPY pom.xml .
 # 下载依赖
 RUN mvn dependency:go-offline -B
 
-# 复制源码并构建
+# 复制源码
 COPY src src
-RUN mvn package -DskipTests -B
+RUN mvn package -DskipTests -Dcheckstyle.skip=true -Dspotbugs.skip=true -B
 
 # Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine

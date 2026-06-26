@@ -72,13 +72,12 @@ public class TenantService {
     // ==================== 查询方法 ====================
 
     /**
-     * 获取租户配置（带缓存）
+     * 获取租户配置
+     *
+     * <p>注意：暂不使用 Redis 缓存，因为 GenericJackson2JsonRedisSerializer
+     * 反序列化时会丢失类型信息（LinkedHashMap -> TenantConfigResponse）。
+     * 后续可通过注册 @JsonTypeInfo 或使用 StringRedisSerializer + 手动序列化解决。
      */
-    @Cacheable(
-        value = "tenant-config",
-        key = "#tenantId",
-        unless = "#result == null"
-    )
     @Transactional(readOnly = true)
     public TenantConfigResponse getTenantConfig(String tenantId) {
         log.debug("Getting tenant config for: {}", tenantId);

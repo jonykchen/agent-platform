@@ -14,8 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir uv && \
-    uv pip install --system --prefix=/install -e .
+RUN pip install --upgrade pip && \
+    python -c "import tomllib; f=open('pyproject.toml','rb'); d=tomllib.load(f); open('requirements.txt','w').write('\n'.join(d['project']['dependencies']))" && \
+    pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 # ---- Stage 2: Runtime ----
 FROM python:3.12-slim
@@ -36,9 +37,9 @@ RUN chown -R app:app /app
 
 USER app
 
-EXPOSE 8081
+EXPOSE ${APP_PORT:-8003}
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8081/health/live || exit 1
+    CMD curl -f http://localhost:${APP_PORT:-8003}/health/live || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8081"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-8003}"]

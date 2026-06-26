@@ -99,8 +99,15 @@ Thumbs.db
 *.crt
 secrets/
 
-# Generated code - OpenAPI 不提交，Proto 生成代码需要提交
+# Generated code - OpenAPI 和 Proto 生成代码不提交
 contracts/openapi/gen/
+
+# Proto 生成的 Java 代码（由 mvn generate-sources 生成）
+**/src/main/java/com/platform/gateway/*.java
+**/src/main/java/com/platform/model/*.java
+**/src/main/java/com/platform/toolbus/*.java
+**/src/main/java/com/platform/common/ErrorCode*.java
+**/src/main/java/com/platform/common/ErrorDetail*.java
 
 # Python gen 目录（非 proto）仍然排除，但 app/gen 下 proto 文件保留
 # 注意：不使用 **/gen/ 因为会误杀 app/gen/

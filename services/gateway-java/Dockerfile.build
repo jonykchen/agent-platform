@@ -1,0 +1,50 @@
+# ============================================================
+#  Gateway Service - Docker Build Dockerfile
+#  跳过 Proto 生成和代码检查（Docker 构建专用）
+# ============================================================
+
+# Stage 1: Build
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
+
+WORKDIR /build
+
+# 复制 pom.xml
+COPY pom.xml .
+
+# 复制源码（包含 Proto 生成的代码）
+COPY src src
+
+# 构建（跳过测试编译和执行、代码检查）
+RUN mvn package -DskipTests -Dmaven.test.skip=true -Dcheckstyle.skip=true -Dspotbugs.skip=true -Djacoco.skip=true -B
+
+# Stage 2: Runtime
+FROM eclipse-temurin:21-jre-alpine
+
+# 安装 wget 用于健康检查
+RUN apk add --no-cache wget
+
+# 创建非 root 用户
+RUN addgroup -S app && adduser -S app -G app
+
+WORKDIR /app
+
+# 从构建阶段复制 JAR
+COPY --from=builder /build/target/*.jar app.jar
+
+# 设置所有权
+RUN chown -R app:app /app
+
+# 切换到非 root 用户
+USER app
+
+EXPOSE 8080
+
+# JVM 参数（生产优化）
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication"
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget -q --spider http://localhost:8080/actuator/health || exit 1
+
+# 启动命令
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
