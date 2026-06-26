@@ -1,5 +1,5 @@
 # ============================================================
-#  Gateway Service - Docker Build Dockerfile
+#  Tool Bus Service - Docker Build Dockerfile
 #  跳过 Proto 生成和代码检查（Docker 构建专用）
 # ============================================================
 
@@ -37,14 +37,14 @@ RUN chown -R app:app /app
 # 切换到非 root 用户
 USER app
 
-EXPOSE 8080
+EXPOSE 8083 40051
 
 # JVM 参数（生产优化）
-ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseStringDeduplication"
+ENV JAVA_OPTS="-Xms64m -Xmx256m -XX:+UseG1GC"
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget -q --spider http://localhost:8080/actuator/health || exit 1
+    CMD wget -q --spider http://localhost:8083/actuator/health || exit 1
 
 # 启动命令
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

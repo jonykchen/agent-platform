@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+_暂无变更_
+
+## [0.6.0] - 2026-06-26
+
 ### 新增
 - EncryptionService：AES-256-GCM 加密服务，支持密钥轮转
 - Saga 分布式事务模块：CompensationRegistry + SagaState
@@ -16,12 +20,16 @@
 - GitHub Release Notes 自动生成模板
 - `.gitleaks.toml` 密钥泄露扫描自定义规则
 - `.trivyignore` 漏洞扫描忽略规则
+- `.dockerignore` 全局排除规则
 - `make install` 一键安装所有依赖
 - 前端测试补充：authStore/useDebounce/useThrottle/useLocalStorage/useTenant/useNetworkStatus/uiStore/notificationStore/FileUpload
 - Java 测试补充：AuthController/SessionController/UserController/AuthService/FastPathService/ChatController/EncryptionService
 - 架构图文档：`docs/architecture-overview.md`（4 个 Mermaid 图表）
 - API 参考文档：`docs/api-reference.md`
-- 生产部署指南：`docs/deployment-guide.md`
+- 生产部署指南：`docs/deployment-guide.md` / `docs/deployment-production.md`
+- 项目路线图：`ROADMAP.md`
+- 数据库初始化脚本：`scripts/init-prod-data.sql`
+- 精简部署配置：`infra/docker-compose.deploy.yml`
 
 ### 变更
 - 开源准备：添加 AGPL-3.0 LICENSE、CONTRIBUTING.md、SECURITY.md、CODE_OF_CONDUCT.md
@@ -38,6 +46,11 @@
 - 端口一致性修复（Tool Bus gRPC: 50051 → 40051, Orchestrator gRPC: 50051 → 50100）
 - Actuator 安全配置：`show-details: always` → `when-authorized`
 - CORS 安全配置：环境变量驱动 allow_origins
+- Dockerfile：Python 服务 uv 改为 pip 安装
+- Dockerfile：Java 服务使用 maven 镜像代替 mvnw
+- Gateway：AuthService 默认 tenant_id 统一为 default
+- Gateway：Redis 缓存添加 JavaTimeModule 支持
+- nginx 配置：gateway-java 改为 gateway
 
 ## [0.5.0] - 2026-06
 

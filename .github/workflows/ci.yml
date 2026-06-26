@@ -295,14 +295,22 @@ jobs:
 
       - name: Generate Coverage
         run: |
-          cd services/orchestrator-python
-          uv run pytest --cov=app --cov-report=xml --cov-report=html
+          mkdir -p coverage-reports
+          for svc in orchestrator-python model-gateway-python knowledge-python; do
+            if [ -d "services/$svc" ]; then
+              cd services/$svc
+              uv run pytest --cov=app --cov-report=xml --cov-report=html 2>/dev/null || true
+              cp -r htmlcov/ ../../coverage-reports/$svc-htmlcov/ 2>/dev/null || true
+              cp coverage.xml ../../coverage-reports/$svc-coverage.xml 2>/dev/null || true
+              cd ../..
+            fi
+          done
 
       - name: Upload Coverage to PR
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: services/orchestrator-python/htmlcov/
+          path: coverage-reports/
 
       - name: Comment PR with Coverage
         uses: py-cov-action/python-coverage-comment-action@v3

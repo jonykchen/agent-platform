@@ -32,7 +32,7 @@ public class RealPaymentGatewayClient implements PaymentGatewayClient {
 
         log.info("Real: processing payment orderId={}, amount={} from {}", orderId, amount, url);
 
-        // TODO: 实现真实 HTTP 调用，服务就绪后启用
+        // 注意：当前为 Mock 模式，生产环境需实现真实 HTTP 调用
         throw new UnsupportedOperationException("Real payment gateway not available yet. " +
             "Please ensure payment-gateway is running at " + config.getPayment().getBaseUrl());
     }

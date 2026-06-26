@@ -30,7 +30,7 @@ public class RealUserServiceClient implements UserServiceClient {
 
         log.info("Real: querying user {} from {}", userId, url);
 
-        // TODO: 实现真实 HTTP 调用，服务就绪后启用
+        // 注意：当前为 Mock 模式，生产环境需实现真实 HTTP 调用
         // 目前抛出异常，提示服务未就绪
         throw new UnsupportedOperationException("Real user service not available yet. " +
             "Please ensure user-service is running at " + config.getUser().getBaseUrl());

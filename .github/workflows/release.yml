@@ -1,0 +1,56 @@
+# ============================================================
+#  Release 工作流 - 自动创建 GitHub Release
+#  触发条件：推送 tag (v*)
+# ============================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  # ====== 创建 Release ======
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # 获取上一个 tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            CHANGES=$(git log --oneline --no-merges HEAD | head -50)
+          else
+            CHANGES=$(git log --oneline --no-merges ${PREV_TAG}..HEAD)
+          fi
+
+          # 写入 changelog 文件
+          echo "$CHANGES" > /tmp/changelog.md
+
+          # 提取版本号
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ steps.changelog.outputs.version }}
+          body_path: /tmp/changelog.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

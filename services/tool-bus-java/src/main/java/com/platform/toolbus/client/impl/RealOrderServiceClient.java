@@ -30,7 +30,7 @@ public class RealOrderServiceClient implements OrderServiceClient {
 
         log.info("Real: querying order {} from {}", orderId, url);
 
-        // TODO: 实现真实 HTTP 调用，服务就绪后启用
+        // 注意：当前为 Mock 模式，生产环境需实现真实 HTTP 调用
         throw new UnsupportedOperationException("Real order service not available yet. " +
             "Please ensure order-service is running at " + config.getOrder().getBaseUrl());
     }

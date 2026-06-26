@@ -17,7 +17,7 @@ services:
       POSTGRES_PASSWORD: dev_password
       POSTGRES_DB: agent_platform
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../shared/sql:/docker-entrypoint-initdb.d:ro
@@ -43,7 +43,7 @@ services:
     container_name: agent-redis
     command: redis-server --appendonly yes --requirepass dev_password
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -71,8 +71,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin123
     ports:
-      - "9000:9000"   # API
-      - "9001:9001"   # Console
+      - "127.0.0.1:9000:9000"   # API
+      - "127.0.0.1:9001:9001"   # Console
     volumes:
       - minio_data:/data
     healthcheck:
@@ -118,8 +118,8 @@ services:
     depends_on:
       - zookeeper
     ports:
-      - "9092:9092"
-      - "9094:9094"
+      - "127.0.0.1:9092:9092"
+      - "127.0.0.1:9094:9094"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
@@ -156,9 +156,9 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
     ports:
-      - "4317:4317"   # OTLP gRPC
-      - "4318:4318"   # OTLP HTTP
-      - "8888:8888"   # Prometheus metrics
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP
+      - "127.0.0.1:8888:8888"   # Prometheus metrics
     deploy:
       resources:
         limits:
@@ -179,7 +179,7 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-lifecycle'
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -200,7 +200,7 @@ services:
     image: prom/alertmanager:v0.26.0
     container_name: agent-alertmanager
     ports:
-      - "9093:9093"
+      - "127.0.0.1:9093:9093"
     volumes:
       - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     deploy:
@@ -220,7 +220,7 @@ services:
     container_name: agent-loki
     command: ["-config.file=/etc/loki/loki-config.yaml"]
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     volumes:
       - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
       - loki_data:/loki
@@ -261,8 +261,8 @@ services:
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
     ports:
-      - "16686:16686"   # Jaeger UI
-      - "14250:14250"   # gRPC (collector)
+      - "127.0.0.1:16686:16686"   # Jaeger UI
+      - "127.0.0.1:14250:14250"   # gRPC (collector)
     deploy:
       resources:
         limits:

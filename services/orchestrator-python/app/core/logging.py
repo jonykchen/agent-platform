@@ -317,10 +317,24 @@ class _SensitiveDataProcessor(structlog.types.Processor):
 
     # 敏感字段名列表（完全隐藏）
     SENSITIVE_FIELDS = {
-        "password", "passwd", "pwd", "secret", "token",
-        "api_key", "apikey", "authorization", "auth", "credential",
-        "private_key", "privatekey", "access_token", "refresh_token",
-        "jwt", "jwt_secret", "api_secret", "client_secret",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "authorization",
+        "auth",
+        "credential",
+        "private_key",
+        "privatekey",
+        "access_token",
+        "refresh_token",
+        "jwt",
+        "jwt_secret",
+        "api_secret",
+        "client_secret",
     }
 
     PATTERNS = {
@@ -371,8 +385,7 @@ class _SensitiveDataProcessor(structlog.types.Processor):
             return self._process_dict(value, depth + 1)
 
         if isinstance(value, list):
-            return [self._process_value(f"item_{i}", item, depth + 1)
-                    for i, item in enumerate(value)]
+            return [self._process_value(f"item_{i}", item, depth + 1) for i, item in enumerate(value)]
 
         if isinstance(value, (int, float, bool, type(None))):
             return value
@@ -728,7 +741,7 @@ logger.info(f"User {user_id} logged in")  # 错误
 logger.info("user_login", user_id=user_id)
 
 # 2. 不要在日志中包含敏感信息（即使会被脱敏）
-logger.info("user_created", password="secret123")  # 错误！不应记录密码
+logger.info("user_created", user_id=user_id)  # 正确：只记录非敏感标识
 
 # 3. 不要在 DEBUG 级别记录关键业务事件
 logger.debug("payment_processed", amount=1000)  # 错误，可能被过滤
