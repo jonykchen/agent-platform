@@ -122,6 +122,21 @@ class AgentState(TypedDict):
 - **[新增] 参数校验**：`json_schema_validator.py` 实现 JSON Schema 校验，防止恶意输入
 - **[新增] 日志脱敏**：`sensitive_filter.py` 自动脱敏手机号/身份证/API Key
 
+### 工具端点安全模型
+```
+Gateway (:8080)                    Tool Bus (:8083)
+┌─────────────────────┐           ┌─────────────────────┐
+│ DevAuthFilter       │           │ ServiceRoleFilter    │
+│ - local/development │           │ - 验证 X-Service-Role│
+│ - ROLE_ADMIN        │──────────▶│ - ROLE_ADMIN         │
+│ - internal:access   │  header:  │ - @PreAuthorize      │
+│                     │  X-Service│   hasRole('ADMIN')   │
+└─────────────────────┘  -Role    └─────────────────────┘
+```
+- **Gateway → Tool Bus**：通过 `X-Service-Role: ADMIN` header 标识内部调用
+- **前端 → Gateway**：通过 JWT/API Key 认证，Dev 环境自动授予 `internal:access`
+- **数据库表**：`tool_definition`（V007 迁移）存储工具定义，支持动态注册
+
 > 通用安全见 G-SEC-*，Prompt 注入防护见 S-AGENT-01~05。
 
 ---
