@@ -41,7 +41,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.42.0",
-    "@tanstack/router-cli": "^1.166.43",
+    "@tanstack/router-cli": "^1.167.17",
     "@tanstack/router-vite-plugin": "^1.167.13",
     "@testing-library/jest-dom": "^6.4.0",
     "@testing-library/react": "^14.2.0",
