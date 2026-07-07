@@ -116,6 +116,7 @@ from app.api.utils import get_or_create_session_id
 from app.core.config import config
 from app.core.exceptions import TimeoutError as PlatformTimeoutError
 from app.core.metrics import record_agent_run
+from app.core.prompt_guard import prompt_guard
 from app.graph.builder import get_agent_graph
 from app.graph.state import create_initial_state
 from app.memory.checkpoint_store import get_checkpoint_store

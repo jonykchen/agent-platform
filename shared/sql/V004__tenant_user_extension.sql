@@ -30,20 +30,20 @@ CREATE INDEX IF NOT EXISTS idx_user_tenant_status ON tenant_user(tenant_id, stat
 DROP INDEX IF EXISTS idx_user_tenant_role;
 CREATE INDEX IF NOT EXISTS idx_user_tenant_role ON tenant_user(tenant_id, role);
 
--- 初始化测试用户（密码: admin123 的 BCrypt hash）
+-- 初始化测试用户（密码: admin123/operator123/viewer123 的 BCrypt(cost=10) hash）
 INSERT INTO tenant_user (id, tenant_id, user_id, username, email, password, role, quota_daily, quota_used_today, status, login_count, failed_login_count, created_at, updated_at)
 SELECT gen_random_uuid(), 'default', 'user_admin', 'admin', 'admin@example.com',
-       '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOa4u4y4Y4Y4Y', 'admin', 100000, 0, 'active', 0, 0, NOW(), NOW()
+       '$2a$10$Gds.4fJJDr/JA0sBlY5nX.Ju2fJ3c9EYyQEn9e9hM.zqjNN1jxLgO', 'admin', 100000, 0, 'active', 0, 0, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM tenant_user WHERE tenant_id = 'default' AND username = 'admin');
 
 INSERT INTO tenant_user (id, tenant_id, user_id, username, email, password, role, quota_daily, quota_used_today, status, login_count, failed_login_count, created_at, updated_at)
 SELECT gen_random_uuid(), 'default', 'user_operator', 'operator', 'operator@example.com',
-       '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOa4u4y4Y4Y4Y', 'operator', 100000, 0, 'active', 0, 0, NOW(), NOW()
+       '$2a$10$x36AYbQxYUYicRVYzcQH4.1luF13kshA.2pLNd/xduNZoZGmeEAYq', 'operator', 100000, 0, 'active', 0, 0, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM tenant_user WHERE tenant_id = 'default' AND username = 'operator');
 
 INSERT INTO tenant_user (id, tenant_id, user_id, username, email, password, role, quota_daily, quota_used_today, status, login_count, failed_login_count, created_at, updated_at)
 SELECT gen_random_uuid(), 'default', 'user_viewer', 'viewer', 'viewer@example.com',
-       '$2a$10$N.zmdr9k7uOCQb376NoUnuTJ8iAt6Z5EHsM8lE9lBOa4u4y4Y4Y4Y', 'viewer', 100000, 0, 'active', 0, 0, NOW(), NOW()
+       '$2a$10$QNI4J1/3j3Hw1Nz05ntyZe9LyPmry1MyswydGlobyEIlAqazI4//u', 'viewer', 100000, 0, 'active', 0, 0, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM tenant_user WHERE tenant_id = 'default' AND username = 'viewer');
 
 COMMENT ON COLUMN tenant_user.username IS '用户名';

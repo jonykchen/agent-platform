@@ -91,8 +91,8 @@ function LoginPage() {
         </Form>
 
         <div className="text-center text-sm text-gray-500">
-          <p>测试账号：</p>
-          <p>admin / admin123 | operator / operator123 | viewer / viewer123</p>
+          <p>测试账号：admin / admin123</p>
+          <p>其他：operator / operator123 | viewer / viewer123</p>
         </div>
       </Card>
     </div>

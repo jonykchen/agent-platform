@@ -274,6 +274,21 @@ make proto            # 生成 Proto 代码
 
 ---
 
+## 测试账号
+
+前端登录页（http://localhost:5173/login）测试凭据：
+
+| 用户名 | 密码 | 角色 | 租户 |
+|--------|------|------|------|
+| `admin` | `admin123` | admin | default |
+| `operator` | `operator123` | operator | default |
+| `viewer` | `viewer123` | viewer | default |
+
+> 密码使用 BCrypt(cost=10) 存储。前端不传 tenant_id 时，AuthService 默认使用 `default` 租户。
+> Gateway 启动需设置 `DB_PASSWORD=dev_password REDIS_PASSWORD=dev_password`；JWT_SECRET 已内置 dev 默认值。
+
+---
+
 ## 快速参考
 
 ### 日志格式 (JSON)

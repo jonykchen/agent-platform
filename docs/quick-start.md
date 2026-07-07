@@ -152,12 +152,17 @@ cd services/gateway-java
 # 编译
 ./mvnw package -DskipTests
 
-# 运行
-java -jar target/gateway-*.jar
+# 运行（开发模式，需传入环境变量）
+DB_PASSWORD=dev_password REDIS_PASSWORD=dev_password ./mvnw spring-boot:run
 
-# 或直接运行 (开发模式)
-./mvnw spring-boot:run
+# 或直接运行 jar
+DB_PASSWORD=dev_password REDIS_PASSWORD=dev_password java -jar target/gateway-*.jar
 ```
+
+> **环境变量说明**：
+> - `DB_PASSWORD` / `REDIS_PASSWORD`：本地开发对应 `dev_password`（与 docker-compose 中一致）
+> - `JWT_SECRET`：已内置 dev 默认值，无需手动设置；生产环境必须通过环境变量注入强密钥
+> - 其他变量（`DB_HOST`、`REDIS_HOST` 等）默认值已适配本地开发
 
 ### 5. Tool Bus (Java) — 工具总线
 
@@ -248,6 +253,13 @@ DEFAULT_MODEL=deepseek-chat       # 默认聊天模型
 OTEL_ENABLED=false                # 本地开发可关闭 OTel
 ```
 
+```bash
+# gateway-java 环境变量（启动时传入，无需 .env.local）
+DB_PASSWORD=dev_password          # PostgreSQL 密码
+REDIS_PASSWORD=dev_password       # Redis 密码
+# JWT_SECRET 已内置 dev 默认值，生产环境必须覆盖
+```
+
 > **RAG 说明**：知识库检索（RAG）需要 Embedding 向量化服务，使用通义千问 `text-embedding-v3`（1024 维）。需在 Model Gateway 和 Orchestrator 的 `.env.local` 中配置 `QWEN_API_KEY`。
 
 ---
@@ -288,6 +300,20 @@ java -version
 ### Q: Docker 启动失败？
 
 确保 Docker Desktop 已启动，且有足够内存 (建议 8GB+)。
+
+---
+
+## 测试账号
+
+前端登录页 http://localhost:5173/login 提供以下测试账号：
+
+| 用户名 | 密码 | 角色 | 权限 |
+|--------|------|------|------|
+| `admin` | `admin123` | admin | 全部权限 |
+| `operator` | `operator123` | operator | 对话、审批、工具执行 |
+| `viewer` | `viewer123` | viewer | 只读（对话查看、审批查看） |
+
+> 测试账号属于 `default` 租户。API 调用也可通过 `tenant_id: "tenant_001"` 访问示例企业租户。
 
 ---
 
