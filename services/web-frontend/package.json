@@ -24,7 +24,7 @@
     "@tanstack/react-router": "^1.170.10",
     "@tanstack/react-virtual": "^3.0.0",
     "antd": "^5.15.0",
-    "axios": "^1.6.0",
+    "axios": "^1.18.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.0",
     "echarts": "^5.5.0",
