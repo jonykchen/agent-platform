@@ -36,7 +36,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           version: 'latest'
 
@@ -116,7 +116,7 @@ jobs:
           cache: 'maven'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           version: 'latest'
 
@@ -291,7 +291,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
 
       - name: Generate Coverage
         run: |
